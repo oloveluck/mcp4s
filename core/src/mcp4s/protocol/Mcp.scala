@@ -1,0 +1,606 @@
+package mcp4s.protocol
+
+import io.circe.Json
+
+// === Opaque Types for Type Safety ===
+
+/** Type-safe tool name */
+opaque type ToolName = String
+
+object ToolName:
+  def apply(value: String): ToolName = value
+
+  extension (name: ToolName)
+    def value: String = name
+
+/** Type-safe resource URI */
+opaque type ResourceUri = String
+
+object ResourceUri:
+  def apply(value: String): ResourceUri = value
+
+  extension (uri: ResourceUri)
+    def value: String = uri
+
+/** Type-safe prompt name */
+opaque type PromptName = String
+
+object PromptName:
+  def apply(value: String): PromptName = value
+
+  extension (name: PromptName)
+    def value: String = name
+
+/** MCP Protocol version
+  * Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle
+  */
+object McpVersion:
+  /** Current MCP protocol version */
+  val Current: String = "2025-11-25"
+
+  /** Previous protocol version for backwards compatibility */
+  val Previous: String = "2024-11-05"
+
+  /** All supported protocol versions */
+  val Supported: Set[String] = Set(Current, Previous)
+
+// === Common Types ===
+
+/** Icon for UI display
+  * Spec ref: schema.ts Icon interface
+  */
+final case class Icon(
+    src: String,
+    mimeType: Option[String] = None,
+    sizes: Option[List[String]] = None,
+    theme: Option[String] = None
+)
+
+/** Annotations for content and resources
+  * Spec ref: schema.ts Annotations interface
+  */
+final case class Annotations(
+    audience: Option[List[String]] = None,  // "user" | "assistant"
+    priority: Option[Double] = None,         // 0.0-1.0
+    lastModified: Option[String] = None      // ISO 8601 datetime
+)
+
+/** Server information
+  * Spec ref: schema.ts Implementation interface
+  */
+final case class ServerInfo(
+    name: String,
+    version: String,
+    title: Option[String] = None,
+    description: Option[String] = None,
+    websiteUrl: Option[String] = None,
+    icons: Option[List[Icon]] = None
+)
+
+/** Client information
+  * Spec ref: schema.ts Implementation interface
+  */
+final case class ClientInfo(
+    name: String,
+    version: String,
+    title: Option[String] = None,
+    description: Option[String] = None,
+    websiteUrl: Option[String] = None,
+    icons: Option[List[Icon]] = None
+)
+
+/** Implementation info for capabilities (alias for backward compatibility) */
+final case class Implementation(
+    name: String,
+    version: String,
+    title: Option[String] = None,
+    description: Option[String] = None,
+    websiteUrl: Option[String] = None,
+    icons: Option[List[Icon]] = None
+)
+
+// === Capabilities ===
+// Spec ref: schema.ts ServerCapabilities, ClientCapabilities
+
+final case class ToolsCapability(
+    listChanged: Option[Boolean] = None
+)
+
+final case class ResourcesCapability(
+    subscribe: Option[Boolean] = None,
+    listChanged: Option[Boolean] = None
+)
+
+final case class PromptsCapability(
+    listChanged: Option[Boolean] = None
+)
+
+final case class LoggingCapability()
+
+final case class CompletionsCapability()
+
+// Server tasks capability for async operations
+final case class ServerTasksCapability(
+    list: Option[Json] = None,
+    cancel: Option[Json] = None,
+    requests: Option[ServerTaskRequests] = None
+)
+
+final case class ServerTaskRequests(
+    tools: Option[ToolTaskRequests] = None
+)
+
+final case class ToolTaskRequests(
+    call: Option[Json] = None
+)
+
+/** Server capabilities
+  * Spec ref: schema.ts ServerCapabilities
+  */
+final case class ServerCapabilities(
+    tools: Option[ToolsCapability] = None,
+    resources: Option[ResourcesCapability] = None,
+    prompts: Option[PromptsCapability] = None,
+    logging: Option[LoggingCapability] = None,
+    completions: Option[CompletionsCapability] = None,
+    tasks: Option[ServerTasksCapability] = None,
+    experimental: Option[Json] = None
+)
+
+object ServerCapabilities:
+  val empty: ServerCapabilities = ServerCapabilities()
+
+  def withTools: ServerCapabilities =
+    ServerCapabilities(tools = Some(ToolsCapability()))
+
+  def withResources: ServerCapabilities =
+    ServerCapabilities(resources = Some(ResourcesCapability()))
+
+  def withPrompts: ServerCapabilities =
+    ServerCapabilities(prompts = Some(PromptsCapability()))
+
+// Client tasks capability
+final case class ClientTasksCapability(
+    list: Option[Json] = None,
+    cancel: Option[Json] = None,
+    requests: Option[ClientTaskRequests] = None
+)
+
+final case class ClientTaskRequests(
+    sampling: Option[SamplingTaskRequests] = None,
+    elicitation: Option[ElicitationTaskRequests] = None
+)
+
+final case class SamplingTaskRequests(
+    createMessage: Option[Json] = None
+)
+
+final case class ElicitationTaskRequests(
+    create: Option[Json] = None
+)
+
+final case class ElicitationCapability(
+    form: Option[Json] = None,
+    url: Option[Json] = None
+)
+
+/** Client capabilities
+  * Spec ref: schema.ts ClientCapabilities
+  */
+final case class ClientCapabilities(
+    roots: Option[RootsCapability] = None,
+    sampling: Option[SamplingCapability] = None,
+    elicitation: Option[ElicitationCapability] = None,
+    tasks: Option[ClientTasksCapability] = None,
+    experimental: Option[Json] = None
+)
+
+final case class RootsCapability(
+    listChanged: Option[Boolean] = None
+)
+
+final case class SamplingCapability(
+    context: Option[Json] = None,
+    tools: Option[Json] = None
+)
+
+// === Tools ===
+// Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
+
+/** JSON Schema for tool input/output */
+final case class JsonSchema(
+    `type`: String,
+    properties: Option[Map[String, JsonSchemaProperty]] = None,
+    required: Option[List[String]] = None,
+    `$schema`: Option[String] = None
+)
+
+final case class JsonSchemaProperty(
+    `type`: String,
+    description: Option[String] = None,
+    `enum`: Option[List[String]] = None
+)
+
+object JsonSchema:
+  def obj(
+      properties: Map[String, JsonSchemaProperty],
+      required: List[String] = Nil
+  ): JsonSchema =
+    JsonSchema("object", Some(properties), if (required.isEmpty) None else Some(required))
+
+  def string(description: Option[String] = None): JsonSchemaProperty =
+    JsonSchemaProperty("string", description, None)
+
+  def number(description: Option[String] = None): JsonSchemaProperty =
+    JsonSchemaProperty("number", description, None)
+
+  def boolean(description: Option[String] = None): JsonSchemaProperty =
+    JsonSchemaProperty("boolean", description, None)
+
+  def stringEnum(values: List[String], description: Option[String] = None): JsonSchemaProperty =
+    JsonSchemaProperty("string", description, Some(values))
+
+/** Tool annotations for AI safety hints
+  * Spec ref: schema.ts ToolAnnotations
+  * CRITICAL for AI safety - describes tool behavior to LLMs
+  */
+final case class ToolAnnotations(
+    title: Option[String] = None,
+    readOnlyHint: Option[Boolean] = None,      // Default: false - tool doesn't modify state
+    destructiveHint: Option[Boolean] = None,   // Default: true - may perform destructive ops
+    idempotentHint: Option[Boolean] = None,    // Default: false - safe to retry
+    openWorldHint: Option[Boolean] = None      // Default: true - may interact with external world
+)
+
+/** Task support for async tool execution
+  * Spec ref: schema.ts ToolExecution
+  */
+enum TaskSupport:
+  case Forbidden, Optional, Required
+
+final case class ToolExecution(
+    taskSupport: Option[TaskSupport] = None
+)
+
+/** Tool definition
+  * Spec ref: schema.ts Tool interface
+  */
+final case class Tool(
+    name: String,
+    description: Option[String] = None,
+    inputSchema: JsonSchema,
+    title: Option[String] = None,
+    outputSchema: Option[JsonSchema] = None,
+    execution: Option[ToolExecution] = None,
+    annotations: Option[ToolAnnotations] = None,
+    icons: Option[List[Icon]] = None,
+    _meta: Option[Json] = None
+)
+
+/** Tool call result content types
+  * Spec ref: schema.ts ContentBlock union
+  */
+enum ContentType:
+  case Text, Image, Audio, Resource, ResourceLink
+
+/** Content in tool results
+  * Spec ref: schema.ts ContentBlock
+  */
+sealed trait Content:
+  def `type`: ContentType
+
+/** Text content
+  * Spec ref: schema.ts TextContent
+  */
+final case class TextContent(
+    text: String,
+    annotations: Option[Annotations] = None,
+    _meta: Option[Json] = None
+) extends Content:
+  def `type`: ContentType = ContentType.Text
+
+/** Image content (base64 encoded)
+  * Spec ref: schema.ts ImageContent
+  */
+final case class ImageContent(
+    data: String,
+    mimeType: String,
+    annotations: Option[Annotations] = None,
+    _meta: Option[Json] = None
+) extends Content:
+  def `type`: ContentType = ContentType.Image
+
+/** Audio content (base64 encoded)
+  * Spec ref: schema.ts AudioContent
+  */
+final case class AudioContent(
+    data: String,
+    mimeType: String,
+    annotations: Option[Annotations] = None,
+    _meta: Option[Json] = None
+) extends Content:
+  def `type`: ContentType = ContentType.Audio
+
+/** Embedded resource content
+  * Spec ref: schema.ts EmbeddedResource
+  */
+final case class ResourceContentRef(
+    uri: String,
+    mimeType: Option[String] = None,
+    text: Option[String] = None,
+    annotations: Option[Annotations] = None,
+    _meta: Option[Json] = None
+) extends Content:
+  def `type`: ContentType = ContentType.Resource
+
+/** Link to a resource without embedding
+  * Spec ref: schema.ts ResourceLink
+  */
+final case class ResourceLinkContent(
+    uri: String,
+    name: String,
+    title: Option[String] = None,
+    description: Option[String] = None,
+    mimeType: Option[String] = None,
+    annotations: Option[Annotations] = None,
+    size: Option[Long] = None,
+    icons: Option[List[Icon]] = None
+) extends Content:
+  def `type`: ContentType = ContentType.ResourceLink
+
+/** Result of a tool call
+  * Spec ref: schema.ts CallToolResult
+  */
+final case class ToolResult(
+    content: List[Content],
+    isError: Boolean = false,
+    structuredContent: Option[Json] = None
+):
+  /** Extract the first text content, if any */
+  def asText: Option[String] =
+    content.collectFirst { case TextContent(text, _, _) => text }
+
+  /** Extract text content or fallback to toString */
+  def textContent: String = asText.getOrElse(toString)
+
+  /** Extract the first image content, if any */
+  def asImage: Option[ImageContent] =
+    content.collectFirst { case i: ImageContent => i }
+
+  /** Extract the first audio content, if any */
+  def asAudio: Option[AudioContent] =
+    content.collectFirst { case a: AudioContent => a }
+
+object ToolResult:
+  def text(s: String): ToolResult =
+    ToolResult(List(TextContent(s)))
+
+  def error(message: String): ToolResult =
+    ToolResult(List(TextContent(message)), isError = true)
+
+// === Resources ===
+// Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/server/resources
+
+/** Resource definition
+  * Spec ref: schema.ts Resource
+  */
+final case class Resource(
+    uri: String,
+    name: String,
+    description: Option[String] = None,
+    mimeType: Option[String] = None,
+    title: Option[String] = None,
+    annotations: Option[Annotations] = None,
+    size: Option[Long] = None,
+    icons: Option[List[Icon]] = None,
+    _meta: Option[Json] = None
+)
+
+/** Resource template for dynamic resources
+  * Spec ref: schema.ts ResourceTemplate
+  */
+final case class ResourceTemplate(
+    uriTemplate: String,
+    name: String,
+    description: Option[String] = None,
+    mimeType: Option[String] = None,
+    title: Option[String] = None,
+    annotations: Option[Annotations] = None,
+    icons: Option[List[Icon]] = None,
+    _meta: Option[Json] = None
+)
+
+/** Content of a resource
+  * Spec ref: schema.ts TextResourceContents | BlobResourceContents
+  */
+final case class ResourceContent(
+    uri: String,
+    mimeType: Option[String] = None,
+    text: Option[String] = None,
+    blob: Option[String] = None
+)
+
+object ResourceContent:
+  def text(uri: String, content: String, mimeType: Option[String] = None): ResourceContent =
+    ResourceContent(uri, mimeType, Some(content), None)
+
+  def blob(uri: String, base64: String, mimeType: Option[String] = None): ResourceContent =
+    ResourceContent(uri, mimeType, None, Some(base64))
+
+// === Prompts ===
+// Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/server/prompts
+
+/** Prompt argument definition
+  * Spec ref: schema.ts PromptArgument
+  */
+final case class PromptArgument(
+    name: String,
+    description: Option[String] = None,
+    required: Boolean = false,
+    title: Option[String] = None
+)
+
+/** Prompt definition
+  * Spec ref: schema.ts Prompt
+  */
+final case class Prompt(
+    name: String,
+    description: Option[String] = None,
+    arguments: List[PromptArgument] = Nil,
+    title: Option[String] = None,
+    icons: Option[List[Icon]] = None,
+    _meta: Option[Json] = None
+)
+
+/** Role in prompt messages */
+enum Role:
+  case User, Assistant
+
+/** Prompt message
+  * Spec ref: schema.ts PromptMessage
+  */
+final case class PromptMessage(
+    role: Role,
+    content: Content
+)
+
+/** Result of getting a prompt
+  * Spec ref: schema.ts GetPromptResult
+  */
+final case class GetPromptResult(
+    description: Option[String] = None,
+    messages: List[PromptMessage]
+)
+
+// === Lifecycle ===
+// Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle
+
+/** Initialize request params
+  * Spec ref: schema.ts InitializeRequest params
+  */
+final case class InitializeParams(
+    protocolVersion: String,
+    capabilities: ClientCapabilities,
+    clientInfo: ClientInfo
+)
+
+/** Initialize response result
+  * Spec ref: schema.ts InitializeResult
+  */
+final case class InitializeResult(
+    protocolVersion: String,
+    capabilities: ServerCapabilities,
+    serverInfo: ServerInfo,
+    instructions: Option[String] = None
+)
+
+// === Logging ===
+
+enum LogLevel:
+  case Debug, Info, Notice, Warning, Error, Critical, Alert, Emergency
+
+final case class LogMessage(
+    level: LogLevel,
+    logger: Option[String] = None,
+    data: Json
+)
+
+// === Pagination ===
+
+final case class Cursor(value: String) extends AnyVal
+
+// === Notifications ===
+
+/** Parameters for cancellation notification
+  * Spec ref: schema.ts CancelledNotification
+  */
+final case class CancelledParams(
+    requestId: RequestId,
+    reason: Option[String] = None
+)
+
+/** Parameters for progress notification
+  * Spec ref: schema.ts ProgressNotification
+  */
+final case class ProgressParams(
+    progressToken: RequestId,
+    progress: Double,
+    total: Option[Double] = None
+)
+
+// === Roots (Client Feature) ===
+// Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/client/roots
+
+/** Root represents an accessible filesystem boundary
+  * Spec ref: schema.ts Root interface
+  */
+final case class Root(
+    uri: String,                    // MUST be file:// URI
+    name: Option[String] = None,    // Human-readable display name
+    _meta: Option[Json] = None
+)
+
+/** Result of listing roots
+  * Spec ref: schema.ts ListRootsResult
+  */
+final case class ListRootsResult(
+    roots: List[Root]
+)
+
+// === MCP Method Names ===
+// Spec ref: schema.ts method constants
+
+object McpMethod:
+  // Lifecycle
+  val Initialize: String  = "initialize"
+  val Initialized: String = "notifications/initialized"
+  val Shutdown: String    = "shutdown"
+  val Ping: String        = "ping"
+
+  // Tools
+  val ToolsList: String        = "tools/list"
+  val ToolsCall: String        = "tools/call"
+  val ToolsListChanged: String = "notifications/tools/list_changed"
+
+  // Resources
+  val ResourcesList: String          = "resources/list"
+  val ResourcesRead: String          = "resources/read"
+  val ResourcesTemplatesList: String = "resources/templates/list"
+  val ResourcesSubscribe: String     = "resources/subscribe"
+  val ResourcesUnsubscribe: String   = "resources/unsubscribe"
+  val ResourcesListChanged: String   = "notifications/resources/list_changed"
+  val ResourcesUpdated: String       = "notifications/resources/updated"
+
+  // Prompts
+  val PromptsList: String        = "prompts/list"
+  val PromptsGet: String         = "prompts/get"
+  val PromptsListChanged: String = "notifications/prompts/list_changed"
+
+  // Logging
+  val LoggingSetLevel: String = "logging/setLevel"
+  val LoggingMessage: String  = "notifications/message"
+
+  // Completions
+  val CompletionComplete: String = "completion/complete"
+
+  // Tasks
+  val TasksGet: String      = "tasks/get"
+  val TasksResult: String   = "tasks/result"
+  val TasksCancel: String   = "tasks/cancel"
+  val TasksList: String     = "tasks/list"
+  val TasksStatus: String   = "notifications/tasks/status"
+
+  // Sampling (client feature)
+  val SamplingCreateMessage: String = "sampling/createMessage"
+
+  // Elicitation (client feature)
+  val ElicitationCreate: String   = "elicitation/create"
+  val ElicitationComplete: String = "notifications/elicitation/complete"
+
+  // Roots (client feature)
+  val RootsList: String        = "roots/list"
+  val RootsListChanged: String = "notifications/roots/list_changed"
+
+  // Utilities
+  val Cancelled: String = "notifications/cancelled"
+  val Progress: String  = "notifications/progress"

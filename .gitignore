@@ -1,0 +1,18 @@
+# Mill
+out/
+
+# IDE
+.idea/
+.metals/
+.bloop/
+.vscode/
+.bsp/
+
+# OS
+.DS_Store
+
+# Build artifacts
+*.class
+*.log
+*.iml
+target/

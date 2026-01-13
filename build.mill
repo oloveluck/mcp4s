@@ -1,0 +1,107 @@
+package build
+
+import mill._
+import mill.scalalib._
+import mill.scalalib.scalafmt._
+import mill.scalalib.publish._
+
+object Versions {
+  val scala = "3.3.4"
+  val catsEffect = "3.6.0"
+  val circe = "0.14.15"
+  val fs2 = "3.12.2"
+  val http4s = "0.23.33"
+  val munitCatsEffect = "2.1.0"
+}
+
+trait Mcp4sModule extends ScalaModule with ScalafmtModule with PublishModule {
+  def scalaVersion = Versions.scala
+
+  def scalacOptions = Seq(
+    "-deprecation",
+    "-feature",
+    "-unchecked",
+    "-Wunused:all",
+    "-Wvalue-discard",
+    "-Xfatal-warnings"
+  )
+
+  def publishVersion = "0.1.0"
+
+  def pomSettings = PomSettings(
+    description = "MCP (Model Context Protocol) for Scala",
+    organization = "io.github.mcp4s",
+    url = "https://github.com/mcp4s/mcp4s",
+    licenses = Seq(License.`Apache-2.0`),
+    versionControl = VersionControl.github("mcp4s", "mcp4s"),
+    developers = Seq(Developer("mcp4s", "MCP4S Contributors", "https://github.com/mcp4s"))
+  )
+
+  trait Mcp4sTests extends ScalaTests with TestModule.Munit {
+    def mvnDeps = super.mvnDeps() ++ Seq(
+      mvn"org.typelevel::munit-cats-effect::${Versions.munitCatsEffect}"
+    )
+  }
+}
+
+object core extends Mcp4sModule {
+  def mvnDeps = Seq(
+    mvn"org.typelevel::cats-effect::${Versions.catsEffect}",
+    mvn"io.circe::circe-core::${Versions.circe}",
+    mvn"io.circe::circe-generic::${Versions.circe}",
+    mvn"io.circe::circe-parser::${Versions.circe}"
+  )
+
+  object test extends Mcp4sTests
+}
+
+object server extends Mcp4sModule {
+  def moduleDeps = Seq(core)
+
+  def mvnDeps = Seq(
+    mvn"org.typelevel::cats-effect::${Versions.catsEffect}",
+    mvn"co.fs2::fs2-core::${Versions.fs2}",
+    mvn"co.fs2::fs2-io::${Versions.fs2}",
+    mvn"org.http4s::http4s-ember-server::${Versions.http4s}",
+    mvn"org.http4s::http4s-dsl::${Versions.http4s}",
+    mvn"org.http4s::http4s-circe::${Versions.http4s}"
+  )
+
+  object test extends Mcp4sTests
+}
+
+object client extends Mcp4sModule {
+  def moduleDeps = Seq(core)
+
+  def mvnDeps = Seq(
+    mvn"org.typelevel::cats-effect::${Versions.catsEffect}",
+    mvn"co.fs2::fs2-core::${Versions.fs2}",
+    mvn"org.http4s::http4s-ember-client::${Versions.http4s}",
+    mvn"org.http4s::http4s-circe::${Versions.http4s}"
+  )
+
+  object test extends Mcp4sTests
+}
+
+object examples extends ScalaModule with ScalafmtModule {
+  def scalaVersion = Versions.scala
+
+  def moduleDeps = Seq(server, client)
+
+  def scalacOptions = Seq(
+    "-deprecation",
+    "-feature",
+    "-unchecked",
+    "-Wunused:all",
+    "-Wvalue-discard",
+    "-Xfatal-warnings"
+  )
+
+  trait Mcp4sTests extends ScalaTests with TestModule.Munit {
+    def mvnDeps = super.mvnDeps() ++ Seq(
+      mvn"org.typelevel::munit-cats-effect::${Versions.munitCatsEffect}"
+    )
+  }
+
+  object test extends Mcp4sTests
+}
