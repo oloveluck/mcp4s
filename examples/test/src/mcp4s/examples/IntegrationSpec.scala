@@ -4,6 +4,7 @@ import cats.effect.{IO, Resource}
 import cats.syntax.all.*
 import com.comcast.ip4s.port
 import io.circe.Json
+import org.typelevel.otel4s.trace.Tracer
 import mcp4s.client.*
 import mcp4s.protocol.*
 import mcp4s.server.*
@@ -12,6 +13,8 @@ import mcp4s.client.transport.*
 import munit.CatsEffectSuite
 
 class IntegrationSpec extends CatsEffectSuite:
+
+  given Tracer[IO] = Tracer.noop[IO]
 
   // === Test Server Setup ===
 

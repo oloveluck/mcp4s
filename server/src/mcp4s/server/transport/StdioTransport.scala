@@ -10,6 +10,7 @@ import fs2.text
 import io.circe.*
 import io.circe.parser.*
 import io.circe.syntax.*
+import org.typelevel.otel4s.trace.Tracer
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 import mcp4s.server.*
@@ -29,8 +30,11 @@ object StdioTransport:
     *
     * Reads newline-delimited JSON-RPC messages from stdin and writes responses to stdout.
     * Runs until stdin is closed or the server receives a shutdown request.
+    *
+    * @param server The MCP server to run
+    * @param tracer Optional OpenTelemetry tracer for distributed tracing (defaults to noop)
     */
-  def run[F[_]: Async: Console](server: McpServer[F]): F[Unit] =
+  def run[F[_]: Async: Console](server: McpServer[F])(using Tracer[F]): F[Unit] =
     mcp4s.server.Dispatcher[F](server).flatMap { dispatcher =>
       val input: Stream[F, String] =
         stdin[F](DefaultBufferSize)

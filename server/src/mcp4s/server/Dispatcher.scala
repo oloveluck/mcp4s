@@ -5,6 +5,8 @@ import cats.effect.syntax.monadCancel.*
 import cats.syntax.all.*
 import io.circe.*
 import io.circe.syntax.*
+import org.typelevel.otel4s.Attribute
+import org.typelevel.otel4s.trace.{Span, Tracer}
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 
@@ -23,12 +25,16 @@ object Dispatcher:
   /** JSON-RPC error code for cancelled requests */
   private val CancelledErrorCode: Int = -32800
 
-  /** Create a new dispatcher for the given server */
-  def apply[F[_]: Concurrent](server: McpServer[F]): F[Dispatcher[F]] =
+  /** Create a new dispatcher for the given server.
+    *
+    * @param server The MCP server to dispatch requests to
+    * @param tracer Optional OpenTelemetry tracer for distributed tracing (defaults to noop)
+    */
+  def apply[F[_]: Concurrent](server: McpServer[F])(using Tracer[F]): F[Dispatcher[F]] =
     for
       stateRef <- Ref.of[F, State](State.Uninitialized)
       inFlightRef <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
-    yield new DispatcherImpl(server, stateRef, inFlightRef)
+    yield new DispatcherImpl(server, stateRef, inFlightRef, summon[Tracer[F]])
 
   private enum State:
     case Uninitialized
@@ -38,16 +44,23 @@ object Dispatcher:
   private class DispatcherImpl[F[_]: Concurrent](
       server: McpServer[F],
       stateRef: Ref[F, State],
-      inFlightRequests: Ref[F, Map[RequestId, Deferred[F, Unit]]]
+      inFlightRequests: Ref[F, Map[RequestId, Deferred[F, Unit]]],
+      tracer: Tracer[F]
   ) extends Dispatcher[F]:
 
     def dispatch(message: JsonRpcMessage): F[Option[JsonRpcMessage]] =
       message match
-        case req: JsonRpcRequest      => handleRequest(req).map(Some(_))
-        case notif: JsonRpcNotification => handleNotification(notif).as(None)
-        case _                        => Concurrent[F].pure(None)
+        case req: JsonRpcRequest =>
+          tracer.span("mcp.request", Attribute("mcp.method", req.method), Attribute("mcp.request_id", req.id.toString)).use { span =>
+            handleRequest(req, span).map(Some(_))
+          }
+        case notif: JsonRpcNotification =>
+          tracer.span("mcp.notification", Attribute("mcp.method", notif.method)).surround {
+            handleNotification(notif).as(None)
+          }
+        case _ => Concurrent[F].pure(None)
 
-    private def handleRequest(req: JsonRpcRequest): F[JsonRpcMessage] =
+    private def handleRequest(req: JsonRpcRequest, span: Span[F]): F[JsonRpcMessage] =
       (for
         cancelToken <- Deferred[F, Unit]
         _ <- inFlightRequests.update(_ + (req.id -> cancelToken))
@@ -63,11 +76,14 @@ object Dispatcher:
           )
         case Right(json) =>
           JsonRpcResponse(req.id, json)
-      ).handleError { err =>
+      ).handleErrorWith { err =>
         val rpcError = err match
           case e: McpError => McpError.toJsonRpcError(e)
           case e           => JsonRpcError.internalError(e.getMessage)
-        JsonRpcErrorResponse(req.id, rpcError)
+        span.addAttribute(Attribute("error", true)) *>
+          span.addAttribute(Attribute("error.type", err.getClass.getSimpleName)) *>
+          span.addAttribute(Attribute("error.message", err.getMessage)) *>
+          Concurrent[F].pure(JsonRpcErrorResponse(req.id, rpcError))
       }
 
     private def handleNotification(notif: JsonRpcNotification): F[Unit] =

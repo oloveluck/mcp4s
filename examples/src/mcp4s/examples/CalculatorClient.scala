@@ -2,6 +2,7 @@ package mcp4s.examples
 
 import cats.effect.{IO, IOApp}
 import io.circe.Json
+import org.typelevel.otel4s.trace.Tracer
 import mcp4s.client.*
 import mcp4s.protocol.*
 import mcp4s.client.transport.*
@@ -22,6 +23,7 @@ object CalculatorClient extends IOApp.Simple:
     .build
 
   def run: IO[Unit] =
+    given Tracer[IO] = Tracer.noop[IO]
     IO.println("Connecting to Calculator MCP Server...") *>
       HttpClientTransport.connect[IO](
         client,

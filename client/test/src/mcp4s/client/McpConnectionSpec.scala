@@ -3,6 +3,7 @@ package mcp4s.client
 import cats.effect.{Deferred, IO, Ref}
 import io.circe.*
 import io.circe.syntax.*
+import org.typelevel.otel4s.trace.Tracer
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 import munit.CatsEffectSuite
@@ -63,7 +64,8 @@ class McpConnectionSpec extends CatsEffectSuite:
       handler,
       notificationHandler,
       requestIdGen,
-      inFlightRef
+      inFlightRef,
+      Tracer.noop[IO]
     )
 
   def mockResponse(method: String, response: Json): JsonRpcRequest => IO[Json] =

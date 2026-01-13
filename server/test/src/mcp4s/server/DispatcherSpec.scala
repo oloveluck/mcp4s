@@ -2,11 +2,14 @@ package mcp4s.server
 
 import cats.effect.IO
 import io.circe.*
+import org.typelevel.otel4s.trace.Tracer
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 import munit.CatsEffectSuite
 
 class DispatcherSpec extends CatsEffectSuite:
+
+  given Tracer[IO] = Tracer.noop[IO]
 
   // === Test Fixtures ===
 

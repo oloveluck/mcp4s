@@ -6,6 +6,8 @@ import cats.effect.syntax.monadCancel.*
 import cats.syntax.all.*
 import io.circe.*
 import io.circe.syntax.*
+import org.typelevel.otel4s.Attribute
+import org.typelevel.otel4s.trace.Tracer
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 
@@ -21,7 +23,8 @@ class McpConnectionImpl[F[_]: Concurrent](
     sendRequest: JsonRpcRequest => F[Json],
     sendNotification: JsonRpcNotification => F[Unit],
     requestIdGen: Ref[F, Long],
-    inFlightRequests: Ref[F, Map[RequestId, Deferred[F, Unit]]]
+    inFlightRequests: Ref[F, Map[RequestId, Deferred[F, Unit]]],
+    tracer: Tracer[F]
 ) extends McpConnection[F]:
 
   private def nextId: F[RequestId] =
@@ -38,20 +41,31 @@ class McpConnectionImpl[F[_]: Concurrent](
     yield ()
 
   private def request[A](method: String, params: Json, decode: Json => F[A]): F[A] =
-    for
-      reqId <- nextId
-      cancelToken <- Deferred[F, Unit]
-      _ <- inFlightRequests.update(_ + (reqId -> cancelToken))
-      req = JsonRpcRequest(reqId, method, Some(params))
-      result <- Concurrent[F].race(
-        cancelToken.get,
-        sendRequest(req).flatMap(decode)
-      ).flatMap {
-        case Left(_)  => Concurrent[F].raiseError(McpError.RequestCancelled(reqId))
-        case Right(a) => Concurrent[F].pure(a)
-      }.guarantee(inFlightRequests.update(_ - reqId))
-        .onCancel(cancelAndNotify(reqId))
-    yield result
+    tracer.span(s"mcp.client.$method").use { span =>
+      for
+        reqId <- nextId
+        _ <- span.addAttribute(Attribute("mcp.request_id", reqId.toString))
+        cancelToken <- Deferred[F, Unit]
+        _ <- inFlightRequests.update(_ + (reqId -> cancelToken))
+        req = JsonRpcRequest(reqId, method, Some(params))
+        result <- Concurrent[F].race(
+          cancelToken.get,
+          sendRequest(req).flatMap(decode)
+        ).flatMap {
+          case Left(_)  =>
+            span.addAttribute(Attribute("mcp.cancelled", true)) *>
+              Concurrent[F].raiseError(McpError.RequestCancelled(reqId))
+          case Right(a) => Concurrent[F].pure(a)
+        }.guarantee(inFlightRequests.update(_ - reqId))
+          .onCancel(cancelAndNotify(reqId))
+          .handleErrorWith { err =>
+            span.addAttribute(Attribute("error", true)) *>
+              span.addAttribute(Attribute("error.type", err.getClass.getSimpleName)) *>
+              span.addAttribute(Attribute("error.message", err.getMessage)) *>
+              Concurrent[F].raiseError(err)
+          }
+      yield result
+    }
 
   private def requestJson(method: String, params: Json = Json.obj()): F[Json] =
     request(method, params, Concurrent[F].pure)

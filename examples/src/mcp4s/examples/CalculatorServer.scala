@@ -16,6 +16,7 @@ import mcp4s.protocol.{
   Tool,
   ToolResult
 }
+import org.typelevel.otel4s.trace.Tracer
 import mcp4s.server.*
 import mcp4s.server.transport.*
 
@@ -183,6 +184,7 @@ object CalculatorServer extends IOApp.Simple:
     .build
 
   def run: IO[Unit] =
+    given Tracer[IO] = Tracer.noop[IO]
     IO.println("Starting Calculator MCP Server on http://localhost:3000") *>
       HttpTransport.serve[IO](server, HttpConfig.default)
         .useForever
