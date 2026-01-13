@@ -17,7 +17,7 @@ jobs:
           distribution: 'temurin'
       - name: Setup Mill
         run: |
-          curl -L https://raw.githubusercontent.com/lefou/millw/main/millw > mill
+          curl -fLo mill https://repo1.maven.org/maven2/com/lihaoyi/mill-dist/1.0.6/mill-dist-1.0.6-mill.sh
           chmod +x mill
       - run: |
           ./mill mill.scalalib.PublishModule/publishAll \
