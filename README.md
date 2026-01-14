@@ -97,6 +97,33 @@ object StdioServer extends IOApp.Simple:
   def run: IO[Unit] = StdioTransport.run[IO](MyServer.server)
 ```
 
+### Configuring for Claude Code
+
+To use an MCP server with Claude Code, create a `.mcp.json` file in your project root:
+
+```json
+{
+  "mcpServers": {
+    "calculator": {
+      "command": "java",
+      "args": [
+        "-cp",
+        "out/examples/assembly.dest/out.jar",
+        "mcp4s.examples.CalculatorStdio"
+      ]
+    }
+  }
+}
+```
+
+First build the assembly jar:
+
+```bash
+mill examples.assembly
+```
+
+Then restart Claude Code to pick up the new server configuration.
+
 ## Building
 
 ```bash

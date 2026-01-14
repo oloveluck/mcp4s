@@ -16,3 +16,4 @@ out/
 *.log
 *.iml
 target/
+.mcp.json
