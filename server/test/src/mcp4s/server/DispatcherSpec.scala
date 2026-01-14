@@ -128,8 +128,8 @@ class DispatcherSpec extends CatsEffectSuite:
     yield
       response match
         case JsonRpcResponse(_, result) =>
-          // Server responds with its own version
-          assertEquals(result.hcursor.get[String]("protocolVersion"), Right("2025-11-25"))
+          // Server echoes back client's version for backwards compatibility
+          assertEquals(result.hcursor.get[String]("protocolVersion"), Right("2024-11-05"))
         case _ => fail("Expected response for compatible version")
   }
 
