@@ -135,7 +135,7 @@ object Codecs:
 
   // === MCP Types ===
 
-  given Encoder[ServerInfo] = deriveEncoder
+  given Encoder[ServerInfo] = deriveEncoder[ServerInfo].mapJson(_.dropNullValues)
   given Decoder[ServerInfo] = deriveDecoder
 
   given Encoder[ClientInfo] = deriveEncoder
@@ -146,13 +146,13 @@ object Codecs:
 
   // === Capabilities ===
 
-  given Encoder[ToolsCapability] = deriveEncoder
+  given Encoder[ToolsCapability] = deriveEncoder[ToolsCapability].mapJson(_.dropNullValues)
   given Decoder[ToolsCapability] = deriveDecoder
 
-  given Encoder[ResourcesCapability] = deriveEncoder
+  given Encoder[ResourcesCapability] = deriveEncoder[ResourcesCapability].mapJson(_.dropNullValues)
   given Decoder[ResourcesCapability] = deriveDecoder
 
-  given Encoder[PromptsCapability] = deriveEncoder
+  given Encoder[PromptsCapability] = deriveEncoder[PromptsCapability].mapJson(_.dropNullValues)
   given Decoder[PromptsCapability] = deriveDecoder
 
   given Encoder[LoggingCapability] = Encoder.instance(_ => Json.obj())
@@ -171,7 +171,7 @@ object Codecs:
   given Encoder[ServerTasksCapability] = deriveEncoder
   given Decoder[ServerTasksCapability] = deriveDecoder
 
-  given Encoder[ServerCapabilities] = deriveEncoder
+  given Encoder[ServerCapabilities] = deriveEncoder[ServerCapabilities].mapJson(_.dropNullValues)
   given Decoder[ServerCapabilities] = deriveDecoder
 
   // Client tasks
@@ -201,10 +201,10 @@ object Codecs:
 
   // === JSON Schema ===
 
-  given Encoder[JsonSchemaProperty] = deriveEncoder
+  given Encoder[JsonSchemaProperty] = deriveEncoder[JsonSchemaProperty].mapJson(_.dropNullValues)
   given Decoder[JsonSchemaProperty] = deriveDecoder
 
-  given Encoder[JsonSchema] = deriveEncoder
+  given Encoder[JsonSchema] = deriveEncoder[JsonSchema].mapJson(_.dropNullValues)
   given Decoder[JsonSchema] = deriveDecoder
 
   // === Tools ===
@@ -228,7 +228,7 @@ object Codecs:
   given Encoder[ToolExecution] = deriveEncoder
   given Decoder[ToolExecution] = deriveDecoder
 
-  given Encoder[Tool] = deriveEncoder
+  given Encoder[Tool] = deriveEncoder[Tool].mapJson(_.dropNullValues)
   given Decoder[Tool] = deriveDecoder
 
   // === Content Types ===
@@ -366,7 +366,7 @@ object Codecs:
     }
   }
 
-  given Encoder[ToolResult] = deriveEncoder
+  given Encoder[ToolResult] = deriveEncoder[ToolResult].mapJson(_.dropNullValues)
   given Decoder[ToolResult] = deriveDecoder
 
   // === Resources ===
@@ -410,7 +410,7 @@ object Codecs:
   given Encoder[InitializeParams] = deriveEncoder
   given Decoder[InitializeParams] = deriveDecoder
 
-  given Encoder[InitializeResult] = deriveEncoder
+  given Encoder[InitializeResult] = deriveEncoder[InitializeResult].mapJson(_.dropNullValues)
   given Decoder[InitializeResult] = deriveDecoder
 
   // === Logging ===

@@ -180,8 +180,12 @@ object Dispatcher:
         else
           stateRef.get.flatMap {
             case State.Uninitialized =>
+              // Echo back client's version if supported for backwards compatibility
+              val negotiatedVersion =
+                if McpVersion.Supported.contains(clientVersion) then clientVersion
+                else McpVersion.Current
               val result = InitializeResult(
-                protocolVersion = McpVersion.Current,
+                protocolVersion = negotiatedVersion,
                 capabilities = server.capabilities,
                 serverInfo = server.info
               )
