@@ -20,16 +20,17 @@ final class McpClientBuilder[F[_]: Concurrent] private (
     private val roots: List[Root],
     private val samplingHandler: Option[CreateMessageParams => F[CreateMessageResult]],
     private val elicitationHandler: Option[ElicitParams => F[ElicitResult]],
+    private val elicitationCompleteHandler: Option[ElicitationCompleteParams => F[Unit]],
     private val rootsListChanged: Boolean
 ):
 
   /** Set the client info */
   def withInfo(info: ClientInfo): McpClientBuilder[F] =
-    new McpClientBuilder(info, roots, samplingHandler, elicitationHandler, rootsListChanged)
+    new McpClientBuilder(info, roots, samplingHandler, elicitationHandler, elicitationCompleteHandler, rootsListChanged)
 
   /** Set roots that can be exposed to servers */
   def withRoots(newRoots: List[Root]): McpClientBuilder[F] =
-    new McpClientBuilder(clientInfo, newRoots, samplingHandler, elicitationHandler, true)
+    new McpClientBuilder(clientInfo, newRoots, samplingHandler, elicitationHandler, elicitationCompleteHandler, true)
 
   /** Add a single root */
   def withRoot(root: Root): McpClientBuilder[F] =
@@ -41,11 +42,15 @@ final class McpClientBuilder[F[_]: Concurrent] private (
 
   /** Register sampling handler for server-initiated LLM requests */
   def withSamplingHandler(handler: CreateMessageParams => F[CreateMessageResult]): McpClientBuilder[F] =
-    new McpClientBuilder(clientInfo, roots, Some(handler), elicitationHandler, rootsListChanged)
+    new McpClientBuilder(clientInfo, roots, Some(handler), elicitationHandler, elicitationCompleteHandler, rootsListChanged)
 
   /** Register elicitation handler for server-initiated user input */
   def withElicitationHandler(handler: ElicitParams => F[ElicitResult]): McpClientBuilder[F] =
-    new McpClientBuilder(clientInfo, roots, samplingHandler, Some(handler), rootsListChanged)
+    new McpClientBuilder(clientInfo, roots, samplingHandler, Some(handler), elicitationCompleteHandler, rootsListChanged)
+
+  /** Register handler for URL mode elicitation completion notifications */
+  def withElicitationCompleteHandler(handler: ElicitationCompleteParams => F[Unit]): McpClientBuilder[F] =
+    new McpClientBuilder(clientInfo, roots, samplingHandler, elicitationHandler, Some(handler), rootsListChanged)
 
   /** Build the client with computed capabilities */
   def build: McpClient[F] =
@@ -54,14 +59,15 @@ final class McpClientBuilder[F[_]: Concurrent] private (
       sampling = samplingHandler.map(_ => SamplingCapability()),
       elicitation = elicitationHandler.map(_ => ElicitationCapability())
     )
-    new BuiltMcpClient[F](clientInfo, caps, roots, samplingHandler, elicitationHandler)
+    new BuiltMcpClient[F](clientInfo, caps, roots, samplingHandler, elicitationHandler, elicitationCompleteHandler)
 
 private[client] final class BuiltMcpClient[F[_]: Concurrent](
     val info: ClientInfo,
     val capabilities: ClientCapabilities,
     private val roots: List[Root],
     private val samplingHandler: Option[CreateMessageParams => F[CreateMessageResult]],
-    private val elicitationHandler: Option[ElicitParams => F[ElicitResult]]
+    private val elicitationHandler: Option[ElicitParams => F[ElicitResult]],
+    private val elicitationCompleteHandler: Option[ElicitationCompleteParams => F[Unit]]
 ) extends McpClient[F]:
 
   def listRoots: F[ListRootsResult] =
@@ -79,11 +85,17 @@ private[client] final class BuiltMcpClient[F[_]: Concurrent](
       case None =>
         Concurrent[F].raiseError(McpError.MethodNotSupported("elicitation/create"))
 
+  def onElicitationComplete(params: ElicitationCompleteParams): F[Unit] =
+    elicitationCompleteHandler match
+      case Some(handler) => handler(params)
+      case None          => Concurrent[F].unit  // Silently ignore if no handler
+
 object McpClientBuilder:
   def empty[F[_]: Concurrent]: McpClientBuilder[F] =
     new McpClientBuilder[F](
       ClientInfo("mcp4s-client", "0.1.0"),
       Nil,
+      None,
       None,
       None,
       false

@@ -48,3 +48,12 @@ final case class ElicitResult(
     action: ElicitAction,
     content: Option[Map[String, Json]] = None  // Form field values when accepted
 )
+
+/** Parameters for notifications/elicitation/complete
+  * Sent by server to notify client that URL mode elicitation completed
+  * Spec ref: schema.ts ElicitationCompleteNotification
+  */
+final case class ElicitationCompleteParams(
+    elicitationId: String,
+    result: ElicitResult
+)

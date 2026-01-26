@@ -1,0 +1,22 @@
+# Mill output
+out/
+
+# IDE
+.idea/
+.bsp/
+.metals/
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yaml
+.dockerignore
+
+# Other
+*.md
+LICENSE
+.claude/

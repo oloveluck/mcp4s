@@ -36,7 +36,7 @@ object Codecs:
 
   // === JsonRpcError ===
 
-  given Encoder[JsonRpcError] = deriveEncoder
+  given Encoder[JsonRpcError] = deriveEncoder[JsonRpcError].mapJson(_.dropNullValues)
   given Decoder[JsonRpcError] = deriveDecoder
 
   // === JSON-RPC Messages ===
@@ -127,10 +127,10 @@ object Codecs:
 
   // === Common Types ===
 
-  given Encoder[Icon] = deriveEncoder
+  given Encoder[Icon] = deriveEncoder[Icon].mapJson(_.dropNullValues)
   given Decoder[Icon] = deriveDecoder
 
-  given Encoder[Annotations] = deriveEncoder
+  given Encoder[Annotations] = deriveEncoder[Annotations].mapJson(_.dropNullValues)
   given Decoder[Annotations] = deriveDecoder
 
   // === MCP Types ===
@@ -138,10 +138,10 @@ object Codecs:
   given Encoder[ServerInfo] = deriveEncoder[ServerInfo].mapJson(_.dropNullValues)
   given Decoder[ServerInfo] = deriveDecoder
 
-  given Encoder[ClientInfo] = deriveEncoder
+  given Encoder[ClientInfo] = deriveEncoder[ClientInfo].mapJson(_.dropNullValues)
   given Decoder[ClientInfo] = deriveDecoder
 
-  given Encoder[Implementation] = deriveEncoder
+  given Encoder[Implementation] = deriveEncoder[Implementation].mapJson(_.dropNullValues)
   given Decoder[Implementation] = deriveDecoder
 
   // === Capabilities ===
@@ -162,41 +162,41 @@ object Codecs:
   given Decoder[CompletionsCapability] = Decoder.instance(_ => Right(CompletionsCapability()))
 
   // Server tasks
-  given Encoder[ToolTaskRequests] = deriveEncoder
+  given Encoder[ToolTaskRequests] = deriveEncoder[ToolTaskRequests].mapJson(_.dropNullValues)
   given Decoder[ToolTaskRequests] = deriveDecoder
 
-  given Encoder[ServerTaskRequests] = deriveEncoder
+  given Encoder[ServerTaskRequests] = deriveEncoder[ServerTaskRequests].mapJson(_.dropNullValues)
   given Decoder[ServerTaskRequests] = deriveDecoder
 
-  given Encoder[ServerTasksCapability] = deriveEncoder
+  given Encoder[ServerTasksCapability] = deriveEncoder[ServerTasksCapability].mapJson(_.dropNullValues)
   given Decoder[ServerTasksCapability] = deriveDecoder
 
   given Encoder[ServerCapabilities] = deriveEncoder[ServerCapabilities].mapJson(_.dropNullValues)
   given Decoder[ServerCapabilities] = deriveDecoder
 
   // Client tasks
-  given Encoder[SamplingTaskRequests] = deriveEncoder
+  given Encoder[SamplingTaskRequests] = deriveEncoder[SamplingTaskRequests].mapJson(_.dropNullValues)
   given Decoder[SamplingTaskRequests] = deriveDecoder
 
-  given Encoder[ElicitationTaskRequests] = deriveEncoder
+  given Encoder[ElicitationTaskRequests] = deriveEncoder[ElicitationTaskRequests].mapJson(_.dropNullValues)
   given Decoder[ElicitationTaskRequests] = deriveDecoder
 
-  given Encoder[ClientTaskRequests] = deriveEncoder
+  given Encoder[ClientTaskRequests] = deriveEncoder[ClientTaskRequests].mapJson(_.dropNullValues)
   given Decoder[ClientTaskRequests] = deriveDecoder
 
-  given Encoder[ClientTasksCapability] = deriveEncoder
+  given Encoder[ClientTasksCapability] = deriveEncoder[ClientTasksCapability].mapJson(_.dropNullValues)
   given Decoder[ClientTasksCapability] = deriveDecoder
 
-  given Encoder[ElicitationCapability] = deriveEncoder
+  given Encoder[ElicitationCapability] = deriveEncoder[ElicitationCapability].mapJson(_.dropNullValues)
   given Decoder[ElicitationCapability] = deriveDecoder
 
-  given Encoder[RootsCapability] = deriveEncoder
+  given Encoder[RootsCapability] = deriveEncoder[RootsCapability].mapJson(_.dropNullValues)
   given Decoder[RootsCapability] = deriveDecoder
 
-  given Encoder[SamplingCapability] = deriveEncoder
+  given Encoder[SamplingCapability] = deriveEncoder[SamplingCapability].mapJson(_.dropNullValues)
   given Decoder[SamplingCapability] = deriveDecoder
 
-  given Encoder[ClientCapabilities] = deriveEncoder
+  given Encoder[ClientCapabilities] = deriveEncoder[ClientCapabilities].mapJson(_.dropNullValues)
   given Decoder[ClientCapabilities] = deriveDecoder
 
   // === JSON Schema ===
@@ -209,7 +209,7 @@ object Codecs:
 
   // === Tools ===
 
-  given Encoder[ToolAnnotations] = deriveEncoder
+  given Encoder[ToolAnnotations] = deriveEncoder[ToolAnnotations].mapJson(_.dropNullValues)
   given Decoder[ToolAnnotations] = deriveDecoder
 
   given Encoder[TaskSupport] = Encoder.encodeString.contramap {
@@ -225,7 +225,7 @@ object Codecs:
     case other       => Left(s"Unknown task support: $other")
   }
 
-  given Encoder[ToolExecution] = deriveEncoder
+  given Encoder[ToolExecution] = deriveEncoder[ToolExecution].mapJson(_.dropNullValues)
   given Decoder[ToolExecution] = deriveDecoder
 
   given Encoder[Tool] = deriveEncoder[Tool].mapJson(_.dropNullValues)
@@ -371,21 +371,21 @@ object Codecs:
 
   // === Resources ===
 
-  given Encoder[Resource] = deriveEncoder
+  given Encoder[Resource] = deriveEncoder[Resource].mapJson(_.dropNullValues)
   given Decoder[Resource] = deriveDecoder
 
-  given Encoder[ResourceTemplate] = deriveEncoder
+  given Encoder[ResourceTemplate] = deriveEncoder[ResourceTemplate].mapJson(_.dropNullValues)
   given Decoder[ResourceTemplate] = deriveDecoder
 
-  given Encoder[ResourceContent] = deriveEncoder
+  given Encoder[ResourceContent] = deriveEncoder[ResourceContent].mapJson(_.dropNullValues)
   given Decoder[ResourceContent] = deriveDecoder
 
   // === Prompts ===
 
-  given Encoder[PromptArgument] = deriveEncoder
+  given Encoder[PromptArgument] = deriveEncoder[PromptArgument].mapJson(_.dropNullValues)
   given Decoder[PromptArgument] = deriveDecoder
 
-  given Encoder[Prompt] = deriveEncoder
+  given Encoder[Prompt] = deriveEncoder[Prompt].mapJson(_.dropNullValues)
   given Decoder[Prompt] = deriveDecoder
 
   given Encoder[Role] = Encoder.encodeString.contramap {
@@ -399,15 +399,15 @@ object Codecs:
     case other       => Left(s"Unknown role: $other")
   }
 
-  given Encoder[PromptMessage] = deriveEncoder
+  given Encoder[PromptMessage] = deriveEncoder[PromptMessage].mapJson(_.dropNullValues)
   given Decoder[PromptMessage] = deriveDecoder
 
-  given Encoder[GetPromptResult] = deriveEncoder
+  given Encoder[GetPromptResult] = deriveEncoder[GetPromptResult].mapJson(_.dropNullValues)
   given Decoder[GetPromptResult] = deriveDecoder
 
   // === Lifecycle ===
 
-  given Encoder[InitializeParams] = deriveEncoder
+  given Encoder[InitializeParams] = deriveEncoder[InitializeParams].mapJson(_.dropNullValues)
   given Decoder[InitializeParams] = deriveDecoder
 
   given Encoder[InitializeResult] = deriveEncoder[InitializeResult].mapJson(_.dropNullValues)
@@ -438,7 +438,7 @@ object Codecs:
     case other       => Left(s"Unknown log level: $other")
   }
 
-  given Encoder[LogMessage] = deriveEncoder
+  given Encoder[LogMessage] = deriveEncoder[LogMessage].mapJson(_.dropNullValues)
   given Decoder[LogMessage] = deriveDecoder
 
   // === Pagination ===
@@ -448,18 +448,18 @@ object Codecs:
 
   // === Notifications ===
 
-  given Encoder[CancelledParams] = deriveEncoder
+  given Encoder[CancelledParams] = deriveEncoder[CancelledParams].mapJson(_.dropNullValues)
   given Decoder[CancelledParams] = deriveDecoder
 
-  given Encoder[ProgressParams] = deriveEncoder
+  given Encoder[ProgressParams] = deriveEncoder[ProgressParams].mapJson(_.dropNullValues)
   given Decoder[ProgressParams] = deriveDecoder
 
   // === Roots (Client Feature) ===
 
-  given Encoder[Root] = deriveEncoder
+  given Encoder[Root] = deriveEncoder[Root].mapJson(_.dropNullValues)
   given Decoder[Root] = deriveDecoder
 
-  given Encoder[ListRootsResult] = deriveEncoder
+  given Encoder[ListRootsResult] = deriveEncoder[ListRootsResult].mapJson(_.dropNullValues)
   given Decoder[ListRootsResult] = deriveDecoder
 
   // === Sampling (Client Feature) ===
@@ -560,10 +560,10 @@ object Codecs:
     yield SamplingMessage(role, content, meta)
   }
 
-  given Encoder[ModelHint] = deriveEncoder
+  given Encoder[ModelHint] = deriveEncoder[ModelHint].mapJson(_.dropNullValues)
   given Decoder[ModelHint] = deriveDecoder
 
-  given Encoder[ModelPreferences] = deriveEncoder
+  given Encoder[ModelPreferences] = deriveEncoder[ModelPreferences].mapJson(_.dropNullValues)
   given Decoder[ModelPreferences] = deriveDecoder
 
   given Encoder[ToolChoice] = Encoder.instance {
@@ -581,7 +581,7 @@ object Codecs:
     }
   }
 
-  given Encoder[CreateMessageParams] = deriveEncoder
+  given Encoder[CreateMessageParams] = deriveEncoder[CreateMessageParams].mapJson(_.dropNullValues)
   given Decoder[CreateMessageParams] = deriveDecoder
 
   given Encoder[CreateMessageResult] = Encoder.instance { cmr =>
@@ -670,4 +670,60 @@ object Codecs:
       action <- cursor.get[ElicitAction]("action")
       content <- cursor.get[Option[Map[String, Json]]]("content")
     yield ElicitResult(action, content)
+  }
+
+  given Encoder[ElicitationCompleteParams] = Encoder.instance { ecp =>
+    Json.obj(
+      "elicitationId" -> Json.fromString(ecp.elicitationId),
+      "result" -> ecp.result.asJson
+    )
+  }
+
+  given Decoder[ElicitationCompleteParams] = Decoder.instance { cursor =>
+    for
+      elicitationId <- cursor.get[String]("elicitationId")
+      result <- cursor.get[ElicitResult]("result")
+    yield ElicitationCompleteParams(elicitationId, result)
+  }
+
+  // === OAuth / Protected Resource Metadata (RFC 9728) ===
+
+  given Encoder[ProtectedResourceMetadata] = Encoder.instance { prm =>
+    Json.obj(
+      "resource" -> Json.fromString(prm.resource),
+      "authorization_servers" -> Json.arr(prm.authorizationServers.map(Json.fromString)*),
+      "scopes_supported" -> prm.scopesSupported.fold(Json.Null)(ss => Json.arr(ss.map(Json.fromString)*)),
+      "bearer_methods_supported" -> prm.bearerMethodsSupported.fold(Json.Null)(bms => Json.arr(bms.map(Json.fromString)*))
+    ).dropNullValues
+  }
+
+  given Decoder[ProtectedResourceMetadata] = Decoder.instance { cursor =>
+    for
+      resource <- cursor.get[String]("resource")
+      authServers <- cursor.get[List[String]]("authorization_servers")
+      scopes <- cursor.get[Option[List[String]]]("scopes_supported")
+      bearerMethods <- cursor.get[Option[List[String]]]("bearer_methods_supported")
+    yield ProtectedResourceMetadata(resource, authServers, scopes, bearerMethods)
+  }
+
+  given Encoder[TokenInfo] = Encoder.instance { ti =>
+    Json.obj(
+      "subject" -> Json.fromString(ti.subject),
+      "audience" -> ti.audience.fold(Json.Null)(Json.fromString),
+      "scopes" -> Json.arr(ti.scopes.toSeq.map(Json.fromString)*),
+      "issuer" -> ti.issuer.fold(Json.Null)(Json.fromString),
+      "expiration" -> ti.expiration.fold(Json.Null)(Json.fromLong),
+      "claims" -> Json.fromFields(ti.claims)
+    ).dropNullValues
+  }
+
+  given Decoder[TokenInfo] = Decoder.instance { cursor =>
+    for
+      subject <- cursor.get[String]("subject")
+      audience <- cursor.get[Option[String]]("audience")
+      scopes <- cursor.get[Option[List[String]]]("scopes")
+      issuer <- cursor.get[Option[String]]("issuer")
+      expiration <- cursor.get[Option[Long]]("expiration")
+      claims <- cursor.get[Option[Map[String, Json]]]("claims")
+    yield TokenInfo(subject, audience, scopes.getOrElse(Nil).toSet, issuer, expiration, claims.getOrElse(Map.empty))
   }

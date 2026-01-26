@@ -28,7 +28,7 @@ trait Mcp4sModule extends ScalaModule with ScalafmtModule with PublishModule {
     "-Xfatal-warnings"
   )
 
-  def publishVersion = "0.1.0"
+  def publishVersion = "0.1.1"
 
   def pomSettings = PomSettings(
     description = "MCP (Model Context Protocol) for Scala",
@@ -89,6 +89,17 @@ object client extends Mcp4sModule {
   object test extends Mcp4sTests
 }
 
+object postgres extends Mcp4sModule {
+  def moduleDeps = Seq(server)
+
+  def mvnDeps = Seq(
+    mvn"org.typelevel::cats-effect::${Versions.catsEffect}",
+    mvn"org.tpolecat::skunk-core::1.0.0-M12"
+  )
+
+  object test extends Mcp4sTests
+}
+
 object examples extends ScalaModule with ScalafmtModule {
   def scalaVersion = Versions.scala
 
@@ -110,4 +121,19 @@ object examples extends ScalaModule with ScalafmtModule {
   }
 
   object test extends Mcp4sTests
+}
+
+/** Run the MCP Inspector UI against the calculator server.
+  *
+  * Usage: mill inspector
+  *
+  * This starts the MCP Inspector web UI connected to the calculator server
+  * running on http://localhost:3001. Make sure the server is running first
+  * (e.g., via `docker compose up`).
+  */
+def inspector(): Command[Unit] = Task.Command {
+  os.proc("npx", "@modelcontextprotocol/inspector",
+    "--transport", "http",
+    "--server-url", "http://localhost:3001/mcp"
+  ).call(stdin = os.Inherit, stdout = os.Inherit, stderr = os.Inherit)
 }
