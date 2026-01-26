@@ -1,0 +1,71 @@
+name: Release
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'build.mill'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need previous commit to compare
+
+      - name: Check for version change
+        id: version
+        run: |
+          # Extract current version
+          CURRENT=$(grep 'def publishVersion' build.mill | sed 's/.*"\(.*\)".*/\1/')
+          echo "current=$CURRENT" >> $GITHUB_OUTPUT
+
+          # Extract previous version
+          git show HEAD~1:build.mill > /tmp/old_build.mill 2>/dev/null || echo 'def publishVersion = "0.0.0"' > /tmp/old_build.mill
+          PREVIOUS=$(grep 'def publishVersion' /tmp/old_build.mill | sed 's/.*"\(.*\)".*/\1/')
+          echo "previous=$PREVIOUS" >> $GITHUB_OUTPUT
+
+          # Check if changed
+          if [ "$CURRENT" != "$PREVIOUS" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Version changed: $PREVIOUS -> $CURRENT"
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "Version unchanged: $CURRENT"
+          fi
+
+      - name: Create Release
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=${{ steps.version.outputs.current }}
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --generate-notes
+
+      - uses: actions/setup-java@v4
+        if: steps.version.outputs.changed == 'true'
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Mill
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          curl -fLo mill https://repo1.maven.org/maven2/com/lihaoyi/mill-dist/1.0.6/mill-dist-1.0.6-mill.sh
+          chmod +x mill
+
+      - name: Publish
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          ./mill mill.scalalib.PublishModule/publishAll \
+            --publishArtifacts __.publishArtifacts \
+            --releaseUri https://maven.pkg.github.com/mcp4s/mcp4s \
+            --snapshotUri https://maven.pkg.github.com/mcp4s/mcp4s
+        env:
+          MILL_MAVEN_USERNAME: ${{ github.actor }}
+          MILL_MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
