@@ -213,6 +213,44 @@ private class WebSocketSession[F[_]: Async](
           }
         }
 
+  /** ElicitationRequester for this session (cached instance) */
+  val elicitationRequester: ElicitationRequester[F] =
+    new ElicitationRequester[F]:
+      def supportsElicitation: Boolean = true  // Actual check happens in elicit
+
+      def elicit(params: ElicitParams): F[ElicitResult] =
+        tracer.span("mcp.elicitation.create").surround {
+          clientCapsRef.get.flatMap {
+            case Some(caps) if caps.elicitation.isDefined =>
+              sendRequest[ElicitResult](McpMethod.ElicitationCreate, params.asJson)
+            case _ =>
+              Async[F].raiseError(McpError.ElicitationNotSupported())
+          }
+        }
+
+  /** Send a progress notification */
+  private def sendProgressNotification(token: RequestId, prog: Double, total: Option[Double]): F[Unit] =
+    val notification = JsonRpcNotification(
+      McpMethod.Progress,
+      Some(ProgressParams(token, prog, total).asJson)
+    )
+    sendNotification(notification)
+
+  /** Send a logging notification */
+  private def sendLoggingNotification(level: LogLevel, message: String, data: Option[Json]): F[Unit] =
+    val notification = JsonRpcNotification(
+      McpMethod.LoggingMessage,
+      Some(LogMessage(level, None, data.getOrElse(Json.fromString(message))).asJson)
+    )
+    sendNotification(notification)
+
+  /** Send a notification through the WebSocket */
+  private def sendNotification(notification: JsonRpcNotification): F[Unit] =
+    outQueueRef.get.flatMap {
+      case Some(queue) => queue.offer(WebSocketFrame.Text(notification.asJson.noSpaces))
+      case None => Async[F].unit
+    }
+
   private def sendRequest[A: Decoder](method: String, params: Json): F[A] =
     for
       reqId <- nextRequestId
@@ -268,8 +306,14 @@ private object WebSocketSession:
       outQueueRef <- Ref.of[F, Option[Queue[F, WebSocketFrame]]](None)
       // Create session
       session = new WebSocketSession(dispatcherRef, requestIdGen, pendingRequests, clientCapsRef, outQueueRef, tracer)
-      // Create context factory that uses this session's sampling requester
-      contextFactory = (reqId: RequestId) => ToolContext.minimal[F](session.samplingRequester, reqId)
+      // Create context factory with full capabilities: sampling, elicitation, progress, logging
+      contextFactory = (reqId: RequestId) => ToolContext[F](
+        session.samplingRequester,
+        session.elicitationRequester,
+        reqId,
+        session.sendProgressNotification,
+        session.sendLoggingNotification
+      )
       // Create dispatcher with context factory
       dispatcher <- Dispatcher.withContext[F](server, contextFactory)
       // Set the dispatcher
