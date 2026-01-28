@@ -173,9 +173,90 @@ Provides:
 ## Building
 
 ```bash
-mill __.compile     # Compile all modules
-mill __.test        # Run all tests
+mill __.compile       # Compile all modules
 mill __.publishLocal  # Publish locally
+```
+
+## Testing
+
+### Unit Tests
+
+Unit tests use munit-cats-effect for async testing and munit-scalacheck for property-based testing.
+
+```bash
+mill __.test          # Run all unit tests
+mill unitTests        # Run core, server, client, postgres tests
+mill core.test        # Run tests for a single module
+mill core.test.testOnly mcp4s.protocol.PropertySpec  # Run a specific test class
+```
+
+### Conformance Tests
+
+MCP conformance tests verify protocol compliance using the [official MCP Conformance Test Framework](https://github.com/modelcontextprotocol/conformance). These tests validate that mcp4s correctly implements the MCP specification.
+
+#### Prerequisites
+
+- Node.js 18+
+- Install conformance test dependencies (first time only):
+  ```bash
+  cd conformance && npm install && cd ..
+  ```
+
+#### Running Conformance Tests
+
+First, start the conformance test server (implements all required test tools, resources, and prompts):
+
+```bash
+mill examples.runMain mcp4s.examples.ConformanceServer
+```
+
+Then run the conformance tests:
+
+```bash
+# Run active test scenarios (recommended for CI)
+mill conformance
+
+# Run a specific scenario
+mill conformance --scenario server-initialize
+mill conformance --scenario tools-list
+mill conformance --scenario tools-call-simple-text
+
+# Run all scenarios (including pending/experimental)
+mill conformance --suite all
+
+# Test against a different server URL
+mill conformance --url http://localhost:8080/mcp
+
+# Show detailed output
+mill conformance --verbose
+```
+
+#### Available Scenarios
+
+List all available test scenarios:
+
+```bash
+mill conformanceList
+```
+
+Key scenarios include:
+
+| Category | Scenarios |
+|----------|-----------|
+| Lifecycle | `server-initialize`, `ping` |
+| Tools | `tools-list`, `tools-call-simple-text`, `tools-call-image`, `tools-call-error` |
+| Resources | `resources-list`, `resources-read-text`, `resources-read-binary` |
+| Prompts | `prompts-list`, `prompts-get-simple`, `prompts-get-with-args` |
+| Logging | `logging-set-level` |
+
+#### Expected Failures
+
+The `conformance-baseline.yml` file tracks scenarios that don't yet pass. This allows CI to pass while still catching regressions. When you fix a scenario, remove it from the baseline.
+
+```bash
+# CI will fail if:
+# - A scenario fails that's NOT in the baseline (regression)
+# - A scenario passes that IS in the baseline (stale entry)
 ```
 
 ## Running Examples
