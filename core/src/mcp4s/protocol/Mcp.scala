@@ -228,7 +228,15 @@ final case class JsonSchema(
 final case class JsonSchemaProperty(
     `type`: String,
     description: Option[String] = None,
-    `enum`: Option[List[String]] = None
+    `enum`: Option[List[String]] = None,
+    // SEP-1034: Default values
+    default: Option[Json] = None,
+    // SEP-1330: Titled enums
+    oneOf: Option[List[Json]] = None,      // [{const: "val", title: "Label"}, ...]
+    enumNames: Option[List[String]] = None, // Legacy titled enums
+    // SEP-1330: Array types with enums
+    items: Option[JsonSchemaProperty] = None,
+    anyOf: Option[List[Json]] = None        // For titled multi-select
 )
 
 object JsonSchema:
@@ -279,6 +287,58 @@ object JsonSchema:
 
   def stringEnum(values: List[String], description: String): JsonSchemaProperty =
     JsonSchemaProperty("string", Some(description), Some(values))
+
+  // === SEP-1034: Property constructors with default values ===
+
+  def stringWithDefault(description: String, default: String): JsonSchemaProperty =
+    JsonSchemaProperty("string", Some(description), None, Some(Json.fromString(default)))
+
+  def integerWithDefault(description: String, default: Int): JsonSchemaProperty =
+    JsonSchemaProperty("integer", Some(description), None, Some(Json.fromInt(default)))
+
+  def booleanWithDefault(description: String, default: Boolean): JsonSchemaProperty =
+    JsonSchemaProperty("boolean", Some(description), None, Some(Json.fromBoolean(default)))
+
+  def numberWithDefault(description: String, default: Double): JsonSchemaProperty =
+    JsonSchemaProperty("number", Some(description), None, Some(Json.fromDoubleOrNull(default)))
+
+  // === SEP-1330: Titled enum constructors ===
+
+  /** Create a titled enum property using oneOf with const/title pairs */
+  def titledEnum(values: List[(String, String)], description: Option[String] = None): JsonSchemaProperty =
+    val oneOfList = values.map { case (value, title) =>
+      Json.obj("const" -> Json.fromString(value), "title" -> Json.fromString(title))
+    }
+    JsonSchemaProperty("string", description, None, None, Some(oneOfList))
+
+  /** Create a titled enum property using oneOf with const/title pairs (convenience overload) */
+  def titledEnum(description: String, values: (String, String)*): JsonSchemaProperty =
+    titledEnum(values.toList, Some(description))
+
+  /** Create an array property with items schema */
+  def array(items: JsonSchemaProperty, description: Option[String] = None): JsonSchemaProperty =
+    JsonSchemaProperty("array", description, None, None, None, None, Some(items))
+
+  /** Create an array property with items schema (convenience overload) */
+  def array(description: String, items: JsonSchemaProperty): JsonSchemaProperty =
+    array(items, Some(description))
+
+  /** Create a string enum with a default value */
+  def stringEnumWithDefault(values: List[String], default: String, description: Option[String] = None): JsonSchemaProperty =
+    JsonSchemaProperty("string", description, Some(values), Some(Json.fromString(default)))
+
+  /** Create a legacy titled enum using enumNames (deprecated but needed for conformance) */
+  def legacyTitledEnum(values: List[String], names: List[String], description: Option[String] = None): JsonSchemaProperty =
+    JsonSchemaProperty("string", description, Some(values), None, None, Some(names))
+
+  /** Create an array with titled multi-select using anyOf */
+  def titledMultiSelect(values: List[(String, String)], description: Option[String] = None): JsonSchemaProperty =
+    val anyOfList = values.map { case (value, title) =>
+      Json.obj("const" -> Json.fromString(value), "title" -> Json.fromString(title))
+    }
+    JsonSchemaProperty("array", description, None, None, None, None,
+      Some(JsonSchemaProperty("string", None, None, None, None, None, None, Some(anyOfList)))
+    )
 
   // === Extension for fluent required fields ===
 

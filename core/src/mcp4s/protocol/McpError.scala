@@ -64,6 +64,10 @@ object McpError:
   final case class SamplingNotSupported()
       extends McpError("Client does not support sampling")
 
+  /** Client does not support elicitation capability */
+  final case class ElicitationNotSupported()
+      extends McpError("Client does not support elicitation")
+
   /** Convert a JSON-RPC error to a typed McpError */
   def fromJsonRpcError(error: JsonRpcError): McpError = error.code match
     case JsonRpcErrorCode.MethodNotFound => MethodNotFound(error.message)
@@ -85,5 +89,6 @@ object McpError:
     case MethodNotSupported(_) => JsonRpcError.methodNotFound(err.message)
     case RequestCancelled(_)   => JsonRpcError(-32800, err.message, None)
     case CapabilityNotSupported(_) => JsonRpcError.invalidRequest(err.message)
-    case SamplingNotSupported()    => JsonRpcError.invalidRequest(err.message)
-    case InternalError(_)      => JsonRpcError.internalError(err.message)
+    case SamplingNotSupported()      => JsonRpcError.invalidRequest(err.message)
+    case ElicitationNotSupported()   => JsonRpcError.invalidRequest(err.message)
+    case InternalError(_)            => JsonRpcError.internalError(err.message)

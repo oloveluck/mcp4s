@@ -187,6 +187,32 @@ object Dispatcher:
         case McpMethod.Shutdown =>
           stateRef.set(State.ShuttingDown).as(Json.obj())
 
+        case McpMethod.LoggingSetLevel =>
+          requireInitialized *> {
+            params.hcursor.get[String]("level").liftTo[F].as(Json.obj())
+          }
+
+        case McpMethod.ResourcesSubscribe =>
+          requireInitialized *> {
+            params.hcursor.get[String]("uri").liftTo[F].as(Json.obj())
+          }
+
+        case McpMethod.ResourcesUnsubscribe =>
+          requireInitialized *> {
+            params.hcursor.get[String]("uri").liftTo[F].as(Json.obj())
+          }
+
+        case McpMethod.CompletionComplete =>
+          requireInitialized *> {
+            Concurrent[F].pure(Json.obj(
+              "completion" -> Json.obj(
+                "values" -> Json.arr(),
+                "total" -> Json.fromInt(0),
+                "hasMore" -> Json.False
+              )
+            ))
+          }
+
         case other =>
           Concurrent[F].raiseError(McpError.MethodNotFound(other))
 

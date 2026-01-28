@@ -50,6 +50,9 @@ object HttpClientTransport:
       connection <- CatsResource.eval(establishConnection(client, httpClient, config, summon[Tracer[F]]))
     yield connection
 
+  /** Session header name (case-insensitive per MCP spec) */
+  private val SessionHeaderName = CIString("Mcp-Session-Id")
+
   private def establishConnection[F[_]: Async](
       client: McpClient[F],
       httpClient: Client[F],
@@ -58,52 +61,20 @@ object HttpClientTransport:
   ): F[McpConnection[F]] =
     val endpointUri = Uri.unsafeFromString(s"${config.baseUrl}${config.endpoint}")
 
-    // Create the request sender function with trace context propagation
-    val sendRequest: JsonRpcRequest => F[Json] = { req =>
-      // Propagate trace context to outgoing request headers
-      tracer.propagate(Headers.empty).flatMap { traceHeaders =>
-        val request = Request[F](
-          method = Method.POST,
-          uri = endpointUri,
-          headers = traceHeaders.put(
-            Header.Raw(CIString("Accept"), "application/json, text/event-stream")
-          )
-        ).withEntity(req.asJson)
-          .withContentType(`Content-Type`(MediaType.application.json))
-
-        httpClient.expect[Json](request).flatMap { responseJson =>
-          // Parse the response
-          responseJson.as[JsonRpcMessage] match
-            case Right(JsonRpcResponse(_, result)) =>
-              Async[F].pure(result)
-            case Right(JsonRpcErrorResponse(_, error)) =>
-              Async[F].raiseError(McpError.fromJsonRpcError(error))
-            case Right(_) =>
-              Async[F].raiseError(McpError.InternalError("Unexpected response type"))
-            case Left(err) =>
-              Async[F].raiseError(McpError.InternalError(s"Failed to parse response: ${err.getMessage}"))
-        }
-      }
-    }
-
-    // Create the notification sender function with trace context propagation
-    val sendNotification: JsonRpcNotification => F[Unit] = { notif =>
-      tracer.propagate(Headers.empty).flatMap { traceHeaders =>
-        val request = Request[F](
-          method = Method.POST,
-          uri = endpointUri,
-          headers = traceHeaders.put(
-            Header.Raw(CIString("Accept"), "application/json, text/event-stream")
-          )
-        ).withEntity(notif.asJson)
-          .withContentType(`Content-Type`(MediaType.application.json))
-        httpClient.status(request).void
-      }
-    }
-
     for
+      // Create session ID ref - will be populated after initialize
+      sessionIdRef <- Ref.of[F, Option[String]](None)
+
       // Create request ID generator (starts at 0, first ID will be 1)
       requestIdGen <- Ref.of[F, Long](0L)
+
+      // Create the request sender function with session and trace context
+      sendRequest = createRequestSender(httpClient, endpointUri, sessionIdRef, tracer)
+
+      // Create the notification sender function with session and trace context
+      sendNotification = createNotificationSender(httpClient, endpointUri, sessionIdRef, tracer)
+
+      // Send initialize request and capture session ID from response
       initId <- requestIdGen.getAndUpdate(_ + 1).map(n => RequestId.NumberId(n + 1))
       initRequest = JsonRpcRequest(
         initId,
@@ -114,11 +85,11 @@ object HttpClientTransport:
           clientInfo = client.info
         ).asJson)
       )
-      initResult <- sendRequest(initRequest).flatMap { result =>
-        result.as[InitializeResult].liftTo[F]
-      }
-      // Send initialized notification
+      initResult <- sendInitRequest(httpClient, endpointUri, initRequest, sessionIdRef, tracer)
+
+      // Send initialized notification (now with session ID)
       _ <- sendNotification(JsonRpcNotification(McpMethod.Initialized, None))
+
       // Create in-flight request registry for cancellation support
       inFlightRef <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
     yield new McpConnectionImpl[F](
@@ -130,3 +101,103 @@ object HttpClientTransport:
       inFlightRef,
       tracer
     )
+
+  /** Send initialize request and capture session ID from response header */
+  private def sendInitRequest[F[_]: Async](
+      httpClient: Client[F],
+      endpointUri: Uri,
+      initRequest: JsonRpcRequest,
+      sessionIdRef: Ref[F, Option[String]],
+      tracer: Tracer[F]
+  ): F[InitializeResult] =
+    tracer.propagate(Headers.empty).flatMap { traceHeaders =>
+      val request = Request[F](
+        method = Method.POST,
+        uri = endpointUri,
+        headers = traceHeaders.put(
+          Header.Raw(CIString("Accept"), "application/json")
+        )
+      ).withEntity(initRequest.asJson)
+        .withContentType(`Content-Type`(MediaType.application.json))
+
+      httpClient.run(request).use { response =>
+        // Extract session ID from response header
+        val sessionIdOpt = response.headers.get(SessionHeaderName).map(_.head.value)
+        sessionIdRef.set(sessionIdOpt) *>
+          response.as[Json].flatMap { responseJson =>
+            responseJson.as[JsonRpcMessage] match
+              case Right(JsonRpcResponse(_, result)) =>
+                result.as[InitializeResult].liftTo[F]
+              case Right(JsonRpcErrorResponse(_, error)) =>
+                Async[F].raiseError(McpError.fromJsonRpcError(error))
+              case Right(_) =>
+                Async[F].raiseError(McpError.InternalError("Unexpected response type"))
+              case Left(err) =>
+                Async[F].raiseError(McpError.InternalError(s"Failed to parse response: ${err.getMessage}"))
+          }
+      }
+    }
+
+  /** Create a request sender function that includes session ID */
+  private def createRequestSender[F[_]: Async](
+      httpClient: Client[F],
+      endpointUri: Uri,
+      sessionIdRef: Ref[F, Option[String]],
+      tracer: Tracer[F]
+  ): JsonRpcRequest => F[Json] = { req =>
+    for
+      sessionIdOpt <- sessionIdRef.get
+      traceHeaders <- tracer.propagate(Headers.empty)
+      headersWithSession = sessionIdOpt match
+        case Some(sessionId) =>
+          traceHeaders
+            .put(Header.Raw(CIString("Accept"), "application/json"))
+            .put(Header.Raw(SessionHeaderName, sessionId))
+        case None =>
+          traceHeaders.put(Header.Raw(CIString("Accept"), "application/json"))
+      request = Request[F](
+        method = Method.POST,
+        uri = endpointUri,
+        headers = headersWithSession
+      ).withEntity(req.asJson)
+        .withContentType(`Content-Type`(MediaType.application.json))
+      result <- httpClient.expect[Json](request).flatMap { responseJson =>
+        responseJson.as[JsonRpcMessage] match
+          case Right(JsonRpcResponse(_, result)) =>
+            Async[F].pure(result)
+          case Right(JsonRpcErrorResponse(_, error)) =>
+            Async[F].raiseError(McpError.fromJsonRpcError(error))
+          case Right(_) =>
+            Async[F].raiseError(McpError.InternalError("Unexpected response type"))
+          case Left(err) =>
+            Async[F].raiseError(McpError.InternalError(s"Failed to parse response: ${err.getMessage}"))
+      }
+    yield result
+  }
+
+  /** Create a notification sender function that includes session ID */
+  private def createNotificationSender[F[_]: Async](
+      httpClient: Client[F],
+      endpointUri: Uri,
+      sessionIdRef: Ref[F, Option[String]],
+      tracer: Tracer[F]
+  ): JsonRpcNotification => F[Unit] = { notif =>
+    for
+      sessionIdOpt <- sessionIdRef.get
+      traceHeaders <- tracer.propagate(Headers.empty)
+      headersWithSession = sessionIdOpt match
+        case Some(sessionId) =>
+          traceHeaders
+            .put(Header.Raw(CIString("Accept"), "application/json"))
+            .put(Header.Raw(SessionHeaderName, sessionId))
+        case None =>
+          traceHeaders.put(Header.Raw(CIString("Accept"), "application/json"))
+      request = Request[F](
+        method = Method.POST,
+        uri = endpointUri,
+        headers = headersWithSession
+      ).withEntity(notif.asJson)
+        .withContentType(`Content-Type`(MediaType.application.json))
+      _ <- httpClient.status(request)
+    yield ()
+  }
