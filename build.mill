@@ -14,6 +14,7 @@ object Versions {
   val otel4s = "0.11.2"
   val sttp = "4.0.13"
   val munitCatsEffect = "2.1.0"
+  val munitScalaCheck = "1.0.0"
 }
 
 trait Mcp4sModule extends ScalaModule with ScalafmtModule with PublishModule {
@@ -41,7 +42,8 @@ trait Mcp4sModule extends ScalaModule with ScalafmtModule with PublishModule {
 
   trait Mcp4sTests extends ScalaTests with TestModule.Munit {
     def mvnDeps = super.mvnDeps() ++ Seq(
-      mvn"org.typelevel::munit-cats-effect::${Versions.munitCatsEffect}"
+      mvn"org.typelevel::munit-cats-effect::${Versions.munitCatsEffect}",
+      mvn"org.scalameta::munit-scalacheck::${Versions.munitScalaCheck}"
     )
   }
 }
@@ -116,7 +118,8 @@ object examples extends ScalaModule with ScalafmtModule {
 
   trait Mcp4sTests extends ScalaTests with TestModule.Munit {
     def mvnDeps = super.mvnDeps() ++ Seq(
-      mvn"org.typelevel::munit-cats-effect::${Versions.munitCatsEffect}"
+      mvn"org.typelevel::munit-cats-effect::${Versions.munitCatsEffect}",
+      mvn"org.scalameta::munit-scalacheck::${Versions.munitScalaCheck}"
     )
   }
 
@@ -136,4 +139,72 @@ def inspector(): Command[Unit] = Task.Command {
     "--transport", "http",
     "--server-url", "http://localhost:3001/mcp"
   ).call(stdin = os.Inherit, stdout = os.Inherit, stderr = os.Inherit)
+}
+
+/** Run all unit tests (core, server, client, postgres).
+  *
+  * Usage: mill unitTests
+  */
+def unitTests(): Command[Unit] = Task.Command {
+  core.test.testCached()
+  server.test.testCached()
+  client.test.testCached()
+  postgres.test.testCached()
+}
+
+// =============================================================================
+// Conformance Testing
+// =============================================================================
+// The conformance tests validate MCP protocol compliance using the official
+// MCP Conformance Test Framework (https://github.com/modelcontextprotocol/conformance).
+//
+// Prerequisites:
+//   - Node.js 18+
+//   - Install dependencies: cd conformance && npm install
+//
+// Usage:
+//   mill conformance                          # Run active scenarios against localhost:3001
+//   mill conformance --scenario tools-list    # Run a specific scenario
+//   mill conformance --suite all              # Run all scenarios (including pending)
+//   mill conformance --url http://host:port/mcp  # Test against a different server
+// =============================================================================
+
+/** Run MCP conformance tests against a running server.
+  *
+  * @param scenario Single scenario to run (e.g., "server-initialize", "tools-list")
+  * @param suite    Suite to run: "active" (default), "all", or "pending"
+  * @param url      Server URL (default: http://localhost:3001/mcp)
+  * @param verbose  Show detailed output
+  */
+def conformance(
+    scenario: String = "",
+    suite: String = "active",
+    url: String = "http://localhost:3001/mcp",
+    verbose: Boolean = false
+): Command[Unit] = Task.Command {
+  val conformanceDir = os.Path(sys.env.getOrElse("MILL_WORKSPACE_ROOT", sys.props("user.dir"))) / "conformance"
+
+  val baseArgs = Seq("npx", "tsx", "src/index.ts", "server", "--url", url)
+  val scenarioArgs = if (scenario.nonEmpty) Seq("--scenario", scenario) else Seq("--suite", suite)
+  val verboseArgs = if (verbose) Seq("--verbose") else Seq.empty
+  val baselineFile = conformanceDir / os.up / "conformance-baseline.yml"
+  val baselineArgs = if (os.exists(baselineFile)) Seq("--expected-failures", baselineFile.toString) else Seq.empty
+
+  os.proc(baseArgs ++ scenarioArgs ++ verboseArgs ++ baselineArgs).call(
+    cwd = conformanceDir,
+    stdin = os.Inherit,
+    stdout = os.Inherit,
+    stderr = os.Inherit
+  )
+}
+
+/** List available conformance test scenarios. */
+def conformanceList(): Command[Unit] = Task.Command {
+  val conformanceDir = os.Path(sys.env.getOrElse("MILL_WORKSPACE_ROOT", sys.props("user.dir"))) / "conformance"
+  os.proc("npx", "tsx", "src/index.ts", "list", "--server").call(
+    cwd = conformanceDir,
+    stdin = os.Inherit,
+    stdout = os.Inherit,
+    stderr = os.Inherit
+  )
 }
