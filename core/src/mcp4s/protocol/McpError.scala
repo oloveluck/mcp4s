@@ -24,6 +24,10 @@ object McpError:
   final case class InvalidToolArguments(name: String, reason: String)
       extends McpError(s"Invalid arguments for tool '$name': $reason")
 
+  /** Prompt arguments failed validation */
+  final case class InvalidPromptArguments(name: String, reason: String)
+      extends McpError(s"Invalid arguments for prompt '$name': $reason")
+
   /** Client and server protocol versions are incompatible */
   final case class ProtocolVersionMismatch(requested: String, supported: String)
       extends McpError(s"Protocol version mismatch: requested $requested, supported $supported")
@@ -56,6 +60,10 @@ object McpError:
   final case class CapabilityNotSupported(capability: String)
       extends McpError(s"Server does not support capability: $capability")
 
+  /** Client does not support sampling capability */
+  final case class SamplingNotSupported()
+      extends McpError("Client does not support sampling")
+
   /** Convert a JSON-RPC error to a typed McpError */
   def fromJsonRpcError(error: JsonRpcError): McpError = error.code match
     case JsonRpcErrorCode.MethodNotFound => MethodNotFound(error.message)
@@ -69,6 +77,7 @@ object McpError:
     case ResourceNotFound(_)   => JsonRpcError.invalidParams(err.message)
     case PromptNotFound(_)     => JsonRpcError.invalidParams(err.message)
     case InvalidToolArguments(_, _) => JsonRpcError.invalidParams(err.message)
+    case InvalidPromptArguments(_, _) => JsonRpcError.invalidParams(err.message)
     case ProtocolVersionMismatch(_, _) => JsonRpcError.invalidRequest(err.message)
     case NotInitialized()      => JsonRpcError.invalidRequest(err.message)
     case AlreadyInitialized()  => JsonRpcError.invalidRequest(err.message)
@@ -76,4 +85,5 @@ object McpError:
     case MethodNotSupported(_) => JsonRpcError.methodNotFound(err.message)
     case RequestCancelled(_)   => JsonRpcError(-32800, err.message, None)
     case CapabilityNotSupported(_) => JsonRpcError.invalidRequest(err.message)
+    case SamplingNotSupported()    => JsonRpcError.invalidRequest(err.message)
     case InternalError(_)      => JsonRpcError.internalError(err.message)

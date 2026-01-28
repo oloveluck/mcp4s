@@ -34,7 +34,22 @@ object Dispatcher:
     for
       stateRef <- Ref.of[F, State](State.Uninitialized)
       inFlightRef <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
-    yield new DispatcherImpl(server, stateRef, inFlightRef, summon[Tracer[F]])
+    yield new DispatcherImpl(server, stateRef, inFlightRef, None, summon[Tracer[F]])
+
+  /** Create a dispatcher with a ToolContext factory for context-aware tools.
+    *
+    * @param server The MCP server to dispatch requests to
+    * @param contextFactory Factory to create ToolContext for each request
+    * @param tracer Optional OpenTelemetry tracer for distributed tracing
+    */
+  def withContext[F[_]: Concurrent](
+      server: McpServer[F],
+      contextFactory: RequestId => ToolContext[F]
+  )(using Tracer[F]): F[Dispatcher[F]] =
+    for
+      stateRef <- Ref.of[F, State](State.Uninitialized)
+      inFlightRef <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
+    yield new DispatcherImpl(server, stateRef, inFlightRef, Some(contextFactory), summon[Tracer[F]])
 
   private enum State:
     case Uninitialized
@@ -45,6 +60,7 @@ object Dispatcher:
       server: McpServer[F],
       stateRef: Ref[F, State],
       inFlightRequests: Ref[F, Map[RequestId, Deferred[F, Unit]]],
+      contextFactory: Option[RequestId => ToolContext[F]],
       tracer: Tracer[F]
   ) extends Dispatcher[F]:
 
@@ -66,7 +82,7 @@ object Dispatcher:
         _ <- inFlightRequests.update(_ + (req.id -> cancelToken))
         result <- Concurrent[F].race(
           cancelToken.get,
-          handleMethod(req.method, req.params.getOrElse(Json.obj()))
+          handleMethod(req.id, req.method, req.params.getOrElse(Json.obj()))
         ).guarantee(inFlightRequests.update(_ - req.id))
       yield result match
         case Left(_) =>
@@ -96,16 +112,17 @@ object Dispatcher:
         case McpMethod.Cancelled =>
           notif.params.flatMap(_.as[CancelledParams].toOption) match
             case Some(cp) =>
-              inFlightRequests.get.flatMap(_.get(cp.requestId) match
-                case Some(token) => token.complete(()).void
-                case None        => Concurrent[F].unit // Already completed
-              )
+              inFlightRequests.modify { map =>
+                map.get(cp.requestId) match
+                  case Some(token) => (map - cp.requestId, token.complete(()).void)
+                  case None        => (map, Concurrent[F].unit)
+              }.flatten
             case None =>
               Concurrent[F].unit // Invalid params, ignore
         case _ =>
           Concurrent[F].unit
 
-    private def handleMethod(method: String, params: Json): F[Json] =
+    private def handleMethod(reqId: RequestId, method: String, params: Json): F[Json] =
       method match
         case McpMethod.Initialize =>
           handleInitialize(params)
@@ -124,7 +141,12 @@ object Dispatcher:
             for
               name <- cursor.get[String]("name").liftTo[F]
               args <- cursor.get[Option[Json]]("arguments").map(_.getOrElse(Json.obj())).liftTo[F]
-              result <- server.callTool(name, args)
+              result <- contextFactory match
+                case Some(factory) =>
+                  val ctx = factory(reqId)
+                  server.callToolWithContext(name, args, ctx)
+                case None =>
+                  server.callTool(name, args)
             yield result.asJson
           }
 
@@ -170,33 +192,21 @@ object Dispatcher:
 
     private def handleInitialize(params: Json): F[Json] =
       params.as[InitializeParams].liftTo[F].flatMap { initParams =>
-        val clientVersion = initParams.protocolVersion
-
-        // Validate protocol version - accept current and backwards compatible versions
-        if !isCompatibleVersion(clientVersion) then
-          Concurrent[F].raiseError(
-            McpError.ProtocolVersionMismatch(clientVersion, McpVersion.Current)
-          )
-        else
-          stateRef.get.flatMap {
-            case State.Uninitialized =>
-              // Echo back client's version if supported for backwards compatibility
-              val negotiatedVersion =
-                if McpVersion.Supported.contains(clientVersion) then clientVersion
-                else McpVersion.Current
-              val result = InitializeResult(
-                protocolVersion = negotiatedVersion,
-                capabilities = server.capabilities,
-                serverInfo = server.info
-              )
-              result.asJson.pure[F]
-            case _ =>
-              Concurrent[F].raiseError(McpError.AlreadyInitialized())
-          }
+        // Accept any version and respond with our supported version.
+        // Per MCP spec, server responds with the version it supports,
+        // and the client decides whether to continue.
+        stateRef.get.flatMap {
+          case State.Uninitialized =>
+            val result = InitializeResult(
+              protocolVersion = McpVersion.Current,
+              capabilities = server.capabilities,
+              serverInfo = server.info
+            )
+            result.asJson.pure[F]
+          case _ =>
+            Concurrent[F].raiseError(McpError.AlreadyInitialized())
+        }
       }
-
-    private def isCompatibleVersion(version: String): Boolean =
-      McpVersion.Supported.contains(version)
 
     private def requireInitialized: F[Unit] =
       stateRef.get.flatMap {

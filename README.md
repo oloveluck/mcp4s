@@ -9,8 +9,9 @@ MCP4S provides a type-safe, functional implementation of MCP for Scala 3 using c
 ## Modules
 
 - **core** - Protocol types, JSON-RPC messages, and codec definitions
-- **server** - MCP server implementation with HTTP/SSE and stdio transports
+- **server** - MCP server implementation with Streamable HTTP and stdio transports
 - **client** - MCP client for connecting to MCP servers
+- **postgres** - PostgreSQL MCP server for database access
 
 ## Installation
 
@@ -18,9 +19,9 @@ Add to your `build.mill`:
 
 ```scala
 def ivyDeps = Agg(
-  ivy"io.github.mcp4s::mcp4s-core::0.1.0",
-  ivy"io.github.mcp4s::mcp4s-server::0.1.0",  // for servers
-  ivy"io.github.mcp4s::mcp4s-client::0.1.0"   // for clients
+  ivy"io.github.mcp4s::mcp4s-core::0.1.1",
+  ivy"io.github.mcp4s::mcp4s-server::0.1.1",  // for servers
+  ivy"io.github.mcp4s::mcp4s-client::0.1.1"   // for clients
 )
 ```
 
@@ -123,6 +124,51 @@ mill examples.assembly
 ```
 
 Then restart Claude Code to pick up the new server configuration.
+
+### Authentication
+
+MCP4S supports OAuth 2.0 bearer token authentication:
+
+```scala
+import mcp4s.server.auth.*
+
+val authConfig = AuthConfig[IO](
+  metadata = ProtectedResourceMetadata(
+    resource = "http://localhost:3000",
+    authorizationServers = List("https://auth.example.com"),
+    scopesSupported = Some(List("mcp:read", "mcp:write"))
+  ),
+  validator = TokenValidator.jwt[IO],  // or .apiKey, .allowAll
+  requiredScopes = Set("mcp:read")
+)
+
+HttpTransport.serve[IO](server, auth = Some(authConfig)).useForever
+```
+
+Available validators:
+- `TokenValidator.jwt` - Parse JWT tokens (dev mode, no signature verification)
+- `TokenValidator.apiKey(keys)` - Validate against a set of API keys
+- `TokenValidator.allowAll` - Accept any token (dev only)
+
+### PostgreSQL Server
+
+Run an MCP server that provides SQL query access to PostgreSQL:
+
+```bash
+# Set connection environment variables
+export POSTGRES_HOST=localhost
+export POSTGRES_PORT=5432
+export POSTGRES_USER=myuser
+export POSTGRES_PASSWORD=mypassword
+export POSTGRES_DATABASE=mydb
+
+# Run via stdio
+mill postgres.runMain mcp4s.postgres.PostgresStdio
+```
+
+Provides:
+- `query` tool - Execute read-only SQL queries
+- `schema://public` resource - Database schema information
 
 ## Building
 

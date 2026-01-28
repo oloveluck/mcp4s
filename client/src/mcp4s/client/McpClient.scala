@@ -45,6 +45,12 @@ trait McpClient[F[_]]:
     */
   def elicit(params: ElicitParams): F[ElicitResult]
 
+  /** Handle notifications/elicitation/complete from server
+    * Called when URL mode elicitation completes (e.g., OAuth flow finished)
+    * Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation
+    */
+  def onElicitationComplete(params: ElicitationCompleteParams): F[Unit]
+
 object McpClient:
 
   /** Create a new builder for constructing an MCP client */

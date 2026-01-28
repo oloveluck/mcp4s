@@ -1,6 +1,8 @@
 package mcp4s.protocol
 
-import io.circe.Json
+import io.circe.{Encoder, Json}
+import io.circe.syntax.*
+import java.util.Base64
 
 // === Opaque Types for Type Safety ===
 
@@ -32,17 +34,11 @@ object PromptName:
     def value: String = name
 
 /** MCP Protocol version
-  * Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle
+  * Spec ref: https://modelcontextprotocol.io/specification/2025-03-26/basic/lifecycle
   */
 object McpVersion:
   /** Current MCP protocol version */
-  val Current: String = "2025-11-25"
-
-  /** Previous protocol version for backwards compatibility */
-  val Previous: String = "2024-11-05"
-
-  /** All supported protocol versions */
-  val Supported: Set[String] = Set(Current, Previous)
+  val Current: String = "2025-03-26"
 
 // === Common Types ===
 
@@ -55,6 +51,10 @@ final case class Icon(
     sizes: Option[List[String]] = None,
     theme: Option[String] = None
 )
+
+object Icon:
+  /** Create an icon with just a source URL */
+  def simple(src: String): Icon = Icon(src)
 
 /** Annotations for content and resources
   * Spec ref: schema.ts Annotations interface
@@ -77,6 +77,11 @@ final case class ServerInfo(
     icons: Option[List[Icon]] = None
 )
 
+object ServerInfo:
+  /** Create server info with just name and version */
+  def minimal(name: String, version: String): ServerInfo =
+    ServerInfo(name, version)
+
 /** Client information
   * Spec ref: schema.ts Implementation interface
   */
@@ -88,6 +93,11 @@ final case class ClientInfo(
     websiteUrl: Option[String] = None,
     icons: Option[List[Icon]] = None
 )
+
+object ClientInfo:
+  /** Create client info with just name and version */
+  def minimal(name: String, version: String): ClientInfo =
+    ClientInfo(name, version)
 
 /** Implementation info for capabilities (alias for backward compatibility) */
 final case class Implementation(
@@ -222,11 +232,21 @@ final case class JsonSchemaProperty(
 )
 
 object JsonSchema:
+  /** Empty schema that accepts any input */
+  val empty: JsonSchema = JsonSchema("object", None, None)
+
+  /** Create an object schema from a map of properties */
   def obj(
       properties: Map[String, JsonSchemaProperty],
       required: List[String] = Nil
   ): JsonSchema =
     JsonSchema("object", Some(properties), if (required.isEmpty) None else Some(required))
+
+  /** Create an object schema from varargs of property tuples */
+  def obj(properties: (String, JsonSchemaProperty)*): JsonSchema =
+    JsonSchema("object", Some(properties.toMap), None)
+
+  // === Property constructors with Option description ===
 
   def string(description: Option[String] = None): JsonSchemaProperty =
     JsonSchemaProperty("string", description, None)
@@ -237,8 +257,35 @@ object JsonSchema:
   def boolean(description: Option[String] = None): JsonSchemaProperty =
     JsonSchemaProperty("boolean", description, None)
 
+  def integer(description: Option[String] = None): JsonSchemaProperty =
+    JsonSchemaProperty("integer", description, None)
+
   def stringEnum(values: List[String], description: Option[String] = None): JsonSchemaProperty =
     JsonSchemaProperty("string", description, Some(values))
+
+  // === Property constructors with String description (convenience) ===
+
+  def string(description: String): JsonSchemaProperty =
+    JsonSchemaProperty("string", Some(description), None)
+
+  def number(description: String): JsonSchemaProperty =
+    JsonSchemaProperty("number", Some(description), None)
+
+  def boolean(description: String): JsonSchemaProperty =
+    JsonSchemaProperty("boolean", Some(description), None)
+
+  def integer(description: String): JsonSchemaProperty =
+    JsonSchemaProperty("integer", Some(description), None)
+
+  def stringEnum(values: List[String], description: String): JsonSchemaProperty =
+    JsonSchemaProperty("string", Some(description), Some(values))
+
+  // === Extension for fluent required fields ===
+
+  extension (schema: JsonSchema)
+    /** Add required fields to a schema */
+    def required(fields: String*): JsonSchema =
+      schema.copy(required = Some(fields.toList))
 
 /** Tool annotations for AI safety hints
   * Spec ref: schema.ts ToolAnnotations
@@ -251,6 +298,23 @@ final case class ToolAnnotations(
     idempotentHint: Option[Boolean] = None,    // Default: false - safe to retry
     openWorldHint: Option[Boolean] = None      // Default: true - may interact with external world
 )
+
+object ToolAnnotations:
+  /** Tool that only reads data, doesn't modify state */
+  def readOnly(): ToolAnnotations =
+    ToolAnnotations(readOnlyHint = Some(true), destructiveHint = Some(false))
+
+  /** Tool that may perform destructive operations */
+  def destructive(): ToolAnnotations =
+    ToolAnnotations(destructiveHint = Some(true))
+
+  /** Tool that is safe to retry (idempotent) */
+  def idempotent(): ToolAnnotations =
+    ToolAnnotations(idempotentHint = Some(true))
+
+  /** Tool that only operates locally, no external interactions */
+  def localOnly(): ToolAnnotations =
+    ToolAnnotations(openWorldHint = Some(false))
 
 /** Task support for async tool execution
   * Spec ref: schema.ts ToolExecution
@@ -372,11 +436,24 @@ final case class ToolResult(
     content.collectFirst { case a: AudioContent => a }
 
 object ToolResult:
+  /** Create a text result */
   def text(s: String): ToolResult =
     ToolResult(List(TextContent(s)))
 
+  /** Alias for text */
+  def ok(s: String): ToolResult = text(s)
+
+  /** Create a JSON result by encoding the value */
+  def json[A: Encoder](value: A): ToolResult =
+    ToolResult(List(TextContent(value.asJson.noSpaces)))
+
+  /** Create an error result */
   def error(message: String): ToolResult =
     ToolResult(List(TextContent(message)), isError = true)
+
+  /** Create an image result from raw bytes */
+  def image(data: Array[Byte], mimeType: String): ToolResult =
+    ToolResult(List(ImageContent(Base64.getEncoder.encodeToString(data), mimeType)))
 
 // === Resources ===
 // Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/server/resources
@@ -421,11 +498,21 @@ final case class ResourceContent(
 )
 
 object ResourceContent:
+  /** Create a text resource */
   def text(uri: String, content: String, mimeType: Option[String] = None): ResourceContent =
-    ResourceContent(uri, mimeType, Some(content), None)
+    ResourceContent(uri, mimeType.orElse(Some("text/plain")), Some(content), None)
 
+  /** Create a JSON resource by encoding the value */
+  def json[A: Encoder](uri: String, value: A): ResourceContent =
+    ResourceContent(uri, Some("application/json"), Some(value.asJson.noSpaces), None)
+
+  /** Create a blob resource from a base64-encoded string */
   def blob(uri: String, base64: String, mimeType: Option[String] = None): ResourceContent =
     ResourceContent(uri, mimeType, None, Some(base64))
+
+  /** Create a binary resource from raw bytes */
+  def binary(uri: String, data: Array[Byte], mimeType: String): ResourceContent =
+    ResourceContent(uri, Some(mimeType), None, Some(Base64.getEncoder.encodeToString(data)))
 
 // === Prompts ===
 // Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/server/prompts

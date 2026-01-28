@@ -4,41 +4,43 @@ import cats.effect.{Async, Resource as CatsResource}
 import fs2.io.net.Network
 import cats.syntax.all.*
 import com.comcast.ip4s.{Host, Port, host, port}
-import fs2.Stream
-import fs2.concurrent.Topic
 import io.circe.*
-import io.circe.parser.*
 import io.circe.syntax.*
 import org.http4s.*
 import org.http4s.circe.*
 import org.http4s.dsl.Http4sDsl
 import org.http4s.ember.server.EmberServerBuilder
-import org.http4s.headers.`Content-Type`
+import org.http4s.headers.{Allow, `Content-Type`}
 import org.http4s.server.{Router, Server}
 import org.http4s.server.middleware.CORS
 import org.typelevel.ci.CIString
 import org.typelevel.otel4s.Attribute
 import org.typelevel.otel4s.context.propagation.TextMapGetter
 import org.typelevel.otel4s.trace.Tracer
+import org.typelevel.vault.Key
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 import mcp4s.server.*
+import mcp4s.server.auth.{AuthConfig, AuthMiddleware}
 
-/** HTTP/SSE transport configuration */
-final case class HttpConfig(
+/** Streamable HTTP transport configuration */
+final case class HttpConfig[F[_]](
     host: Host = host"0.0.0.0",
     port: Port = port"3000",
-    enableCors: Boolean = true
+    path: String = "mcp",
+    enableCors: Boolean = true,
+    auth: Option[AuthConfig[F]] = None
 )
 
 object HttpConfig:
-  val default: HttpConfig = HttpConfig()
+  def default[F[_]]: HttpConfig[F] = HttpConfig[F]()
 
-/** HTTP/SSE transport for MCP servers.
+/** Streamable HTTP transport for MCP servers.
   *
-  * Provides two endpoints:
-  *   - POST /message: Receives JSON-RPC requests, returns JSON-RPC responses
-  *   - GET /sse: Server-Sent Events stream for server-to-client notifications
+  * Implements the MCP Streamable HTTP transport (spec 2025-03-26):
+  *   - POST /{path}: Receives JSON-RPC requests, returns JSON-RPC responses
+  *   - GET /{path}: Returns 405 (server-initiated notifications not supported)
+  *   - GET /health: Health check endpoint
   */
 object HttpTransport:
 
@@ -57,13 +59,26 @@ object HttpTransport:
     */
   def serve[F[_]: Async: Network](
       server: McpServer[F],
-      config: HttpConfig = HttpConfig.default
+      config: HttpConfig[F] = HttpConfig.default[F]
   )(using Tracer[F]): CatsResource[F, Server] =
     for
       dispatcher <- CatsResource.eval(mcp4s.server.Dispatcher[F](server))
-      sseTopic <- CatsResource.eval(Topic[F, JsonRpcMessage])
-      routes = createRoutes(dispatcher, sseTopic, summon[Tracer[F]])
-      corsRoutes = if config.enableCors then CORS.policy.withAllowOriginAll(routes) else routes
+      tokenKey <- CatsResource.eval(AuthMiddleware.tokenInfoKey[F])
+      given Key[TokenInfo] = tokenKey
+      baseRoutes = createRoutes(dispatcher, config.path, summon[Tracer[F]])
+
+      // Apply auth middleware if configured
+      protectedRoutes = config.auth match
+        case Some(authConfig) => AuthMiddleware[F](authConfig, baseRoutes)
+        case None => baseRoutes
+
+      // Add metadata endpoint if auth configured (must be outside auth middleware)
+      allRoutes = config.auth match
+        case Some(authConfig) =>
+          AuthMiddleware.metadataRoutes[F](authConfig) <+> protectedRoutes
+        case None => protectedRoutes
+
+      corsRoutes = if config.enableCors then CORS.policy.withAllowOriginAll(allRoutes) else allRoutes
       httpServer <- EmberServerBuilder
         .default[F]
         .withHost(config.host)
@@ -74,20 +89,20 @@ object HttpTransport:
 
   private def createRoutes[F[_]: Async](
       dispatcher: mcp4s.server.Dispatcher[F],
-      sseTopic: Topic[F, JsonRpcMessage],
+      path: String,
       tracer: Tracer[F]
   ): HttpRoutes[F] =
     val dsl = new Http4sDsl[F] {}
     import dsl.*
 
     HttpRoutes.of[F] {
-      case req @ POST -> Root / "message" =>
+      case req @ POST -> Root / `path` =>
         // Extract trace context from incoming request headers for distributed tracing
         tracer.joinOrRoot(req.headers) {
-          tracer.span("http.server.request", Attribute("http.method", "POST"), Attribute("http.route", "/message"))
+          tracer.span("http.server.request", Attribute("http.method", "POST"), Attribute("http.route", s"/$path"))
             .use { span =>
               req.as[Json].flatMap { json =>
-                decode[JsonRpcMessage](json.noSpaces) match
+                json.as[JsonRpcMessage] match
                   case Right(message) =>
                     dispatcher.dispatch(message).flatMap {
                       case Some(response) =>
@@ -108,13 +123,9 @@ object HttpTransport:
             }
         }
 
-      case GET -> Root / "sse" =>
-        val sseStream: Stream[F, ServerSentEvent] =
-          sseTopic.subscribe(100).map { message =>
-            ServerSentEvent(data = Some(message.asJson.noSpaces))
-          }
-
-        Ok(sseStream)
+      case GET -> Root / `path` =>
+        // Server-initiated notifications not supported yet - return 405 per spec
+        MethodNotAllowed(Allow(Method.POST))
 
       case GET -> Root / "health" =>
         Ok(Json.obj("status" -> Json.fromString("ok")))

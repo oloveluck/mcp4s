@@ -17,18 +17,16 @@ import mcp4s.client.{McpClient, McpConnection, McpConnectionImpl}
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 
-/** HTTP transport configuration for MCP clients */
+/** Streamable HTTP transport configuration for MCP clients */
 final case class HttpClientConfig(
     baseUrl: String,
-    messageEndpoint: String = "/message",
-    sseEndpoint: String = "/sse"
+    endpoint: String = "/mcp"
 )
 
-/** HTTP transport for MCP clients.
+/** Streamable HTTP transport for MCP clients.
   *
-  * Connects to an MCP server via HTTP endpoints:
-  *   - POST /message: Send JSON-RPC requests
-  *   - GET /sse: Receive server-initiated requests (optional)
+  * Implements the MCP Streamable HTTP transport (spec 2025-03-26):
+  *   - POST /{endpoint}: Send JSON-RPC requests
   */
 object HttpClientTransport:
 
@@ -58,7 +56,7 @@ object HttpClientTransport:
       config: HttpClientConfig,
       tracer: Tracer[F]
   ): F[McpConnection[F]] =
-    val messageUri = Uri.unsafeFromString(s"${config.baseUrl}${config.messageEndpoint}")
+    val endpointUri = Uri.unsafeFromString(s"${config.baseUrl}${config.endpoint}")
 
     // Create the request sender function with trace context propagation
     val sendRequest: JsonRpcRequest => F[Json] = { req =>
@@ -66,8 +64,10 @@ object HttpClientTransport:
       tracer.propagate(Headers.empty).flatMap { traceHeaders =>
         val request = Request[F](
           method = Method.POST,
-          uri = messageUri,
-          headers = traceHeaders
+          uri = endpointUri,
+          headers = traceHeaders.put(
+            Header.Raw(CIString("Accept"), "application/json, text/event-stream")
+          )
         ).withEntity(req.asJson)
           .withContentType(`Content-Type`(MediaType.application.json))
 
@@ -91,8 +91,10 @@ object HttpClientTransport:
       tracer.propagate(Headers.empty).flatMap { traceHeaders =>
         val request = Request[F](
           method = Method.POST,
-          uri = messageUri,
-          headers = traceHeaders
+          uri = endpointUri,
+          headers = traceHeaders.put(
+            Header.Raw(CIString("Accept"), "application/json, text/event-stream")
+          )
         ).withEntity(notif.asJson)
           .withContentType(`Content-Type`(MediaType.application.json))
         httpClient.status(request).void
