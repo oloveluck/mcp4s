@@ -115,7 +115,7 @@ object HttpClientTransport:
         method = Method.POST,
         uri = endpointUri,
         headers = traceHeaders.put(
-          Header.Raw(CIString("Accept"), "application/json, text/event-stream")
+          Header.Raw(CIString("Accept"), "application/json")
         )
       ).withEntity(initRequest.asJson)
         .withContentType(`Content-Type`(MediaType.application.json))
@@ -151,10 +151,10 @@ object HttpClientTransport:
       headersWithSession = sessionIdOpt match
         case Some(sessionId) =>
           traceHeaders
-            .put(Header.Raw(CIString("Accept"), "application/json, text/event-stream"))
+            .put(Header.Raw(CIString("Accept"), "application/json"))
             .put(Header.Raw(SessionHeaderName, sessionId))
         case None =>
-          traceHeaders.put(Header.Raw(CIString("Accept"), "application/json, text/event-stream"))
+          traceHeaders.put(Header.Raw(CIString("Accept"), "application/json"))
       request = Request[F](
         method = Method.POST,
         uri = endpointUri,
@@ -188,10 +188,10 @@ object HttpClientTransport:
       headersWithSession = sessionIdOpt match
         case Some(sessionId) =>
           traceHeaders
-            .put(Header.Raw(CIString("Accept"), "application/json, text/event-stream"))
+            .put(Header.Raw(CIString("Accept"), "application/json"))
             .put(Header.Raw(SessionHeaderName, sessionId))
         case None =>
-          traceHeaders.put(Header.Raw(CIString("Accept"), "application/json, text/event-stream"))
+          traceHeaders.put(Header.Raw(CIString("Accept"), "application/json"))
       request = Request[F](
         method = Method.POST,
         uri = endpointUri,
