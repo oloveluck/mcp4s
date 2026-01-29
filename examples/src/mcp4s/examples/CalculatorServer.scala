@@ -1,55 +1,40 @@
 package mcp4s.examples
 
 import cats.effect.{IO, IOApp}
-import io.circe.Decoder
-import io.circe.generic.semiauto.deriveDecoder
+import cats.syntax.semigroup.*
 import mcp4s.protocol.*
 import mcp4s.server.*
+import mcp4s.server.mcp
+import mcp4s.server.mcp.{ok, error, user, messages, pure}
 import mcp4s.server.auth.*
 import mcp4s.server.transport.*
 import org.typelevel.otel4s.trace.Tracer
 
-// Type-safe tool inputs with descriptions
 case class AddArgs(
     @description("First number") a: Double,
     @description("Second number") b: Double
-)
-object AddArgs:
-  given Decoder[AddArgs] = deriveDecoder
-  given ToolInput[AddArgs] = ToolInput.derived
+) derives ToolInput
 
 case class SubtractArgs(
     @description("Number to subtract from") a: Double,
     @description("Number to subtract") b: Double
-)
-object SubtractArgs:
-  given Decoder[SubtractArgs] = deriveDecoder
-  given ToolInput[SubtractArgs] = ToolInput.derived
+) derives ToolInput
 
 case class MultiplyArgs(
     @description("First number") a: Double,
     @description("Second number") b: Double
-)
-object MultiplyArgs:
-  given Decoder[MultiplyArgs] = deriveDecoder
-  given ToolInput[MultiplyArgs] = ToolInput.derived
+) derives ToolInput
 
 case class DivideArgs(
     @description("Dividend") a: Double,
     @description("Divisor") b: Double
-)
-object DivideArgs:
-  given Decoder[DivideArgs] = deriveDecoder
-  given ToolInput[DivideArgs] = ToolInput.derived
+) derives ToolInput
 
-// Type-safe prompt input
 case class CalculatePromptArgs(
     @description("The operation: add, subtract, multiply, or divide") operation: String,
     @description("First number") a: String,
     @description("Second number") b: String
-)
-object CalculatePromptArgs:
-  given PromptInput[CalculatePromptArgs] = PromptInput.derived
+) derives PromptInput
 
 /** Example MCP server that provides calculator tools.
   *
@@ -67,45 +52,46 @@ object CalculatorServer extends IOApp.Simple:
       authorizationServers = List("https://auth.example.com"),
       scopesSupported = Some(List("mcp:read", "mcp:write"))
     ),
-    validator = TokenValidator.allowAll[IO],  // Accepts any token for dev
+    validator = TokenValidator.allowAll[IO],
     requiredScopes = Set.empty
   )
 
-  val server: McpServer[IO] = McpServer
-    .builder[IO]
-    .withInfo(ServerInfo("calculator-server", "1.0.0"))
-    // Type-safe tools - schemas and descriptions auto-derived
-    .tool[AddArgs]("add", "Add two numbers") { args =>
-      IO.pure(ToolResult.text(s"Result: ${args.a + args.b}"))
+  val mathTools: McpTools[IO] =
+    mcp.Tool[IO, AddArgs]("add", "Add two numbers") { args =>
+      ok(s"Result: ${args.a + args.b}").pure[IO]
+    } |+|
+    mcp.Tool[IO, SubtractArgs]("subtract", "Subtract two numbers") { args =>
+      ok(s"Result: ${args.a - args.b}").pure[IO]
+    } |+|
+    mcp.Tool[IO, MultiplyArgs]("multiply", "Multiply two numbers") { args =>
+      ok(s"Result: ${args.a * args.b}").pure[IO]
+    } |+|
+    mcp.Tool[IO, DivideArgs]("divide", "Divide two numbers") { args =>
+      if args.b == 0 then error("Cannot divide by zero").pure[IO]
+      else ok(s"Result: ${args.a / args.b}").pure[IO]
     }
-    .tool[SubtractArgs]("subtract", "Subtract two numbers") { args =>
-      IO.pure(ToolResult.text(s"Result: ${args.a - args.b}"))
-    }
-    .tool[MultiplyArgs]("multiply", "Multiply two numbers") { args =>
-      IO.pure(ToolResult.text(s"Result: ${args.a * args.b}"))
-    }
-    .tool[DivideArgs]("divide", "Divide two numbers") { args =>
-      if args.b == 0 then IO.pure(ToolResult.error("Cannot divide by zero"))
-      else IO.pure(ToolResult.text(s"Result: ${args.a / args.b}"))
-    }
-    // Simple static resource
-    .resource("calc://help", "Calculator Help")(
+
+  val resources: McpResources[IO] =
+    mcp.Resource.text[IO]("calc://help", "Calculator Help") {
       """Calculator MCP Server
         |
         |Available tools: add, subtract, multiply, divide
         |Each tool takes 'a' and 'b' as numbers.""".stripMargin
-    )
-    // Type-safe prompt - arguments auto-derived
-    .prompt[CalculatePromptArgs]("calculate", "Perform a calculation") { args =>
-      IO.pure(
-        GetPromptResult(
-          description = Some(s"Calculate ${args.a} ${args.operation} ${args.b}"),
-          messages = List(
-            PromptMessage(Role.User, TextContent(s"Please calculate: ${args.a} ${args.operation} ${args.b}"))
-          )
-        )
-      )
     }
+
+  val prompts: McpPrompts[IO] =
+    mcp.Prompt[IO, CalculatePromptArgs]("calculate", "Perform a calculation") { args =>
+      messages(s"Calculate ${args.a} ${args.operation} ${args.b}")(
+        user(s"Please calculate: ${args.a} ${args.operation} ${args.b}")
+      ).pure[IO]
+    }
+
+  val server: McpServer[IO] = McpServer
+    .builder[IO]
+    .withInfo(ServerInfo("calculator-server", "1.0.0"))
+    .withTools(mathTools)
+    .withResources(resources)
+    .withPrompts(prompts)
     .build
 
   def run: IO[Unit] =

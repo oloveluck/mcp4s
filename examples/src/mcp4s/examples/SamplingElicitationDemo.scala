@@ -3,10 +3,11 @@ package mcp4s.examples
 import cats.effect.{IO, IOApp}
 import cats.syntax.all.*
 import com.comcast.ip4s.*
-import io.circe.{Decoder, Json}
-import io.circe.generic.semiauto.deriveDecoder
+import io.circe.Json
 import mcp4s.protocol.*
 import mcp4s.server.*
+import mcp4s.server.mcp
+import mcp4s.server.mcp.{ok, pure}
 import mcp4s.server.transport.*
 import mcp4s.client.*
 import org.typelevel.otel4s.trace.Tracer
@@ -110,26 +111,27 @@ object ElicitationHandlers:
 
 // === Demo Server with Smart Tools ===
 
+case class DemoAddArgs(
+    @description("First number") a: Double,
+    @description("Second number") b: Double
+) derives ToolInput
+
 case class SmartCalcArgs(
     @description("Mathematical expression or question for the LLM") query: String
-)
-object SmartCalcArgs:
-  given Decoder[SmartCalcArgs] = deriveDecoder
-  given ToolInput[SmartCalcArgs] = ToolInput.derived
+) derives ToolInput
 
 /** Demo server that uses sampling for smart calculations */
 object DemoServer extends IOApp.Simple:
 
-  def createServer: McpServer[IO] = McpServer
-    .builder[IO]
-    .withInfo(ServerInfo("sampling-demo-server", "1.0.0",
-      description = Some("Demo server showing sampling and elicitation features")))
-    // Regular tool
-    .tool[AddArgs]("add", "Add two numbers") { args =>
-      IO.pure(ToolResult.text(s"${args.a + args.b}"))
-    }
+  // === Tools using new DSL ===
+
+  val tools: McpTools[IO] =
+    // Regular tool using new DSL
+    mcp.Tool[IO, DemoAddArgs]("add", "Add two numbers") { args =>
+      ok(s"${args.a + args.b}").pure[IO]
+    } |+|
     // Context-aware tool that uses sampling
-    .toolWithContext[SmartCalcArgs]("smart-calc", "Calculate using LLM assistance") { (args, ctx) =>
+    mcp.Tool.withContext[IO, SmartCalcArgs]("smart-calc", "Calculate using LLM assistance") { (args, ctx) =>
       for
         _ <- IO.println(s"[Server] smart-calc called with: ${args.query}")
         _ <- IO.println(s"[Server] Requesting LLM completion from client...")
@@ -141,9 +143,17 @@ object DemoServer extends IOApp.Simple:
           case SamplingTextContent(t) => t
           case _                      => "Unexpected response type"
         _ <- IO.println(s"[Server] Got LLM response: $text")
-      yield ToolResult.text(text)
+      yield ok(text)
     }
-    .build
+
+  def createServer: McpServer[IO] = McpServer.fromTools[IO](
+    info = ServerInfo(
+      "sampling-demo-server",
+      "1.0.0",
+      description = Some("Demo server showing sampling and elicitation features")
+    ),
+    tools = tools
+  )
 
   def run: IO[Unit] =
     given Tracer[IO] = Tracer.noop[IO]
