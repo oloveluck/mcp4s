@@ -29,7 +29,7 @@ trait Mcp4sModule extends ScalaModule with ScalafmtModule with PublishModule {
     "-Xfatal-warnings"
   )
 
-  def publishVersion = "0.1.1"
+  def publishVersion = "0.1.2"
 
   def pomSettings = PomSettings(
     description = "MCP (Model Context Protocol) for Scala",

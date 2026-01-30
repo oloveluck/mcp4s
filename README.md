@@ -19,9 +19,9 @@ Add to your `build.mill`:
 
 ```scala
 def ivyDeps = Agg(
-  ivy"io.github.mcp4s::mcp4s-core::0.1.1",
-  ivy"io.github.mcp4s::mcp4s-server::0.1.1",  // for servers
-  ivy"io.github.mcp4s::mcp4s-client::0.1.1"   // for clients
+  ivy"io.github.mcp4s::mcp4s-core::0.1.2",
+  ivy"io.github.mcp4s::mcp4s-server::0.1.2",  // for servers
+  ivy"io.github.mcp4s::mcp4s-client::0.1.2"   // for clients
 )
 ```
 
@@ -57,6 +57,33 @@ object MyServer extends IOApp.Simple:
 
   def run: IO[Unit] =
     HttpTransport.serve[IO](server).useForever
+```
+
+### Unified DSL (Alternative)
+
+For a more concise API, use the unified DSL:
+
+```scala
+import mcp4s.server.mcp.*
+import cats.syntax.semigroup.*
+
+val tools = Tool.text[IO]("greet", "Greet someone") { args =>
+  val name = args.hcursor.get[String]("name").getOrElse("World")
+  ok(s"Hello, $name!").pure[IO]
+}
+
+val resources = Resource.text[IO]("info", "info://app", "Application info") {
+  ok("MCP4S Server v1.0").pure[IO]
+}
+
+// Combine multiple tools/resources with |+|
+val allTools = tools |+| moreTools
+
+val server = McpServer.from[IO](
+  info = ServerInfo("my-server", "1.0.0"),
+  tools = allTools,
+  resources = resources
+)
 ```
 
 ### Creating an MCP Client

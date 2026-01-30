@@ -58,6 +58,38 @@ object McpServer:
   def builder[F[_]: Concurrent]: McpServerBuilder[F] =
     McpServerBuilder.empty[F]
 
+  /** Create a server declaratively from composed parts.
+    *
+    * {{{
+    * val add = McpTool[IO]("add", "Add")(number("a") *: number("b")) { case (a, b) =>
+    *   IO.pure(ToolResult.text(s"${a + b}"))
+    * }
+    * val readme = McpResource[IO]("file:///readme", "README")("Hello")
+    * val greet = McpPrompt.noArgs[IO]("greet", "Greet")(IO.pure(GetPromptResult(...)))
+    *
+    * val server = McpServer.from[IO](
+    *   info      = ServerInfo("calc", "1.0.0"),
+    *   tools     = add,
+    *   resources = readme,
+    *   prompts   = greet
+    * )
+    * }}}
+    */
+  def from[F[_]: Concurrent](
+      info: ServerInfo,
+      tools: McpTools[F],
+      resources: McpResources[F],
+      prompts: McpPrompts[F]
+  ): McpServer[F] =
+    DeclarativeMcpServer(info, tools, resources, prompts)
+
+  /** Create a server with only tool routes */
+  def fromTools[F[_]: Concurrent](
+      info: ServerInfo,
+      tools: McpTools[F]
+  ): McpServer[F] =
+    DeclarativeMcpServer(info, tools, McpResources.empty[F], McpPrompts.empty[F])
+
   /** Semigroup instance for composing MCP servers.
     *
     * When combining servers, the left server takes precedence for conflicts (same tool name, resource
@@ -164,3 +196,51 @@ private final class ComposedMcpServer[F[_]: Concurrent](
       case (Some(lj), None)     => Some(lj)
       case (None, Some(rj))     => Some(rj)
       case (None, None)         => None
+
+/** MCP server assembled declaratively from composed McpTools, McpResources, McpPrompts. */
+private final class DeclarativeMcpServer[F[_]: Concurrent](
+    val info: ServerInfo,
+    private val tools: McpTools[F],
+    private val resources: McpResources[F],
+    private val prompts: McpPrompts[F]
+) extends McpServer[F]:
+
+  val capabilities: ServerCapabilities =
+    // Capabilities are determined lazily based on what's registered.
+    // Since we can't peek inside at construction time without running F,
+    // we optimistically declare all capabilities that have registered handlers.
+    ServerCapabilities(
+      tools = Some(ToolsCapability()),
+      resources = Some(ResourcesCapability(subscribe = Some(true))),
+      prompts = Some(PromptsCapability()),
+      logging = Some(LoggingCapability()),
+      completions = Some(CompletionsCapability())
+    )
+
+  def listTools: F[List[Tool]] = tools.list
+
+  def callTool(name: String, arguments: Json): F[ToolResult] =
+    tools.call(name, arguments).getOrElseF(
+      Concurrent[F].raiseError(McpError.ToolNotFound(name))
+    )
+
+  override def callToolWithContext(name: String, arguments: Json, context: ToolContext[F]): F[ToolResult] =
+    tools.callWithContext(name, arguments, context).getOrElseF(
+      Concurrent[F].raiseError(McpError.ToolNotFound(name))
+    )
+
+  def listResources: F[List[Resource]] = resources.list
+
+  def listResourceTemplates: F[List[ResourceTemplate]] = resources.listTemplates
+
+  def readResource(uri: String): F[ResourceContent] =
+    resources.read(uri).getOrElseF(
+      Concurrent[F].raiseError(McpError.ResourceNotFound(uri))
+    )
+
+  def listPrompts: F[List[Prompt]] = prompts.list
+
+  def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult] =
+    prompts.get(name, arguments).getOrElseF(
+      Concurrent[F].raiseError(McpError.PromptNotFound(name))
+    )

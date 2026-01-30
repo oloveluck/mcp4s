@@ -10,6 +10,8 @@ import mcp4s.server.mcp
 import mcp4s.server.mcp.{ok, pure}
 import mcp4s.server.transport.*
 import mcp4s.client.*
+import mcp4s.client.{mcp => clientMcp}
+import mcp4s.client.mcp.{message, accept}
 import org.typelevel.otel4s.trace.Tracer
 
 // === Mock LLM ===
@@ -162,7 +164,7 @@ object DemoServer extends IOApp.Simple:
 
 // === Demo Client ===
 
-/** Demo client with sampling and elicitation handlers */
+/** Demo client with sampling and elicitation handlers - using legacy builder API */
 object DemoClient extends IOApp.Simple:
 
   def createClient: McpClient[IO] = McpClient
@@ -174,7 +176,7 @@ object DemoClient extends IOApp.Simple:
     .build
 
   def run: IO[Unit] =
-    IO.println("Demo Client created with:") *>
+    IO.println("Demo Client (Builder API) created with:") *>
     IO.println("  - Sampling handler (mock LLM)") *>
     IO.println("  - Elicitation handler (simulated form/URL)") *>
     IO.println("  - Elicitation complete handler") *>
@@ -182,6 +184,88 @@ object DemoClient extends IOApp.Simple:
     IO.println("Client capabilities:") *>
     IO.println(s"  - Sampling: ${createClient.capabilities.sampling.isDefined}") *>
     IO.println(s"  - Elicitation: ${createClient.capabilities.elicitation.isDefined}")
+
+// === Demo Client using new DSL ===
+
+/** Demo client using the new composable DSL */
+object DemoClientDsl extends IOApp.Simple:
+
+  // Composable sampling handler using DSL - returns McpSamplings[IO]
+  val sampling = clientMcp.Sampling[IO] { params =>
+    val prompt = params.messages.lastOption.map { msg =>
+      msg.content match
+        case SamplingTextContent(text) => text
+        case _                         => ""
+    }.getOrElse("")
+
+    val response = MockLLM.interpret(prompt)
+    IO.pure(message(response, "mock-llm-v1"))
+  }
+
+  // Composable elicitation handler using DSL - returns McpElicitations[IO]
+  val elicitation = clientMcp.Elicitation.withComplete[IO](
+    handler = {
+      case ElicitFormParams(msg, schema, _) =>
+        val values = schema.properties.getOrElse(Map.empty).map { (key, prop) =>
+          key -> (prop.`type` match
+            case "string"  => Json.fromString(s"value_for_$key")
+            case "number"  => Json.fromDoubleOrNull(42.0)
+            case "boolean" => Json.fromBoolean(true)
+            case _         => Json.fromString(s"mock_$key")
+          )
+        }
+        IO.pure(accept(values))
+
+      case ElicitUrlParams(_, _, _, _) =>
+        IO.pure(accept(Map("access_token" -> Json.fromString("mock_oauth_token"))))
+    },
+    onComplete = params =>
+      IO.println(s"[ElicitationComplete] ID: ${params.elicitationId}, Action: ${params.result.action}")
+  )
+
+  // Composable roots
+  val roots = clientMcp.Roots[IO](
+    Root("file:///workspace", Some("Workspace")),
+    Root("file:///home", Some("Home"))
+  )
+
+  // Create client using McpClient.from
+  def createClient: McpClient[IO] = McpClient.from[IO](
+    info = ClientInfo("dsl-demo-client", "1.0.0"),
+    roots = Some(roots),
+    sampling = Some(sampling),
+    elicitation = Some(elicitation)
+  )
+
+  def run: IO[Unit] =
+    IO.println("Demo Client (DSL API) created with:") *>
+    IO.println("  - Sampling handler (mock LLM) via mcp.Sampling") *>
+    IO.println("  - Elicitation handler via mcp.Elicitation.withComplete") *>
+    IO.println("  - Roots via mcp.Roots") *>
+    IO.println("") *>
+    IO.println("Client capabilities:") *>
+    IO.println(s"  - Sampling: ${createClient.capabilities.sampling.isDefined}") *>
+    IO.println(s"  - Elicitation: ${createClient.capabilities.elicitation.isDefined}") *>
+    IO.println(s"  - Roots: ${createClient.capabilities.roots.isDefined}") *>
+    IO.println("") *>
+    IO.println("Testing the client:") *>
+    testClient(createClient)
+
+  private def testClient(client: McpClient[IO]): IO[Unit] =
+    val params = CreateMessageParams(
+      messages = List(SamplingMessage(Role.User, SamplingTextContent("calculate 5 + 3"))),
+      maxTokens = 100
+    )
+    for
+      samplingResult <- client.createMessage(params)
+      _ <- IO.println(s"  Sampling result: model=${samplingResult.model}")
+      text = samplingResult.content match
+        case SamplingTextContent(t) => t
+        case _                      => "non-text"
+      _ <- IO.println(s"  Response: $text")
+      rootsResult <- client.listRoots
+      _ <- IO.println(s"  Roots: ${rootsResult.roots.map(_.uri).mkString(", ")}")
+    yield ()
 
 // === Handler Tests ===
 
