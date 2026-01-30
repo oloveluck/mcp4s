@@ -3,6 +3,7 @@ package mcp4s.examples
 import cats.effect.{IO, Resource}
 import cats.syntax.all.*
 import com.comcast.ip4s.port
+import scala.concurrent.duration.*
 import io.circe.Json
 import org.typelevel.otel4s.trace.Tracer
 import mcp4s.client.*
@@ -316,7 +317,6 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
   test("WebSocket: rapid connect/disconnect cycle") {
     wsServerResource.use { server =>
       val port = server.address.getPort
-      // Rapidly connect and disconnect 10 times
       val iterations = (1 to 10).toList
       iterations.traverse_ { i =>
         wsConnectedClient(port).use { conn =>
@@ -324,7 +324,7 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
             tools <- conn.listTools
             _ <- IO(assertEquals(tools.length, 1))
           yield ()
-        }
+        } >> IO.sleep(50.millis) // Allow resource cleanup between iterations
       }
     }
   }

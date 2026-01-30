@@ -10,6 +10,8 @@ import scala.quoted.*
   * Provides automatic derivation for case classes using `derives ToolInput`.
   * Supports `@description` annotations on fields for JSON schema documentation.
   *
+  * The Decoder is automatically derived - you don't need a separate `given Decoder[A]`.
+  *
   * Example:
   * {{{
   * case class AddArgs(
@@ -65,8 +67,12 @@ object ToolInput:
 
   // === Derivation Support ===
 
-  /** Derive ToolInput for a product type (case class) */
-  inline given derived[A <: Product](using m: Mirror.ProductOf[A], d: Decoder[A]): ToolInput[A] =
+  /** Derive ToolInput for a product type (case class).
+    *
+    * This automatically derives the Decoder using Circe's generic derivation,
+    * so you don't need a separate `given Decoder[A]`.
+    */
+  inline given derived[A <: Product](using m: Mirror.ProductOf[A]): ToolInput[A] =
     val labels = constValueTuple[m.MirroredElemLabels].toList.asInstanceOf[List[String]]
     val schemas = summonSchemas[m.MirroredElemTypes]
     val descriptions = fieldDescriptions[A]
@@ -77,7 +83,10 @@ object ToolInput:
 
     val jsonSchema = JsonSchema("object", Some(properties), Some(labels))
 
-    instance(jsonSchema, d)
+    // Auto-derive the Decoder using Circe's inline derivation
+    val decoder: Decoder[A] = Decoder.derived[A]
+
+    instance(jsonSchema, decoder)
 
   // Helper to summon schema type strings for tuple elements
   private inline def summonSchemas[T <: Tuple]: List[String] =

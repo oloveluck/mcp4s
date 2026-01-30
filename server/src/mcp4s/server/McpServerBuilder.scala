@@ -29,46 +29,86 @@ final class McpServerBuilder[F[_]: Concurrent] private (
     private val resourceTemplates: List[ResourceTemplate],
     private val templateHandlers: Map[String, String => F[ResourceContent]],
     private val prompts: Map[String, (Prompt, Map[String, String] => F[GetPromptResult])],
-    private val mcpTools: Option[McpTools[F]]
+    private val mcpTools: Option[McpTools[F]],
+    private val mcpResources: Option[McpResources[F]],
+    private val mcpPrompts: Option[McpPrompts[F]]
 ):
 
   /** Set the server info */
   def withInfo(info: ServerInfo): McpServerBuilder[F] =
-    new McpServerBuilder(info, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts, mcpTools)
+    new McpServerBuilder(info, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts, mcpTools, mcpResources, mcpPrompts)
 
   /** Register a tool with its handler */
   def withTool(tool: Tool, handler: Json => F[ToolResult]): McpServerBuilder[F] =
-    new McpServerBuilder(serverInfo, tools + (tool.name -> (tool, handler)), contextTools, resources, resourceTemplates, templateHandlers, prompts, mcpTools)
+    new McpServerBuilder(serverInfo, tools + (tool.name -> (tool, handler)), contextTools, resources, resourceTemplates, templateHandlers, prompts, mcpTools, mcpResources, mcpPrompts)
 
   /** Register a context-aware tool with its handler */
   def withToolWithContext(tool: Tool, handler: (Json, ToolContext[F]) => F[ToolResult]): McpServerBuilder[F] =
-    new McpServerBuilder(serverInfo, tools, contextTools + (tool.name -> (tool, handler)), resources, resourceTemplates, templateHandlers, prompts, mcpTools)
+    new McpServerBuilder(serverInfo, tools, contextTools + (tool.name -> (tool, handler)), resources, resourceTemplates, templateHandlers, prompts, mcpTools, mcpResources, mcpPrompts)
 
   /** Register a resource with its handler */
   def withResource(resource: Resource, handler: String => F[ResourceContent]): McpServerBuilder[F] =
-    new McpServerBuilder(serverInfo, tools, contextTools, resources + (resource.uri -> (resource, handler)), resourceTemplates, templateHandlers, prompts, mcpTools)
+    new McpServerBuilder(serverInfo, tools, contextTools, resources + (resource.uri -> (resource, handler)), resourceTemplates, templateHandlers, prompts, mcpTools, mcpResources, mcpPrompts)
 
   /** Register a resource template without a handler (for listing only) */
   def withResourceTemplate(template: ResourceTemplate): McpServerBuilder[F] =
-    new McpServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates :+ template, templateHandlers, prompts, mcpTools)
+    new McpServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates :+ template, templateHandlers, prompts, mcpTools, mcpResources, mcpPrompts)
 
   /** Register a resource template with a handler for reading */
   def withResourceTemplate(template: ResourceTemplate, handler: String => F[ResourceContent]): McpServerBuilder[F] =
-    new McpServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates :+ template, templateHandlers + (template.uriTemplate -> handler), prompts, mcpTools)
+    new McpServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates :+ template, templateHandlers + (template.uriTemplate -> handler), prompts, mcpTools, mcpResources, mcpPrompts)
 
   /** Register a prompt with its handler */
   def withPrompt(
       prompt: Prompt,
       handler: Map[String, String] => F[GetPromptResult]
   ): McpServerBuilder[F] =
-    new McpServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts + (prompt.name -> (prompt, handler)), mcpTools)
+    new McpServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts + (prompt.name -> (prompt, handler)), mcpTools, mcpResources, mcpPrompts)
 
   /** Register tool routes (composable with <+>) */
   def withTools(newTools: McpTools[F]): McpServerBuilder[F] =
     val combined = mcpTools match
       case Some(existing) => Some(existing <+> newTools)
       case None           => Some(newTools)
-    new McpServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts, combined)
+    new McpServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts, combined, mcpResources, mcpPrompts)
+
+  /** Register composed McpResources (composable with <+>)
+    *
+    * Example:
+    * {{{
+    * import mcp4s.server.mcp.*
+    *
+    * val resources =
+    *   Resource.text[IO]("test://readme", "README") { "Hello" } |+|
+    *   Resource.template[IO]("test://users/{id}", "User") { uri => ... }
+    *
+    * builder.withResources(resources)
+    * }}}
+    */
+  def withResources(newResources: McpResources[F]): McpServerBuilder[F] =
+    val combined = mcpResources match
+      case Some(existing) => Some(existing <+> newResources)
+      case None           => Some(newResources)
+    new McpServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts, mcpTools, combined, mcpPrompts)
+
+  /** Register composed McpPrompts (composable with <+>)
+    *
+    * Example:
+    * {{{
+    * import mcp4s.server.mcp.*
+    *
+    * val prompts =
+    *   Prompt[IO]("greet", "Greet")(user("Hello!")) |+|
+    *   Prompt.withDesc[IO]("help", "Help", "Get help")(user("How can I help?"))
+    *
+    * builder.withPrompts(prompts)
+    * }}}
+    */
+  def withPrompts(newPrompts: McpPrompts[F]): McpServerBuilder[F] =
+    val combined = mcpPrompts match
+      case Some(existing) => Some(existing <+> newPrompts)
+      case None           => Some(newPrompts)
+    new McpServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts, mcpTools, mcpResources, combined)
 
   // === Simplified DSL Methods ===
 
@@ -206,14 +246,16 @@ final class McpServerBuilder[F[_]: Concurrent] private (
   /** Build the server with computed capabilities */
   def build: McpServer[F] =
     val hasTools = tools.nonEmpty || contextTools.nonEmpty || mcpTools.isDefined
+    val hasResources = resources.nonEmpty || resourceTemplates.nonEmpty || mcpResources.isDefined
+    val hasPrompts = prompts.nonEmpty || mcpPrompts.isDefined
     val caps = ServerCapabilities(
       tools = if hasTools then Some(ToolsCapability()) else None,
-      resources = if resources.nonEmpty || resourceTemplates.nonEmpty then Some(ResourcesCapability(subscribe = Some(true))) else None,
-      prompts = if prompts.nonEmpty then Some(PromptsCapability()) else None,
+      resources = if hasResources then Some(ResourcesCapability(subscribe = Some(true))) else None,
+      prompts = if hasPrompts then Some(PromptsCapability()) else None,
       logging = Some(LoggingCapability()),
       completions = Some(CompletionsCapability())
     )
-    new BuiltMcpServer[F](serverInfo, caps, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts, mcpTools)
+    new BuiltMcpServer[F](serverInfo, caps, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts, mcpTools, mcpResources, mcpPrompts)
 
 private final class BuiltMcpServer[F[_]: Concurrent](
     val info: ServerInfo,
@@ -224,7 +266,9 @@ private final class BuiltMcpServer[F[_]: Concurrent](
     private val resourceTemplates: List[ResourceTemplate],
     private val templateHandlers: Map[String, String => F[ResourceContent]],
     private val prompts: Map[String, (Prompt, Map[String, String] => F[GetPromptResult])],
-    private val mcpTools: Option[McpTools[F]]
+    private val mcpTools: Option[McpTools[F]],
+    private val mcpResources: Option[McpResources[F]],
+    private val mcpPrompts: Option[McpPrompts[F]]
 ) extends McpServer[F]:
 
   def listTools: F[List[Tool]] =
@@ -267,17 +311,31 @@ private final class BuiltMcpServer[F[_]: Concurrent](
           case None =>
             mcpTools match
               case Some(mt) =>
-                mt.call(name, arguments).getOrElseF(
+                // Use callWithContext to support both regular and context-aware tools
+                mt.callWithContext(name, arguments, context).getOrElseF(
                   Concurrent[F].raiseError(McpError.ToolNotFound(name))
                 )
               case None =>
                 Concurrent[F].raiseError(McpError.ToolNotFound(name))
 
   def listResources: F[List[Resource]] =
-    Applicative[F].pure(resources.values.map(_._1).toList)
+    val builderResources = resources.values.map(_._1).toList
+    mcpResources match
+      case Some(mr) =>
+        mr.list.map { routeResources =>
+          val builderUris = builderResources.map(_.uri).toSet
+          builderResources ++ routeResources.filterNot(r => builderUris.contains(r.uri))
+        }
+      case None => Applicative[F].pure(builderResources)
 
   def listResourceTemplates: F[List[ResourceTemplate]] =
-    Applicative[F].pure(resourceTemplates)
+    mcpResources match
+      case Some(mr) =>
+        mr.listTemplates.map { routeTemplates =>
+          val builderUris = resourceTemplates.map(_.uriTemplate).toSet
+          resourceTemplates ++ routeTemplates.filterNot(t => builderUris.contains(t.uriTemplate))
+        }
+      case None => Applicative[F].pure(resourceTemplates)
 
   def readResource(uri: String): F[ResourceContent] =
     resources.get(uri) match
@@ -287,7 +345,14 @@ private final class BuiltMcpServer[F[_]: Concurrent](
         findMatchingTemplateHandler(uri) match
           case Some(handler) => handler(uri)
           case None =>
-            Concurrent[F].raiseError(McpError.ResourceNotFound(uri))
+            // Try McpResources
+            mcpResources match
+              case Some(mr) =>
+                mr.read(uri).getOrElseF(
+                  Concurrent[F].raiseError(McpError.ResourceNotFound(uri))
+                )
+              case None =>
+                Concurrent[F].raiseError(McpError.ResourceNotFound(uri))
 
   private def findMatchingTemplateHandler(uri: String): Option[String => F[ResourceContent]] =
     templateHandlers.collectFirst {
@@ -303,13 +368,27 @@ private final class BuiltMcpServer[F[_]: Concurrent](
     uri.matches(regexPattern)
 
   def listPrompts: F[List[Prompt]] =
-    Applicative[F].pure(prompts.values.map(_._1).toList)
+    val builderPrompts = prompts.values.map(_._1).toList
+    mcpPrompts match
+      case Some(mp) =>
+        mp.list.map { routePrompts =>
+          val builderNames = builderPrompts.map(_.name).toSet
+          builderPrompts ++ routePrompts.filterNot(p => builderNames.contains(p.name))
+        }
+      case None => Applicative[F].pure(builderPrompts)
 
   def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult] =
     prompts.get(name) match
       case Some((_, handler)) => handler(arguments)
       case None =>
-        Concurrent[F].raiseError(McpError.PromptNotFound(name))
+        // Try McpPrompts
+        mcpPrompts match
+          case Some(mp) =>
+            mp.get(name, arguments).getOrElseF(
+              Concurrent[F].raiseError(McpError.PromptNotFound(name))
+            )
+          case None =>
+            Concurrent[F].raiseError(McpError.PromptNotFound(name))
 
 object McpServerBuilder:
   def empty[F[_]: Concurrent]: McpServerBuilder[F] =
@@ -321,5 +400,7 @@ object McpServerBuilder:
       Nil,
       Map.empty,
       Map.empty,
+      None,
+      None,
       None
     )
