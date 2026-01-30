@@ -62,10 +62,8 @@ jobs:
       - name: Publish
         if: steps.version.outputs.changed == 'true'
         run: |
-          ./mill mill.scalalib.PublishModule/publishAll \
-            --publishArtifacts __.publishArtifacts \
-            --releaseUri https://maven.pkg.github.com/mcp4s/mcp4s \
-            --snapshotUri https://maven.pkg.github.com/mcp4s/mcp4s
-        env:
-          MILL_MAVEN_USERNAME: ${{ github.actor }}
-          MILL_MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          ./mill __.publish \
+            --sonatypeUri https://maven.pkg.github.com/mcp4s/mcp4s \
+            --sonatypeSnapshotUri https://maven.pkg.github.com/mcp4s/mcp4s \
+            --sonatypeCreds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+            --release true
