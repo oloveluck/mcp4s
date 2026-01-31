@@ -47,7 +47,7 @@ jobs:
             --title "v$VERSION" \
             --generate-notes
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         if: steps.version.outputs.changed == 'true'
         with:
           java-version: '17'
