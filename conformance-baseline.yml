@@ -11,7 +11,5 @@
 #   client:
 #     - client-scenario-1
 
-server:
-  # Resource subscription scenarios - not yet implemented
-  - resources-subscribe
-  - resources-unsubscribe
+# All 40 server scenarios currently pass!
+server: []
