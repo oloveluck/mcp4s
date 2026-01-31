@@ -63,7 +63,5 @@ jobs:
         if: steps.version.outputs.changed == 'true'
         run: |
           ./mill __.publish \
-            --sonatypeUri https://maven.pkg.github.com/mcp4s/mcp4s \
-            --sonatypeSnapshotUri https://maven.pkg.github.com/mcp4s/mcp4s \
             --sonatypeCreds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
             --release true

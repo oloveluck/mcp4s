@@ -40,6 +40,10 @@ trait Mcp4sModule extends ScalaModule with ScalafmtModule with PublishModule {
     developers = Seq(Developer("mcp4s", "MCP4S Contributors", "https://github.com/mcp4s"))
   )
 
+  // GitHub Packages Maven repository
+  def sonatypeUri = "https://maven.pkg.github.com/mcp4s/mcp4s"
+  def sonatypeSnapshotUri = "https://maven.pkg.github.com/mcp4s/mcp4s"
+
   trait Mcp4sTests extends ScalaTests with TestModule.Munit {
     def mvnDeps = super.mvnDeps() ++ Seq(
       mvn"org.typelevel::munit-cats-effect::${Versions.munitCatsEffect}",
