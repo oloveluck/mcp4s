@@ -11,7 +11,6 @@ MCP4S provides a type-safe, functional implementation of MCP for Scala 3 using c
 - **core** - Protocol types, JSON-RPC messages, and codec definitions
 - **server** - MCP server implementation with Streamable HTTP and stdio transports
 - **client** - MCP client for connecting to MCP servers
-- **postgres** - PostgreSQL MCP server for database access
 
 ## Installation
 
@@ -177,25 +176,91 @@ Available validators:
 - `TokenValidator.apiKey(keys)` - Validate against a set of API keys
 - `TokenValidator.allowAll` - Accept any token (dev only)
 
-### PostgreSQL Server
+### Middleware
 
-Run an MCP server that provides SQL query access to PostgreSQL:
+Add cross-cutting concerns like logging, metrics, and error handling to tools:
 
-```bash
-# Set connection environment variables
-export POSTGRES_HOST=localhost
-export POSTGRES_PORT=5432
-export POSTGRES_USER=myuser
-export POSTGRES_PASSWORD=mypassword
-export POSTGRES_DATABASE=mydb
+```scala
+import mcp4s.server.*
 
-# Run via stdio
-mill postgres.runMain mcp4s.postgres.PostgresStdio
+val logging = McpMiddleware.logging[IO](msg => IO.println(msg))
+val timed = McpMiddleware.timed[IO] { (name, duration) =>
+  IO.println(s"Tool $name took ${duration.toMillis}ms")
+}
+val catchErrors = McpMiddleware.catchErrors[IO]  // Convert exceptions to error results
+
+val tools = (add |+| subtract).withMiddleware(logging, timed, catchErrors)
 ```
 
-Provides:
-- `query` tool - Execute read-only SQL queries
-- `schema://public` resource - Database schema information
+### Simpler Server Startup
+
+Use extension methods for common server configurations:
+
+```scala
+import mcp4s.server.syntax.*
+
+// Run on stdio (for Claude Desktop)
+server.runStdio
+
+// Run on HTTP with defaults (port 3000)
+server.serveHttp.useForever
+
+// Run on HTTP with custom port
+server.serveHttp(port"8080").useForever
+
+// Without explicit Tracer (uses noop)
+server.serveHttpNoTrace.useForever
+```
+
+### Auto-Error Handling Tools
+
+Create tools that automatically convert exceptions to error results:
+
+```scala
+// Exceptions become ToolResult.error instead of failing
+val fetch = McpTool.attempt[IO, FetchArgs]("fetch", "Fetch URL") { args =>
+  httpClient.get(args.url).map(_.body)  // F[String]
+}
+
+// With custom error formatting
+val query = McpTool.attemptWith[IO, QueryArgs]("query", "Run query") { args =>
+  db.execute(args.sql).map(_.toString)
+} {
+  case e: SQLException => s"Database error: ${e.getMessage}"
+  case e => s"Unexpected: ${e.getMessage}"
+}
+```
+
+### Testing Utilities
+
+Test MCP servers and tools without network overhead:
+
+```scala
+import mcp4s.server.testing.*
+
+class MyServerSpec extends CatsEffectSuite:
+
+  test("tool calls work") {
+    val tools = McpTool.twoNumbers[IO]("add", "Add") { (a, b) =>
+      IO.pure(ToolResult.text(s"${a + b}"))
+    }
+
+    for
+      result <- tools.testCall("add", args("a" -> 2.0, "b" -> 3.0))
+      _ = assertEquals(result.textContent, "5.0")
+    yield ()
+  }
+
+  test("server integration") {
+    McpServerTest(server).use { client =>
+      for
+        tools <- client.listTools
+        result <- client.callTool("add", AddArgs(1, 2))
+        _ = assertEquals(result.textContent, "3.0")
+      yield ()
+    }
+  }
+```
 
 ## Building
 
@@ -212,7 +277,7 @@ Unit tests use munit-cats-effect for async testing and munit-scalacheck for prop
 
 ```bash
 mill __.test          # Run all unit tests
-mill unitTests        # Run core, server, client, postgres tests
+mill unitTests        # Run core, server, client tests
 mill core.test        # Run tests for a single module
 mill core.test.testOnly mcp4s.protocol.PropertySpec  # Run a specific test class
 ```

@@ -1,0 +1,43 @@
+name: MCP Conformance
+
+on:
+  pull_request:
+    branches: [main, development]
+  push:
+    branches: [main, development]
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Mill
+        run: |
+          curl -fLo mill https://repo1.maven.org/maven2/com/lihaoyi/mill-dist/1.0.6/mill-dist-1.0.6-mill.sh
+          chmod +x mill
+
+      - name: Compile
+        run: ./mill __.compile
+
+      - name: Start Conformance Server
+        run: |
+          ./mill examples.runMain mcp4s.examples.ConformanceServer &
+          # Wait for server to be ready
+          echo "Waiting for server to start..."
+          timeout 60 bash -c 'until curl -sf http://localhost:3000/health; do sleep 1; done'
+          echo "Server is ready"
+
+      - name: Run Conformance Tests
+        uses: modelcontextprotocol/conformance@v0.1.11
+        with:
+          mode: server
+          url: http://localhost:3000/mcp
+          suite: active
+          expected-failures: ./conformance-baseline.yml
+          verbose: true

@@ -120,3 +120,25 @@ trait McpConnection[F[_]]:
     * @param reason Optional reason for cancellation (for logging/debugging)
     */
   def cancel(requestId: RequestId, reason: Option[String] = None): F[Unit]
+
+/** Streaming extensions for McpConnection.
+  *
+  * These methods return fs2 Streams that emit results incrementally,
+  * which is useful for long-running operations and large data transfers.
+  */
+trait McpStreamingConnection[F[_]] extends McpConnection[F]:
+  import fs2.Stream
+
+  /** Call a tool and receive streaming results.
+    *
+    * Returns a stream that emits ToolResult chunks as they arrive.
+    * Useful for long-running tools or tools that produce large outputs.
+    */
+  def callToolStreaming[A: io.circe.Encoder](name: ToolName, arguments: A): Stream[F, ToolResult]
+
+  /** Read a resource with streaming content.
+    *
+    * Returns a stream that emits ResourceContent chunks as they arrive.
+    * Useful for large resources that benefit from incremental loading.
+    */
+  def readResourceStreaming(uri: ResourceUri): Stream[F, ResourceContent]

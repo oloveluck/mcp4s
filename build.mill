@@ -29,7 +29,7 @@ trait Mcp4sModule extends ScalaModule with ScalafmtModule with PublishModule {
     "-Xfatal-warnings"
   )
 
-  def publishVersion = "0.1.2"
+  def publishVersion = "0.1.3"
 
   def pomSettings = PomSettings(
     description = "MCP (Model Context Protocol) for Scala",
@@ -91,17 +91,6 @@ object client extends Mcp4sModule {
   object test extends Mcp4sTests
 }
 
-object postgres extends Mcp4sModule {
-  def moduleDeps = Seq(server)
-
-  def mvnDeps = Seq(
-    mvn"org.typelevel::cats-effect::${Versions.catsEffect}",
-    mvn"org.tpolecat::skunk-core::1.0.0-M12"
-  )
-
-  object test extends Mcp4sTests
-}
-
 object examples extends ScalaModule with ScalafmtModule {
   def scalaVersion = Versions.scala
 
@@ -141,7 +130,7 @@ def inspector(): Command[Unit] = Task.Command {
   ).call(stdin = os.Inherit, stdout = os.Inherit, stderr = os.Inherit)
 }
 
-/** Run all unit tests (core, server, client, postgres).
+/** Run all unit tests (core, server, client).
   *
   * Usage: mill unitTests
   */
@@ -149,7 +138,6 @@ def unitTests(): Command[Unit] = Task.Command {
   core.test.testCached()
   server.test.testCached()
   client.test.testCached()
-  postgres.test.testCached()
 }
 
 // =============================================================================
