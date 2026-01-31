@@ -34,7 +34,7 @@ jobs:
           echo "Server is ready"
 
       - name: Run Conformance Tests
-        uses: modelcontextprotocol/conformance@v0.1.10
+        uses: modelcontextprotocol/conformance@v0.1.11
         with:
           mode: server
           url: http://localhost:3000/mcp
