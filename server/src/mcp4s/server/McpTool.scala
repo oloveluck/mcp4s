@@ -1,6 +1,7 @@
 package mcp4s.server
 
 import cats.effect.Concurrent
+import cats.syntax.all.*
 import io.circe.Json
 import mcp4s.protocol.*
 
@@ -290,4 +291,58 @@ object McpTool:
   )(handler: (Double, Double) => String): McpTools[F] =
     twoNumbers[F](name, description, param1, param2, desc1, desc2) { (a, b) =>
       Concurrent[F].pure(ToolResult.text(handler(a, b)))
+    }
+
+  // === Auto-Error Handling Helpers ===
+
+  /** Create a tool that automatically converts exceptions to error results.
+    *
+    * Unlike regular tools that propagate exceptions, `attempt` tools catch
+    * all errors and return them as `ToolResult.error`. This is useful for
+    * tools that interact with external systems where failures are expected.
+    *
+    * Example:
+    * {{{
+    * val fetch = McpTool.attempt[IO, FetchArgs]("fetch", "Fetch URL") { args =>
+    *   httpClient.get(args.url).map(_.body)  // F[String] - errors become ToolResult.error
+    * }
+    * }}}
+    */
+  def attempt[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
+      handler: A => F[String]
+  ): McpTools[F] =
+    apply[F, A](name, description) { args =>
+      handler(args)
+        .map(ToolResult.text)
+        .handleError(e => ToolResult.error(e.getMessage))
+    }
+
+  /** Create a no-argument tool that automatically converts exceptions to error results. */
+  def attemptNoArgs[F[_]: Concurrent](name: String, description: String)(
+      handler: F[String]
+  ): McpTools[F] =
+    noArgs[F](name, description) {
+      handler
+        .map(ToolResult.text)
+        .handleError(e => ToolResult.error(e.getMessage))
+    }
+
+  /** Create a tool with custom error message formatting.
+    *
+    * Example:
+    * {{{
+    * val query = McpTool.attemptWith[IO, QueryArgs]("query", "Run query") { args =>
+    *   db.execute(args.sql).map(_.toString)
+    * } { e =>
+    *   s"Query failed: ${e.getMessage}"
+    * }
+    * }}}
+    */
+  def attemptWith[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
+      handler: A => F[String]
+  )(formatError: Throwable => String): McpTools[F] =
+    apply[F, A](name, description) { args =>
+      handler(args)
+        .map(ToolResult.text)
+        .handleError(e => ToolResult.error(formatError(e)))
     }
