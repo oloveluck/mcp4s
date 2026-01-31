@@ -24,8 +24,6 @@ import mcp4s.protocol.Codecs.given
 import mcp4s.server.*
 import mcp4s.server.auth.{AuthConfig, AuthMiddleware}
 
-import scala.concurrent.duration.FiniteDuration
-
 /** Streamable HTTP transport configuration */
 final case class HttpConfig[F[_]](
     host: Host = host"0.0.0.0",
@@ -34,7 +32,8 @@ final case class HttpConfig[F[_]](
     enableCors: Boolean = true,
     auth: Option[AuthConfig[F]] = None,
     enableSessions: Boolean = true,
-    sessionTimeout: Option[FiniteDuration] = None
+    /** Session configuration for timeout, queue sizes, etc. */
+    sessionConfig: SessionConfig = SessionConfig.default
 )
 
 object HttpConfig:
@@ -109,7 +108,8 @@ object HttpTransport:
       tokenKey <- CatsResource.eval(AuthMiddleware.tokenInfoKey[F])
       given Key[TokenInfo] = tokenKey
       baseRoutes <- if config.enableSessions then
-        CatsResource.eval(SessionManager[F](server)).map { sessionManager =>
+        // Use SessionManager with automatic cleanup loop
+        SessionManager.withCleanup[F](server, config.sessionConfig).map { sessionManager =>
           createSessionRoutes(sessionManager, config.path, config.host, summon[Tracer[F]])
         }
       else

@@ -32,6 +32,7 @@ final class HttpSession[F[_]] private (
     val pendingRequests: Ref[F, Map[RequestId, Deferred[F, Either[JsonRpcError, Json]]]],
     val clientCapsRef: Ref[F, Option[ClientCapabilities]],
     val requestIdGen: Ref[F, Long],
+    val config: SessionConfig,
     tracer: Tracer[F]
 )(using F: Async[F]):
 
@@ -40,6 +41,27 @@ final class HttpSession[F[_]] private (
 
   /** Update the last access time to now */
   def touch: F[Unit] = F.realTimeInstant.flatMap(lastAccessedRef.set)
+
+  /** Check if this session has expired based on the configured timeout */
+  def isExpired: F[Boolean] =
+    for
+      now <- F.realTimeInstant
+      last <- lastAccessedRef.get
+    yield java.time.Duration.between(last, now).toMillis > config.timeout.toMillis
+
+  /** Shutdown this session, completing any pending requests with an error */
+  def shutdown: F[Unit] =
+    pendingRequests.getAndSet(Map.empty).flatMap { pending =>
+      pending.values.toList.traverse_ { deferred =>
+        deferred.complete(Left(JsonRpcError(-32000, "Session closed", None))).attempt.void
+      }
+    }
+
+  /** Get the number of pending requests awaiting responses */
+  def pendingRequestCount: F[Int] = pendingRequests.get.map(_.size)
+
+  /** Get the current queue size */
+  def queueSize: F[Int] = outQueue.size
 
   /** Extract client capabilities from initialize request */
   def maybeExtractClientCaps(message: JsonRpcMessage): F[Unit] =
@@ -66,7 +88,9 @@ final class HttpSession[F[_]] private (
         case None           => (map, F.unit)
     }.flatten
 
-  /** Send a request to the client and await the response */
+  /** Send a request to the client and await the response.
+    * The request will timeout after the configured requestTimeout duration.
+    */
   private[transport] def sendRequest[A: Decoder](method: String, params: Json): F[A] =
     for
       reqId <- nextRequestId
@@ -74,10 +98,16 @@ final class HttpSession[F[_]] private (
       _ <- pendingRequests.update(_ + (reqId -> deferred))
       request = JsonRpcRequest(reqId, method, Some(params))
       _ <- outQueue.offer(request)
-      result <- deferred.get.guarantee(pendingRequests.update(_ - reqId))
+      // Apply configured request timeout
+      result <- F.race(
+        F.sleep(config.requestTimeout),
+        deferred.get
+      ).guarantee(pendingRequests.update(_ - reqId))
       decoded <- result match
-        case Right(json) => json.as[A].liftTo[F]
-        case Left(err)   => F.raiseError(McpError.fromJsonRpcError(err))
+        case Left(_) =>
+          F.raiseError(McpError.InternalError(s"Request timed out after ${config.requestTimeout}"))
+        case Right(Right(json)) => json.as[A].liftTo[F]
+        case Right(Left(err))   => F.raiseError(McpError.fromJsonRpcError(err))
     yield decoded
 
   /** Send a notification to the client */
@@ -138,12 +168,17 @@ object HttpSession:
   /** Create a new HTTP session with a fresh Dispatcher and full context support.
     *
     * @param server The MCP server to create a dispatcher for
+    * @param config Session configuration (optional, defaults to SessionConfig.default)
     * @param tracer OpenTelemetry tracer for distributed tracing
     */
-  def create[F[_]: Async](server: McpServer[F])(using tracer: Tracer[F]): F[HttpSession[F]] =
+  def create[F[_]: Async](
+      server: McpServer[F],
+      config: SessionConfig = SessionConfig.default
+  )(using tracer: Tracer[F]): F[HttpSession[F]] =
     for
       id <- Async[F].delay(UUID.randomUUID().toString)
-      outQueue <- Queue.unbounded[F, JsonRpcMessage]
+      // Use bounded queue with configurable max size for backpressure
+      outQueue <- Queue.bounded[F, JsonRpcMessage](config.maxQueueSize)
       pendingRequests <- Ref.of[F, Map[RequestId, Deferred[F, Either[JsonRpcError, Json]]]](Map.empty)
       clientCapsRef <- Ref.of[F, Option[ClientCapabilities]](None)
       requestIdGen <- Ref.of[F, Long](0L)
@@ -162,6 +197,7 @@ object HttpSession:
         pendingRequests,
         clientCapsRef,
         requestIdGen,
+        config,
         tracer
       )
 
@@ -185,5 +221,6 @@ object HttpSession:
       pendingRequests,
       clientCapsRef,
       requestIdGen,
+      config,
       tracer
     )
