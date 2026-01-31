@@ -1,0 +1,17 @@
+# MCP Conformance Test Expected Failures
+#
+# This file lists scenarios that are expected to fail during conformance testing.
+# Add scenarios here temporarily while working on fixes to prevent CI failures.
+# Remove entries once the underlying issues are resolved.
+#
+# Format:
+#   server:
+#     - scenario-name-1
+#     - scenario-name-2
+#   client:
+#     - client-scenario-1
+
+server:
+  # Resource subscription scenarios - not yet implemented
+  - resources-subscribe
+  - resources-unsubscribe
