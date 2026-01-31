@@ -139,14 +139,14 @@ class SessionManagerSpec extends CatsEffectSuite:
   // === pruneExpired Tests ===
 
   test("pruneExpired removes expired sessions based on lastAccessedAt") {
-    val shortTimeout = SessionConfig(timeout = 20.millis)
+    val shortTimeout = SessionConfig(timeout = 100.millis)
     for
       manager <- SessionManager[IO](testServer, shortTimeout)
       session1 <- manager.create
       session2 <- manager.create
-      _ <- IO.sleep(10.millis)
+      _ <- IO.sleep(50.millis)
       _ <- manager.get(session1.id)  // touch session1
-      _ <- IO.sleep(15.millis)  // session2 now expired (25ms), session1 not (15ms since touch)
+      _ <- IO.sleep(75.millis)  // session2 now expired (125ms), session1 not (75ms since touch)
       pruned <- manager.pruneExpired
       _ = assertEquals(pruned, 1)
       s1 <- manager.get(session1.id)
@@ -157,13 +157,13 @@ class SessionManagerSpec extends CatsEffectSuite:
   }
 
   test("pruneExpired returns count of removed sessions") {
-    val shortTimeout = SessionConfig(timeout = 10.millis)
+    val shortTimeout = SessionConfig(timeout = 50.millis)
     for
       manager <- SessionManager[IO](testServer, shortTimeout)
       _ <- manager.create
       _ <- manager.create
       _ <- manager.create
-      _ <- IO.sleep(20.millis)
+      _ <- IO.sleep(100.millis)
       pruned <- manager.pruneExpired
       _ = assertEquals(pruned, 3)
       count <- manager.sessionCount
