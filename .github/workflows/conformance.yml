@@ -10,7 +10,7 @@ jobs:
   conformance:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-java@v5
         with:
@@ -34,7 +34,7 @@ jobs:
           echo "Server is ready"
 
       - name: Run Conformance Tests
-        uses: modelcontextprotocol/conformance@v0.1.11
+        uses: modelcontextprotocol/conformance@v0.1.13
         with:
           mode: server
           url: http://localhost:3000/mcp
