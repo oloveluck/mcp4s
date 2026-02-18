@@ -122,7 +122,7 @@ object McpTool:
       param: String = "input",
       paramDesc: String = ""
   )(handler: String => F[ToolResult]): McpTools[F] =
-    val prop = JsonSchemaProperty("string", if paramDesc.isEmpty then None else Some(paramDesc))
+    val prop = JsonSchemaProperty.make("string", if paramDesc.isEmpty then None else Some(paramDesc))
     val schema = JsonSchema("object", Some(Map(param -> prop)), Some(List(param)))
     val tool = Tool(name, Some(description), schema)
     McpTools.single(tool) { json =>
@@ -146,7 +146,7 @@ object McpTool:
       param: String = "value",
       paramDesc: String = ""
   )(handler: Double => F[ToolResult]): McpTools[F] =
-    val prop = JsonSchemaProperty("number", if paramDesc.isEmpty then None else Some(paramDesc))
+    val prop = JsonSchemaProperty.make("number", if paramDesc.isEmpty then None else Some(paramDesc))
     val schema = JsonSchema("object", Some(Map(param -> prop)), Some(List(param)))
     val tool = Tool(name, Some(description), schema)
     McpTools.single(tool) { json =>
@@ -170,7 +170,7 @@ object McpTool:
       param: String = "flag",
       paramDesc: String = ""
   )(handler: Boolean => F[ToolResult]): McpTools[F] =
-    val prop = JsonSchemaProperty("boolean", if paramDesc.isEmpty then None else Some(paramDesc))
+    val prop = JsonSchemaProperty.make("boolean", if paramDesc.isEmpty then None else Some(paramDesc))
     val schema = JsonSchema("object", Some(Map(param -> prop)), Some(List(param)))
     val tool = Tool(name, Some(description), schema)
     McpTools.single(tool) { json =>
@@ -196,8 +196,8 @@ object McpTool:
       desc1: String = "",
       desc2: String = ""
   )(handler: (Double, Double) => F[ToolResult]): McpTools[F] =
-    val prop1 = JsonSchemaProperty("number", if desc1.isEmpty then None else Some(desc1))
-    val prop2 = JsonSchemaProperty("number", if desc2.isEmpty then None else Some(desc2))
+    val prop1 = JsonSchemaProperty.make("number", if desc1.isEmpty then None else Some(desc1))
+    val prop2 = JsonSchemaProperty.make("number", if desc2.isEmpty then None else Some(desc2))
     val schema = JsonSchema("object", Some(Map(param1 -> prop1, param2 -> prop2)), Some(List(param1, param2)))
     val tool = Tool(name, Some(description), schema)
     McpTools.single(tool) { json =>

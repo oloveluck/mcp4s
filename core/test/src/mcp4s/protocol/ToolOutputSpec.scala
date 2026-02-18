@@ -19,7 +19,7 @@ class ToolOutputSpec extends FunSuite:
     val to = summon[ToolOutput[String]]
     assertEquals(to.schema.`type`, "object")
     val props = to.schema.properties.get
-    assertEquals(props("result").`type`, "string")
+    assertEquals(props("result").`type`.get, "string")
   }
 
   test("Double ToolOutput encodes to text content") {
@@ -32,7 +32,7 @@ class ToolOutputSpec extends FunSuite:
   test("Double ToolOutput has correct schema") {
     val to = summon[ToolOutput[Double]]
     val props = to.schema.properties.get
-    assertEquals(props("result").`type`, "number")
+    assertEquals(props("result").`type`.get, "number")
   }
 
   test("Int ToolOutput encodes correctly") {
@@ -67,9 +67,9 @@ class ToolOutputSpec extends FunSuite:
     val to = ToolOutput.derived[CalcResult]
     assertEquals(to.schema.`type`, "object")
     val props = to.schema.properties.get
-    assertEquals(props("result").`type`, "number")
+    assertEquals(props("result").`type`.get, "number")
     assertEquals(props("result").description, Some("The calculation result"))
-    assertEquals(props("operation").`type`, "string")
+    assertEquals(props("operation").`type`.get, "string")
     assertEquals(props("operation").description, Some("The operation performed"))
     assertEquals(to.schema.required, Some(List("result", "operation")))
   }

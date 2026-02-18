@@ -22,9 +22,9 @@ class McpToolSpec extends CatsEffectSuite:
       _ = assertEquals(tools.head.name, "add")
       _ = assertEquals(tools.head.description, Some("Add two numbers"))
       props = tools.head.inputSchema.properties.get
-      _ = assertEquals(props("a").`type`, "number")
+      _ = assertEquals(props("a").`type`.get, "number")
       _ = assertEquals(props("a").description, Some("First number"))
-      _ = assertEquals(props("b").`type`, "number")
+      _ = assertEquals(props("b").`type`.get, "number")
       _ = assertEquals(props("b").description, Some("Second number"))
     yield ()
   }

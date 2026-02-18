@@ -78,7 +78,7 @@ object ToolInput:
     val descriptions = fieldDescriptions[A]
 
     val properties = labels.zip(schemas).map { (label, schemaType) =>
-      label -> JsonSchemaProperty(schemaType, descriptions.get(label), None)
+      label -> JsonSchemaProperty.make(schemaType, descriptions.get(label), None)
     }.toMap
 
     val jsonSchema = JsonSchema("object", Some(properties), Some(labels))
