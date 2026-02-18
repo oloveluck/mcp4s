@@ -8,7 +8,6 @@ import io.circe.syntax.*
 import org.http4s.*
 import org.http4s.circe.*
 import org.http4s.client.Client
-import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.headers.`Content-Type`
 import org.typelevel.ci.CIString
 import org.typelevel.otel4s.context.propagation.TextMapUpdater
@@ -43,10 +42,10 @@ object HttpClientTransport:
     */
   def connect[F[_]: Async: Network](
       client: McpClient[F],
-      config: HttpClientConfig
+      config: HttpClientConfig,
+      httpClient: Client[F]
   )(using Tracer[F]): CatsResource[F, McpConnection[F]] =
     for
-      httpClient <- EmberClientBuilder.default[F].build
       connection <- CatsResource.eval(establishConnection(client, httpClient, config, summon[Tracer[F]]))
     yield connection
 
