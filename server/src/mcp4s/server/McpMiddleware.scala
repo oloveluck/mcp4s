@@ -50,7 +50,7 @@ object McpMiddleware:
           _ <- log(s"[MCP] Calling tool: $name")
           result <- next.attempt
           _ <- result match
-            case Right(r) if r.isError =>
+            case Right(r) if r.isError.getOrElse(false) =>
               log(s"[MCP] Tool $name returned error: ${r.textContent}")
             case Right(_) =>
               log(s"[MCP] Tool $name completed successfully")

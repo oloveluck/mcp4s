@@ -11,6 +11,7 @@ import mcp4s.server.*
 import mcp4s.server.transport.*
 import mcp4s.client.transport.*
 import munit.CatsEffectSuite
+import org.http4s.ember.client.EmberClientBuilder
 
 class IntegrationSpec extends CatsEffectSuite:
 
@@ -70,10 +71,13 @@ class IntegrationSpec extends CatsEffectSuite:
     HttpTransport.serve[IO](createTestServer, HttpConfig(port = port"0"))
 
   def connectedClient(serverPort: Int): Resource[IO, McpConnection[IO]] =
-    HttpClientTransport.connect[IO](
-      testClient,
-      HttpClientConfig(s"http://localhost:$serverPort")
-    )
+    EmberClientBuilder.default[IO].build.flatMap{ httpClient =>
+      HttpClientTransport.connect[IO](
+        testClient,
+        HttpClientConfig(s"http://localhost:$serverPort"),
+        httpClient
+      )
+    }
 
   // === Integration Tests ===
 
@@ -125,7 +129,7 @@ class IntegrationSpec extends CatsEffectSuite:
             "b" -> Json.fromDouble(3.0).get
           ))
         yield
-          assertEquals(result.isError, false)
+          assertEquals(result.isError.getOrElse(false), false)
           assertEquals(result.content.length, 1)
           result.content.head match
             case TextContent(text, _, _) =>
@@ -240,7 +244,7 @@ class IntegrationSpec extends CatsEffectSuite:
           results <- calls.parSequence
         yield
           assertEquals(results.length, 3)
-          assert(results.forall(!_.isError))
+          assert(results.forall(!_.isError.getOrElse(false)))
       }
     }
   }

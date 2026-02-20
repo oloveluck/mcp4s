@@ -537,8 +537,8 @@ object Codecs:
         for
           toolUseId <- cursor.get[String]("toolUseId")
           content <- cursor.get[List[Content]]("content")
-          isError <- cursor.get[Option[Boolean]]("isError")
-        yield ToolResultContent(toolUseId, content, isError.getOrElse(false))
+          isError <- cursor.getOrElse[Boolean]("isError")(false)
+        yield ToolResultContent(toolUseId, content, isError)
       case other =>
         Left(DecodingFailure(s"Unknown sampling content type: $other", cursor.history))
     }

@@ -133,7 +133,7 @@ class McpConnectionSpec extends CatsEffectSuite:
       conn <- createConnection(mockResponse(McpMethod.ToolsCall, response))
       result <- conn.callTool("calculate", Map.empty[String, String])
     yield
-      assertEquals(result.isError, false)
+      assertEquals(result.isError.getOrElse(false), false)
       assertEquals(result.content.length, 1)
   }
 
@@ -142,7 +142,7 @@ class McpConnectionSpec extends CatsEffectSuite:
     for
       conn <- createConnection(mockResponse(McpMethod.ToolsCall, response))
       result <- conn.callTool("calculate", Map.empty[String, String])
-    yield assertEquals(result.isError, true)
+    yield assertEquals(result.isError.getOrElse(false), true)
   }
 
   // === List Resources Tests ===

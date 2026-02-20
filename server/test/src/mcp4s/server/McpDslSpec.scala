@@ -16,13 +16,13 @@ class McpDslSpec extends CatsEffectSuite:
   test("ok creates text tool result") {
     val result = ok("Success!")
     assertEquals(result.textContent, "Success!")
-    assertEquals(result.isError, false)
+    assertEquals(result.isError.getOrElse(false), false)
   }
 
   test("error creates error tool result") {
     val result = error("Failed!")
     assertEquals(result.textContent, "Failed!")
-    assertEquals(result.isError, true)
+    assertEquals(result.isError.getOrElse(false), true)
   }
 
   test("content creates result from multiple content items") {

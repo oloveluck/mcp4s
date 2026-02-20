@@ -226,7 +226,7 @@ final case class JsonSchema(
 )
 
 final case class JsonSchemaProperty(
-    `type`: String,
+    `type`: Option[String],
     description: Option[String] = None,
     `enum`: Option[List[String]] = None,
     // SEP-1034: Default values
@@ -239,7 +239,21 @@ final case class JsonSchemaProperty(
     anyOf: Option[List[Json]] = None        // For titled multi-select
 )
 
-object JsonSchema:
+object JsonSchemaProperty:
+  def make(`type`: String,
+    description: Option[String] = None,
+    `enum`: Option[List[String]] = None,
+    // SEP-1034: Default values
+    default: Option[Json] = None,
+    // SEP-1330: Titled enums
+    oneOf: Option[List[Json]] = None,      // [{const: "val", title: "Label"}, ...]
+    enumNames: Option[List[String]] = None, // Legacy titled enums
+    // SEP-1330: Array types with enums
+    items: Option[JsonSchemaProperty] = None,
+    anyOf: Option[List[Json]] = None        // For titled multi-select
+  ) : JsonSchemaProperty = JsonSchemaProperty(Some(`type`),description, `enum`, default, oneOf, enumNames, items, anyOf)
+
+object JsonSchema:  
   /** Empty schema that accepts any input */
   val empty: JsonSchema = JsonSchema("object", None, None)
 
@@ -257,50 +271,50 @@ object JsonSchema:
   // === Property constructors with Option description ===
 
   def string(description: Option[String] = None): JsonSchemaProperty =
-    JsonSchemaProperty("string", description, None)
+    JsonSchemaProperty.make("string", description, None)
 
   def number(description: Option[String] = None): JsonSchemaProperty =
-    JsonSchemaProperty("number", description, None)
+    JsonSchemaProperty.make("number", description, None)
 
   def boolean(description: Option[String] = None): JsonSchemaProperty =
-    JsonSchemaProperty("boolean", description, None)
+    JsonSchemaProperty.make("boolean", description, None)
 
   def integer(description: Option[String] = None): JsonSchemaProperty =
-    JsonSchemaProperty("integer", description, None)
+    JsonSchemaProperty.make("integer", description, None)
 
   def stringEnum(values: List[String], description: Option[String] = None): JsonSchemaProperty =
-    JsonSchemaProperty("string", description, Some(values))
+    JsonSchemaProperty.make("string", description, Some(values))
 
   // === Property constructors with String description (convenience) ===
 
   def string(description: String): JsonSchemaProperty =
-    JsonSchemaProperty("string", Some(description), None)
+    JsonSchemaProperty.make("string", Some(description), None)
 
   def number(description: String): JsonSchemaProperty =
-    JsonSchemaProperty("number", Some(description), None)
+    JsonSchemaProperty.make("number", Some(description), None)
 
   def boolean(description: String): JsonSchemaProperty =
-    JsonSchemaProperty("boolean", Some(description), None)
+    JsonSchemaProperty.make("boolean", Some(description), None)
 
   def integer(description: String): JsonSchemaProperty =
-    JsonSchemaProperty("integer", Some(description), None)
+    JsonSchemaProperty.make("integer", Some(description), None)
 
   def stringEnum(values: List[String], description: String): JsonSchemaProperty =
-    JsonSchemaProperty("string", Some(description), Some(values))
+    JsonSchemaProperty.make("string", Some(description), Some(values))
 
   // === SEP-1034: Property constructors with default values ===
 
   def stringWithDefault(description: String, default: String): JsonSchemaProperty =
-    JsonSchemaProperty("string", Some(description), None, Some(Json.fromString(default)))
+    JsonSchemaProperty.make("string", Some(description), None, Some(Json.fromString(default)))
 
   def integerWithDefault(description: String, default: Int): JsonSchemaProperty =
-    JsonSchemaProperty("integer", Some(description), None, Some(Json.fromInt(default)))
+    JsonSchemaProperty.make("integer", Some(description), None, Some(Json.fromInt(default)))
 
   def booleanWithDefault(description: String, default: Boolean): JsonSchemaProperty =
-    JsonSchemaProperty("boolean", Some(description), None, Some(Json.fromBoolean(default)))
+    JsonSchemaProperty.make("boolean", Some(description), None, Some(Json.fromBoolean(default)))
 
   def numberWithDefault(description: String, default: Double): JsonSchemaProperty =
-    JsonSchemaProperty("number", Some(description), None, Some(Json.fromDoubleOrNull(default)))
+    JsonSchemaProperty.make("number", Some(description), None, Some(Json.fromDoubleOrNull(default)))
 
   // === SEP-1330: Titled enum constructors ===
 
@@ -309,7 +323,7 @@ object JsonSchema:
     val oneOfList = values.map { case (value, title) =>
       Json.obj("const" -> Json.fromString(value), "title" -> Json.fromString(title))
     }
-    JsonSchemaProperty("string", description, None, None, Some(oneOfList))
+    JsonSchemaProperty.make("string", description, None, None, Some(oneOfList))
 
   /** Create a titled enum property using oneOf with const/title pairs (convenience overload) */
   def titledEnum(description: String, values: (String, String)*): JsonSchemaProperty =
@@ -317,7 +331,7 @@ object JsonSchema:
 
   /** Create an array property with items schema */
   def array(items: JsonSchemaProperty, description: Option[String] = None): JsonSchemaProperty =
-    JsonSchemaProperty("array", description, None, None, None, None, Some(items))
+    JsonSchemaProperty.make("array", description, None, None, None, None, Some(items))
 
   /** Create an array property with items schema (convenience overload) */
   def array(description: String, items: JsonSchemaProperty): JsonSchemaProperty =
@@ -325,19 +339,19 @@ object JsonSchema:
 
   /** Create a string enum with a default value */
   def stringEnumWithDefault(values: List[String], default: String, description: Option[String] = None): JsonSchemaProperty =
-    JsonSchemaProperty("string", description, Some(values), Some(Json.fromString(default)))
+    JsonSchemaProperty.make("string", description, Some(values), Some(Json.fromString(default)))
 
   /** Create a legacy titled enum using enumNames (deprecated but needed for conformance) */
   def legacyTitledEnum(values: List[String], names: List[String], description: Option[String] = None): JsonSchemaProperty =
-    JsonSchemaProperty("string", description, Some(values), None, None, Some(names))
+    JsonSchemaProperty.make("string", description, Some(values), None, None, Some(names))
 
   /** Create an array with titled multi-select using anyOf */
   def titledMultiSelect(values: List[(String, String)], description: Option[String] = None): JsonSchemaProperty =
     val anyOfList = values.map { case (value, title) =>
       Json.obj("const" -> Json.fromString(value), "title" -> Json.fromString(title))
     }
-    JsonSchemaProperty("array", description, None, None, None, None,
-      Some(JsonSchemaProperty("string", None, None, None, None, None, None, Some(anyOfList)))
+    JsonSchemaProperty.make("array", description, None, None, None, None,
+      Some(JsonSchemaProperty.make("string", None, None, None, None, None, None, Some(anyOfList)))
     )
 
   // === Extension for fluent required fields ===
@@ -477,7 +491,7 @@ final case class ResourceLinkContent(
   */
 final case class ToolResult(
     content: List[Content],
-    isError: Boolean = false,
+    isError: Option[Boolean] = None,
     structuredContent: Option[Json] = None
 ):
   /** Extract the first text content, if any */
@@ -509,7 +523,7 @@ object ToolResult:
 
   /** Create an error result */
   def error(message: String): ToolResult =
-    ToolResult(List(TextContent(message)), isError = true)
+    ToolResult(List(TextContent(message)), isError = Some(true))
 
   /** Create an image result from raw bytes */
   def image(data: Array[Byte], mimeType: String): ToolResult =

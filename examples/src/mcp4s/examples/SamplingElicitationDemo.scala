@@ -82,7 +82,7 @@ object ElicitationHandlers:
       IO.println(s"[Elicitation] Schema properties: ${schema.properties.map(_.keys.mkString(", ")).getOrElse("none")}") *> {
         // Simulate user filling in the form with mock values
         val values = schema.properties.getOrElse(Map.empty).map { (key, prop) =>
-          key -> (prop.`type` match
+          key -> (prop.`type`.get match
             case "string"  => Json.fromString(s"value_for_$key")
             case "number"  => Json.fromDoubleOrNull(42.0)
             case "boolean" => Json.fromBoolean(true)
@@ -207,7 +207,7 @@ object DemoClientDsl extends IOApp.Simple:
     handler = {
       case ElicitFormParams(msg, schema, _) =>
         val values = schema.properties.getOrElse(Map.empty).map { (key, prop) =>
-          key -> (prop.`type` match
+          key -> (prop.`type`.get match
             case "string"  => Json.fromString(s"value_for_$key")
             case "number"  => Json.fromDoubleOrNull(42.0)
             case "boolean" => Json.fromBoolean(true)

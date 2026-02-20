@@ -126,7 +126,7 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
             "b" -> Json.fromDouble(3.0).get
           ))
         yield
-          assertEquals(result.isError, false)
+          assertEquals(result.isError.getOrElse(false), false)
           assertEquals(result.content.length, 1)
           result.content.head match
             case TextContent(text, _, _) =>
@@ -228,7 +228,7 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
           results <- calls.parSequence
         yield
           assertEquals(results.length, 3)
-          assert(results.forall(!_.isError))
+          assert(results.forall(!_.isError.getOrElse(false)))
       }
     }
   }
@@ -303,7 +303,7 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
         yield
           // Verify each result matches its request (no cross-contamination)
           assertEquals(results.length, 4)
-          assert(results.forall(!_.isError))
+          assert(results.forall(!_.isError.getOrElse(false)))
           // Results should be: 6.0, 100.0, 25.0, 49.0
           val texts = results.flatMap(_.content.collect { case TextContent(t, _, _) => t })
           assert(texts.contains("6.0"))
@@ -343,7 +343,7 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
         }
       yield
         // Both should succeed independently
-        assertEquals(result1.isError, false)
-        assertEquals(result2.isError, false)
+        assertEquals(result1.isError.getOrElse(false), false)
+        assertEquals(result2.isError.getOrElse(false), false)
     }
   }

@@ -40,7 +40,7 @@ object ToolOutput:
 
   given ToolOutput[String] with
     def schema: JsonSchema = JsonSchema("object",
-      Some(Map("result" -> JsonSchemaProperty("string"))),
+      Some(Map("result" -> JsonSchemaProperty.make("string"))),
       Some(List("result"))
     )
     def encode(a: String): ToolResult =
@@ -51,7 +51,7 @@ object ToolOutput:
 
   given ToolOutput[Double] with
     def schema: JsonSchema = JsonSchema("object",
-      Some(Map("result" -> JsonSchemaProperty("number"))),
+      Some(Map("result" -> JsonSchemaProperty.make("number"))),
       Some(List("result"))
     )
     def encode(a: Double): ToolResult =
@@ -62,7 +62,7 @@ object ToolOutput:
 
   given ToolOutput[Int] with
     def schema: JsonSchema = JsonSchema("object",
-      Some(Map("result" -> JsonSchemaProperty("integer"))),
+      Some(Map("result" -> JsonSchemaProperty.make("integer"))),
       Some(List("result"))
     )
     def encode(a: Int): ToolResult =
@@ -73,7 +73,7 @@ object ToolOutput:
 
   given ToolOutput[Long] with
     def schema: JsonSchema = JsonSchema("object",
-      Some(Map("result" -> JsonSchemaProperty("integer"))),
+      Some(Map("result" -> JsonSchemaProperty.make("integer"))),
       Some(List("result"))
     )
     def encode(a: Long): ToolResult =
@@ -84,7 +84,7 @@ object ToolOutput:
 
   given ToolOutput[Boolean] with
     def schema: JsonSchema = JsonSchema("object",
-      Some(Map("result" -> JsonSchemaProperty("boolean"))),
+      Some(Map("result" -> JsonSchemaProperty.make("boolean"))),
       Some(List("result"))
     )
     def encode(a: Boolean): ToolResult =
@@ -108,7 +108,7 @@ object ToolOutput:
     val descriptions = ToolInput.fieldDescriptions[A]
 
     val properties = labels.zip(schemas).map { (label, schemaType) =>
-      label -> JsonSchemaProperty(schemaType, descriptions.get(label), None)
+      label -> JsonSchemaProperty.make(schemaType, descriptions.get(label), None)
     }.toMap
 
     val jsonSchema = JsonSchema("object", Some(properties), Some(labels))

@@ -23,8 +23,8 @@ class ToolInputSpec extends FunSuite:
   test("ToolInput schema has correct field types") {
     val ti = summon[ToolInput[SimpleArgs]]
     val props = ti.schema.properties.get
-    assertEquals(props("name").`type`, "string")
-    assertEquals(props("count").`type`, "integer")
+    assertEquals(props("name").`type`.get, "string")
+    assertEquals(props("count").`type`.get, "integer")
   }
 
   test("ToolInput schema has required fields") {
@@ -93,12 +93,12 @@ class ToolInputSpec extends FunSuite:
   test("ToolInput maps Scala types to JSON schema types") {
     val ti = summon[ToolInput[AllTypesArgs]]
     val props = ti.schema.properties.get
-    assertEquals(props("s").`type`, "string")
-    assertEquals(props("i").`type`, "integer")
-    assertEquals(props("l").`type`, "integer")
-    assertEquals(props("d").`type`, "number")
-    assertEquals(props("f").`type`, "number")
-    assertEquals(props("b").`type`, "boolean")
+    assertEquals(props("s").`type`.get, "string")
+    assertEquals(props("i").`type`.get, "integer")
+    assertEquals(props("l").`type`.get, "integer")
+    assertEquals(props("d").`type`.get, "number")
+    assertEquals(props("f").`type`.get, "number")
+    assertEquals(props("b").`type`.get, "boolean")
   }
 
   case class OptionalArgs(
@@ -113,8 +113,8 @@ class ToolInputSpec extends FunSuite:
     val ti = summon[ToolInput[OptionalArgs]]
     val props = ti.schema.properties.get
     // Both should be present but optional fields map to string type
-    assertEquals(props("required").`type`, "string")
-    assertEquals(props("optional").`type`, "string")
+    assertEquals(props("required").`type`.get, "string")
+    assertEquals(props("optional").`type`.get, "string")
   }
 
   // === Calculator Example Pattern ===
@@ -132,9 +132,9 @@ class ToolInputSpec extends FunSuite:
     assertEquals(ti.schema.`type`, "object")
 
     val props = ti.schema.properties.get
-    assertEquals(props("a").`type`, "number")
+    assertEquals(props("a").`type`.get, "number")
     assertEquals(props("a").description, Some("First number"))
-    assertEquals(props("b").`type`, "number")
+    assertEquals(props("b").`type`.get, "number")
     assertEquals(props("b").description, Some("Second number"))
 
     assertEquals(ti.schema.required, Some(List("a", "b")))
