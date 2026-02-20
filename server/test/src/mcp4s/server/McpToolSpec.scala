@@ -382,13 +382,13 @@ class McpToolSpec extends CatsEffectSuite:
   test("McpResult.tool creates text result") {
     val result = McpResult.tool("Success!")
     assertEquals(result.textContent, "Success!")
-    assertEquals(result.isError, false)
+    assertEquals(result.isError.getOrElse(false), false)
   }
 
   test("McpResult.toolError creates error result") {
     val result = McpResult.toolError("Failed")
     assertEquals(result.textContent, "Failed")
-    assertEquals(result.isError, true)
+    assertEquals(result.isError.getOrElse(false), true)
   }
 
   test("McpResult.resource creates text resource") {

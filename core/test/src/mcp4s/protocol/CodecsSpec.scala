@@ -113,13 +113,13 @@ class CodecsSpec extends FunSuite:
   test("ToolResult.text creates text result") {
     val result = ToolResult.text("Success")
     assertEquals(result.content.length, 1)
-    assertEquals(result.isError, false)
+    assertEquals(result.isError.getOrElse(false), false)
     assert(result.content.head.isInstanceOf[TextContent])
   }
 
   test("ToolResult.error creates error result") {
     val result = ToolResult.error("Something went wrong")
-    assertEquals(result.isError, true)
+    assertEquals(result.isError.getOrElse(false), true)
   }
 
   // === Role Tests ===

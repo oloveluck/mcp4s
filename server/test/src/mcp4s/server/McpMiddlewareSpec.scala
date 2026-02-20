@@ -73,7 +73,7 @@ class McpMiddlewareSpec extends CatsEffectSuite:
     for
       result <- tools.call("fail", Json.obj()).value
       _ = assert(result.isDefined)
-      _ = assert(result.get.isError)
+      _ = assert(result.get.isError.getOrElse(false))
       _ = assert(result.get.textContent.contains("something went wrong"))
     yield ()
   }
@@ -95,7 +95,7 @@ class McpMiddlewareSpec extends CatsEffectSuite:
     for
       illegalResult <- illegalFail.call("illegal", Json.obj()).value
       _ = assert(illegalResult.isDefined)
-      _ = assert(illegalResult.get.isError)
+      _ = assert(illegalResult.get.isError.getOrElse(false))
       _ = assertEquals(illegalResult.get.textContent, "Invalid: bad input")
 
       otherResult <- otherFail.call("other", Json.obj()).value.attempt
@@ -121,7 +121,7 @@ class McpMiddlewareSpec extends CatsEffectSuite:
 
       _ = assert(validResult.isDefined)
       _ = assert(invalidResult.isDefined)
-      _ = assert(invalidResult.get.isError)
+      _ = assert(invalidResult.get.isError.getOrElse(false))
       _ = assert(invalidResult.get.textContent.contains("Missing required parameter"))
     yield ()
   }

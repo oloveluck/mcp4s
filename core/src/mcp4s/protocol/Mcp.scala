@@ -491,7 +491,7 @@ final case class ResourceLinkContent(
   */
 final case class ToolResult(
     content: List[Content],
-    isError: Boolean = false,
+    isError: Option[Boolean] = None,
     structuredContent: Option[Json] = None
 ):
   /** Extract the first text content, if any */
@@ -523,7 +523,7 @@ object ToolResult:
 
   /** Create an error result */
   def error(message: String): ToolResult =
-    ToolResult(List(TextContent(message)), isError = true)
+    ToolResult(List(TextContent(message)), isError = Some(true))
 
   /** Create an image result from raw bytes */
   def image(data: Array[Byte], mimeType: String): ToolResult =

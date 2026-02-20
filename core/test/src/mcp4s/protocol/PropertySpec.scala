@@ -627,7 +627,7 @@ class PropertySpec extends ScalaCheckSuite:
     content <- Gen.listOfN(2, genContent)
     isError <- Gen.oneOf(true, false)
     structuredContent <- Gen.option(genJsonObject)
-  } yield ToolResult(content, isError, structuredContent)
+  } yield ToolResult(content, Some(isError), structuredContent)
 
   given Arbitrary[ToolResult] = Arbitrary(genToolResult)
 
