@@ -22,9 +22,9 @@ class McpToolSpec extends CatsEffectSuite:
       _ = assertEquals(tools.head.name, "add")
       _ = assertEquals(tools.head.description, Some("Add two numbers"))
       props = tools.head.inputSchema.properties.get
-      _ = assertEquals(props("a").`type`, "number")
+      _ = assertEquals(props("a").`type`.get, "number")
       _ = assertEquals(props("a").description, Some("First number"))
-      _ = assertEquals(props("b").`type`, "number")
+      _ = assertEquals(props("b").`type`.get, "number")
       _ = assertEquals(props("b").description, Some("Second number"))
     yield ()
   }
@@ -382,13 +382,13 @@ class McpToolSpec extends CatsEffectSuite:
   test("McpResult.tool creates text result") {
     val result = McpResult.tool("Success!")
     assertEquals(result.textContent, "Success!")
-    assertEquals(result.isError, false)
+    assertEquals(result.isError.getOrElse(false), false)
   }
 
   test("McpResult.toolError creates error result") {
     val result = McpResult.toolError("Failed")
     assertEquals(result.textContent, "Failed")
-    assertEquals(result.isError, true)
+    assertEquals(result.isError.getOrElse(false), true)
   }
 
   test("McpResult.resource creates text resource") {

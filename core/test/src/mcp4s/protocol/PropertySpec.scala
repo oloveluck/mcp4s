@@ -406,7 +406,7 @@ class PropertySpec extends ScalaCheckSuite:
     description <- Gen.option(Gen.alphaNumStr)
     enumVals <- Gen.option(Gen.listOfN(3, Gen.alphaStr.filter(_.nonEmpty)))
     default <- Gen.option(genJsonPrimitive)
-  } yield JsonSchemaProperty(typ, description, enumVals, default)
+  } yield JsonSchemaProperty.make(typ, description, enumVals, default)
 
   given Arbitrary[JsonSchemaProperty] = Arbitrary(genJsonSchemaProperty)
 
@@ -627,7 +627,7 @@ class PropertySpec extends ScalaCheckSuite:
     content <- Gen.listOfN(2, genContent)
     isError <- Gen.oneOf(true, false)
     structuredContent <- Gen.option(genJsonObject)
-  } yield ToolResult(content, isError, structuredContent)
+  } yield ToolResult(content, Some(isError), structuredContent)
 
   given Arbitrary[ToolResult] = Arbitrary(genToolResult)
 

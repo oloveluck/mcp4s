@@ -183,7 +183,7 @@ class DispatcherSpec extends CatsEffectSuite:
         case JsonRpcResponse(_, result) =>
           val toolResult = result.as[ToolResult]
           assert(toolResult.isRight)
-          assertEquals(toolResult.toOption.get.isError, false)
+          assertEquals(toolResult.toOption.get.isError.getOrElse(false), false)
         case _ => fail("Expected response")
   }
 

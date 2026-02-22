@@ -8,7 +8,6 @@ import io.circe.syntax.*
 import org.http4s.*
 import org.http4s.circe.*
 import org.http4s.client.Client
-import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.headers.`Content-Type`
 import org.typelevel.ci.CIString
 import org.typelevel.otel4s.context.propagation.TextMapUpdater
@@ -43,10 +42,10 @@ object HttpClientTransport:
     */
   def connect[F[_]: Async: Network](
       client: McpClient[F],
-      config: HttpClientConfig
+      config: HttpClientConfig,
+      httpClient: Client[F]
   )(using Tracer[F]): CatsResource[F, McpConnection[F]] =
     for
-      httpClient <- EmberClientBuilder.default[F].build
       connection <- CatsResource.eval(establishConnection(client, httpClient, config, summon[Tracer[F]]))
     yield connection
 
@@ -115,27 +114,58 @@ object HttpClientTransport:
         method = Method.POST,
         uri = endpointUri,
         headers = traceHeaders.put(
-          Header.Raw(CIString("Accept"), "application/json")
+          Header.Raw(CIString("Accept"), "application/json, text/event-stream")
         )
       ).withEntity(initRequest.asJson)
         .withContentType(`Content-Type`(MediaType.application.json))
 
-      httpClient.run(request).use { response =>
+      runRequestToJson(httpClient, request).flatMap { case (headers, responseJson) =>
         // Extract session ID from response header
-        val sessionIdOpt = response.headers.get(SessionHeaderName).map(_.head.value)
-        sessionIdRef.set(sessionIdOpt) *>
-          response.as[Json].flatMap { responseJson =>
-            responseJson.as[JsonRpcMessage] match
-              case Right(JsonRpcResponse(_, result)) =>
-                result.as[InitializeResult].liftTo[F]
-              case Right(JsonRpcErrorResponse(_, error)) =>
-                Async[F].raiseError(McpError.fromJsonRpcError(error))
-              case Right(_) =>
-                Async[F].raiseError(McpError.InternalError("Unexpected response type"))
-              case Left(err) =>
-                Async[F].raiseError(McpError.InternalError(s"Failed to parse response: ${err.getMessage}"))
-          }
+        val sessionIdOpt = headers.get(SessionHeaderName).map(_.head.value)
+        sessionIdRef.set(sessionIdOpt).flatMap { _ =>
+          responseJson.as[JsonRpcMessage] match
+            case Right(JsonRpcResponse(_, result)) =>
+              result.as[InitializeResult].liftTo[F]
+            case Right(JsonRpcErrorResponse(_, error)) =>
+              Async[F].raiseError(McpError.fromJsonRpcError(error))
+            case Right(_) =>
+              Async[F].raiseError(McpError.InternalError("Unexpected response type"))
+            case Left(err) =>
+              Async[F]
+                .raiseError(McpError.InternalError(s"Failed to parse response: ${err.getMessage}"))
+        }
+
       }
+    }
+
+  private def runRequestToJson[F[_]: Async](httpClient: Client[F], request: Request[F]) =
+    httpClient.run(request).use { response =>
+      val sse = response.headers
+        .get(CIString("Content-Type"))
+        .exists(_.exists(_.value == "text/event-stream"))
+      val parsedJson = if (!sse) {
+        response.asJson
+      } else {
+        val streamOfJson: fs2.Stream[F, Json] =
+          response.body.through(org.http4s.ServerSentEvent.decoder[F]).evalMap {
+            case ServerSentEvent(data, eventType, id, retry, comment) =>
+              data
+                .map(utf8String =>
+                  io.circe.parser.parse(utf8String) match
+                    case Left(value) =>
+                      Async[F].raiseError(
+                        McpError
+                          .InternalError(s"Parse error of SSE data (expected json) ${value}")
+                      )
+                    case Right(value) => Async[F].pure(value)
+                )
+                .getOrElse(Async[F].raiseError(McpError.InternalError(s"SSE has no data field")))
+          }
+
+        streamOfJson.take(1).compile.lastOrError
+
+      }
+      parsedJson.map(js => response.headers -> js)
     }
 
   /** Create a request sender function that includes session ID */
@@ -151,17 +181,21 @@ object HttpClientTransport:
       headersWithSession = sessionIdOpt match
         case Some(sessionId) =>
           traceHeaders
-            .put(Header.Raw(CIString("Accept"), "application/json"))
+            .put(Header.Raw(CIString("Accept"), "application/json, text/event-stream"))
             .put(Header.Raw(SessionHeaderName, sessionId))
         case None =>
-          traceHeaders.put(Header.Raw(CIString("Accept"), "application/json"))
+          traceHeaders.put(Header.Raw(CIString("Accept"), "application/json, text/event-stream"))
       request = Request[F](
         method = Method.POST,
         uri = endpointUri,
         headers = headersWithSession
       ).withEntity(req.asJson)
         .withContentType(`Content-Type`(MediaType.application.json))
-      result <- httpClient.expect[Json](request).flatMap { responseJson =>
+
+      responseJsonAndHeader <- runRequestToJson(httpClient, request)
+      responseJson = responseJsonAndHeader._2
+
+      result <-
         responseJson.as[JsonRpcMessage] match
           case Right(JsonRpcResponse(_, result)) =>
             Async[F].pure(result)
@@ -170,8 +204,9 @@ object HttpClientTransport:
           case Right(_) =>
             Async[F].raiseError(McpError.InternalError("Unexpected response type"))
           case Left(err) =>
-            Async[F].raiseError(McpError.InternalError(s"Failed to parse response: ${err.getMessage}"))
-      }
+            Async[F].raiseError(
+              McpError.InternalError(s"Failed to parse response: ${err.getMessage}")
+            )
     yield result
   }
 
@@ -188,10 +223,10 @@ object HttpClientTransport:
       headersWithSession = sessionIdOpt match
         case Some(sessionId) =>
           traceHeaders
-            .put(Header.Raw(CIString("Accept"), "application/json"))
+            .put(Header.Raw(CIString("Accept"), "application/json, text/event-stream"))
             .put(Header.Raw(SessionHeaderName, sessionId))
         case None =>
-          traceHeaders.put(Header.Raw(CIString("Accept"), "application/json"))
+          traceHeaders.put(Header.Raw(CIString("Accept"), "application/json, text/event-stream"))
       request = Request[F](
         method = Method.POST,
         uri = endpointUri,

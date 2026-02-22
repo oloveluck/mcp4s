@@ -19,7 +19,7 @@ class McpToolAttemptSpec extends CatsEffectSuite:
     for
       result <- fetch.call("fetch", json).value
       _ = assert(result.isDefined)
-      _ = assertEquals(result.get.isError, false)
+      _ = assertEquals(result.get.isError.getOrElse(false), false)
       _ = assertEquals(result.get.textContent, "Response from https://example.com")
     yield ()
   }
@@ -33,7 +33,7 @@ class McpToolAttemptSpec extends CatsEffectSuite:
     for
       result <- fetch.call("fetch", json).value
       _ = assert(result.isDefined)
-      _ = assertEquals(result.get.isError, true)
+      _ = assertEquals(result.get.isError.getOrElse(false), true)
       _ = assertEquals(result.get.textContent, "Connection refused")
     yield ()
   }
@@ -46,7 +46,7 @@ class McpToolAttemptSpec extends CatsEffectSuite:
     for
       result <- version.call("version", Json.obj()).value
       _ = assert(result.isDefined)
-      _ = assertEquals(result.get.isError, false)
+      _ = assertEquals(result.get.isError.getOrElse(false), false)
       _ = assertEquals(result.get.textContent, "1.0.0")
     yield ()
   }
@@ -59,7 +59,7 @@ class McpToolAttemptSpec extends CatsEffectSuite:
     for
       result <- fail.call("fail", Json.obj()).value
       _ = assert(result.isDefined)
-      _ = assertEquals(result.get.isError, true)
+      _ = assertEquals(result.get.isError.getOrElse(false), true)
       _ = assertEquals(result.get.textContent, "Service unavailable")
     yield ()
   }
@@ -79,7 +79,7 @@ class McpToolAttemptSpec extends CatsEffectSuite:
     for
       result <- query.call("query", json).value
       _ = assert(result.isDefined)
-      _ = assertEquals(result.get.isError, true)
+      _ = assertEquals(result.get.isError.getOrElse(false), true)
       _ = assertEquals(result.get.textContent, "Database error 1045: Access denied")
     yield ()
   }
