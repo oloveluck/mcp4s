@@ -41,3 +41,4 @@ jobs:
           suite: active
           expected-failures: ./conformance-baseline.yml
           verbose: true
+          node-version: 22
