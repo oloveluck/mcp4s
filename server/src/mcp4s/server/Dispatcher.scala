@@ -44,7 +44,7 @@ object Dispatcher:
     */
   def withContext[F[_]: Concurrent](
       server: McpServer[F],
-      contextFactory: RequestId => ToolContext[F]
+      contextFactory: (RequestId, Option[RequestId]) => ToolContext[F]
   )(using Tracer[F]): F[Dispatcher[F]] =
     for
       stateRef <- Ref.of[F, State](State.Uninitialized)
@@ -60,7 +60,7 @@ object Dispatcher:
       server: McpServer[F],
       stateRef: Ref[F, State],
       inFlightRequests: Ref[F, Map[RequestId, Deferred[F, Unit]]],
-      contextFactory: Option[RequestId => ToolContext[F]],
+      contextFactory: Option[(RequestId, Option[RequestId]) => ToolContext[F]],
       tracer: Tracer[F]
   ) extends Dispatcher[F]:
 
@@ -141,9 +141,10 @@ object Dispatcher:
             for
               name <- cursor.get[String]("name").liftTo[F]
               args <- cursor.get[Option[Json]]("arguments").map(_.getOrElse(Json.obj())).liftTo[F]
+              progressToken = cursor.downField("_meta").downField("progressToken").as[RequestId].toOption
               result <- contextFactory match
                 case Some(factory) =>
-                  val ctx = factory(reqId)
+                  val ctx = factory(reqId, progressToken)
                   server.callToolWithContext(name, args, ctx)
                 case None =>
                   server.callTool(name, args)

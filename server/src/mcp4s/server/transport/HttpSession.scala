@@ -202,10 +202,12 @@ object HttpSession:
       )
 
       // Create context factory with full capabilities
-      contextFactory = (reqId: RequestId) => ToolContext[F](
+      // progressToken from _meta is used for progress notifications when provided
+      contextFactory = (reqId: RequestId, progressToken: Option[RequestId]) => ToolContext[F](
         session.samplingRequester,
         session.elicitationRequester,
         reqId,
+        progressToken,
         session.sendProgressNotification,
         session.sendLoggingNotification
       )
