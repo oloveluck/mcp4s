@@ -81,6 +81,21 @@ object CalculatorClient extends IOApp.Simple:
             ))
             _ <- IO.println(s"  ${formatResult(divZeroResult)}")
 
+            // Test batch_add with progress reporting
+            _ <- IO.println("Testing batch_add [1, 2, 3, 4, 5] with progress:")
+            batchResult <- conn.callTool(
+              "batch_add",
+              Json.obj("numbers" -> Json.arr(
+                Json.fromDouble(1.0).get,
+                Json.fromDouble(2.0).get,
+                Json.fromDouble(3.0).get,
+                Json.fromDouble(4.0).get,
+                Json.fromDouble(5.0).get
+              )),
+              progress => IO.println(s"  Progress: ${progress.progress.toInt}/${progress.total.map(_.toInt).getOrElse("?")}")
+            )
+            _ <- IO.println(s"  ${formatResult(batchResult)}")
+
             _ <- IO.println("")
             _ <- IO.println("All tests completed!")
 

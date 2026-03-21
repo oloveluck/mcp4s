@@ -1,8 +1,9 @@
 package mcp4s.examples
 
-import cats.effect.{IO, Resource}
+import cats.effect.{IO, Ref, Resource}
 import cats.syntax.all.*
 import com.comcast.ip4s.port
+import scala.concurrent.duration.*
 import io.circe.Json
 import org.typelevel.otel4s.trace.Tracer
 import mcp4s.client.*
@@ -52,6 +53,20 @@ class IntegrationSpec extends CatsEffectSuite:
         b <- cursor.get[Double]("b").liftTo[IO]
       yield ToolResult.text(s"${a + b}")
     })
+    .toolWithContext("slow_add", "Add with progress") { (args, ctx) =>
+      val cursor = args.hcursor
+      for
+        a <- cursor.get[Double]("a").liftTo[IO]
+        b <- cursor.get[Double]("b").liftTo[IO]
+        _ <- ctx.progress(0, Some(3))
+        _ <- IO.sleep(20.millis)
+        _ <- ctx.progress(1, Some(3))
+        _ <- IO.sleep(20.millis)
+        _ <- ctx.progress(2, Some(3))
+        _ <- IO.sleep(20.millis)
+        _ <- ctx.progress(3, Some(3))
+      yield ToolResult.text(s"${a + b}")
+    }
     .withResource(testResource, _ => IO.pure(ResourceContent.text("file:///test.txt", "Test file content")))
     .withPrompt(testPrompt, args => {
       val name = args.getOrElse("name", "World")
@@ -245,6 +260,36 @@ class IntegrationSpec extends CatsEffectSuite:
         yield
           assertEquals(results.length, 3)
           assert(results.forall(!_.isError.getOrElse(false)))
+      }
+    }
+  }
+
+  test("client calls tool with progress and receives progress notifications") {
+    serverResource.use { server =>
+      val port = server.address.getPort
+      connectedClient(port).use { conn =>
+        for
+          progressUpdates <- Ref.of[IO, List[ProgressParams]](Nil)
+          result <- conn.callTool(
+            "slow_add",
+            Json.obj("a" -> Json.fromDouble(5.0).get, "b" -> Json.fromDouble(3.0).get),
+            p => progressUpdates.update(_ :+ p)
+          )
+          updates <- progressUpdates.get
+        yield
+          // Verify the tool result
+          assertEquals(result.isError.getOrElse(false), false)
+          result.content.head match
+            case TextContent(text, _, _) => assertEquals(text, "8.0")
+            case _ => fail("Expected text content")
+
+          // Verify progress notifications were received
+          assert(updates.nonEmpty, s"Expected progress notifications, got none")
+          // The server sends 4 progress updates: 0/3, 1/3, 2/3, 3/3
+          assertEquals(updates.length, 4)
+          assertEquals(updates.head.progress, 0.0)
+          assertEquals(updates.last.progress, 3.0)
+          assert(updates.forall(_.total == Some(3.0)))
       }
     }
   }
