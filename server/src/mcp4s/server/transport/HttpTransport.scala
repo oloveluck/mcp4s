@@ -140,6 +140,7 @@ object HttpTransport:
         .withHost(config.host)
         .withPort(config.port)
         .withHttpApp(Router("/" -> corsRoutes).orNotFound)
+        .withIdleTimeout(scala.concurrent.duration.FiniteDuration(10, "min")) // SSE streams need long idle timeout
         .build
     yield httpServer
 
@@ -300,7 +301,7 @@ object HttpTransport:
               case None => Async[F].sleep(scala.concurrent.duration.Duration(10, "ms")).as(None)
             }
           ).flatMap {
-            case Some(msg) => Stream.emit(ServerSentEvent(data = Some(msg.asJson.noSpaces)))
+            case Some(msg) => Stream.emit(ServerSentEvent(data = Some(msg.asJson.noSpaces), eventType = Some("message")))
             case None => Stream.empty
           }.interruptWhen(dispatchDone.discrete)
 
@@ -309,11 +310,11 @@ object HttpTransport:
 
           // After main stream ends, drain any remaining queue messages and emit final response
           mainStream ++ Stream.eval(drainQueue(session)).flatMap { remaining =>
-            val remainingEvents = remaining.map(msg => ServerSentEvent(data = Some(msg.asJson.noSpaces)))
+            val remainingEvents = remaining.map(msg => ServerSentEvent(data = Some(msg.asJson.noSpaces), eventType = Some("message")))
             Stream.emits(remainingEvents)
           } ++ Stream.eval(resultRef.get).flatMap {
             case Some(response) =>
-              Stream.emit(ServerSentEvent(data = Some(response.asJson.noSpaces)))
+              Stream.emit(ServerSentEvent(data = Some(response.asJson.noSpaces), eventType = Some("message")))
             case None =>
               Stream.empty // Notification, no response needed
           }
