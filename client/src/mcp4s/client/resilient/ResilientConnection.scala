@@ -199,6 +199,13 @@ object ResilientConnection:
     def callTool[A: Encoder](name: String, arguments: A): F[ToolResult] =
       withResilience(underlying.callTool(name, arguments))
 
+    def callTool[A: Encoder](name: ToolName, arguments: A, onProgress: ProgressParams => F[Unit]): F[ToolResult] =
+      withResilience(underlying.callTool(name, arguments, onProgress))
+
+    @scala.annotation.targetName("callToolStringWithProgress")
+    def callTool[A: Encoder](name: String, arguments: A, onProgress: ProgressParams => F[Unit]): F[ToolResult] =
+      withResilience(underlying.callTool(name, arguments, onProgress))
+
     def callToolIfSupported[A: Encoder](name: ToolName, arguments: A): F[Option[ToolResult]] =
       withResilience(underlying.callToolIfSupported(name, arguments))
 
