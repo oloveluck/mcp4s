@@ -1,6 +1,7 @@
 package mcp4s.client
 
 import cats.effect.{Deferred, IO, Ref}
+import cats.syntax.all.*
 import io.circe.*
 import io.circe.syntax.*
 import org.typelevel.otel4s.trace.Tracer
