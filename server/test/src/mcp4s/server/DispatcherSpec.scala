@@ -2,7 +2,7 @@ package mcp4s.server
 
 import cats.effect.{IO, Ref}
 import io.circe.*
-import io.circe.syntax.*
+
 import org.typelevel.otel4s.trace.Tracer
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
