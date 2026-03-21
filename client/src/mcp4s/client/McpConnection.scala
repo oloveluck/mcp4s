@@ -52,6 +52,24 @@ trait McpConnection[F[_]]:
   @targetName("callToolString")
   def callTool[A: Encoder](name: String, arguments: A): F[ToolResult]
 
+  /** Call a tool with progress reporting.
+    *
+    * The server sends `notifications/progress` during tool execution. Each progress
+    * notification is routed to the `onProgress` callback with the progress value and
+    * optional total. Unlike the TypeScript SDK (which only supports one global
+    * notification handler per type), per-request callbacks never conflict with
+    * other notification handlers.
+    *
+    * @param name Tool name
+    * @param arguments Tool arguments
+    * @param onProgress Called for each progress notification from the server
+    */
+  def callTool[A: Encoder](name: ToolName, arguments: A, onProgress: ProgressParams => F[Unit]): F[ToolResult]
+
+  /** Call a tool with progress reporting (string name convenience overload) */
+  @targetName("callToolStringWithProgress")
+  def callTool[A: Encoder](name: String, arguments: A, onProgress: ProgressParams => F[Unit]): F[ToolResult]
+
   /** Call a tool only if the server supports tools capability.
     * Returns None if tools are not supported.
     */

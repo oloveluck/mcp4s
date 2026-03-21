@@ -24,7 +24,8 @@ class McpConnectionImpl[F[_]: Concurrent](
     sendNotification: JsonRpcNotification => F[Unit],
     requestIdGen: Ref[F, Long],
     inFlightRequests: Ref[F, Map[RequestId, Deferred[F, Unit]]],
-    tracer: Tracer[F]
+    tracer: Tracer[F],
+    val progressHandlers: Ref[F, Map[RequestId, ProgressParams => F[Unit]]]
 ) extends McpConnection[F]:
 
   private def nextId: F[RequestId] =
@@ -40,14 +41,20 @@ class McpConnectionImpl[F[_]: Concurrent](
       ))
     yield ()
 
-  private def request[A](method: String, params: Json, decode: Json => F[A]): F[A] =
+  private def request[A](method: String, params: Json, decode: Json => F[A], onProgress: Option[ProgressParams => F[Unit]] = None): F[A] =
     tracer.span(s"mcp.client.$method").use { span =>
       for
         reqId <- nextId
         _ <- span.addAttribute(Attribute("mcp.request_id", reqId.toString))
         cancelToken <- Deferred[F, Unit]
         _ <- inFlightRequests.update(_ + (reqId -> cancelToken))
-        req = JsonRpcRequest(reqId, method, Some(params))
+        // Inject _meta.progressToken when progress callback is provided
+        finalParams = onProgress match
+          case Some(_) =>
+            params.deepMerge(Json.obj("_meta" -> Json.obj("progressToken" -> reqId.asJson)))
+          case None => params
+        _ <- onProgress.traverse_(_ => progressHandlers.update(_ + (reqId -> onProgress.get)))
+        req = JsonRpcRequest(reqId, method, Some(finalParams))
         result <- Concurrent[F].race(
           cancelToken.get,
           sendRequest(req).flatMap(decode)
@@ -56,8 +63,10 @@ class McpConnectionImpl[F[_]: Concurrent](
             span.addAttribute(Attribute("mcp.cancelled", true)) *>
               Concurrent[F].raiseError(McpError.RequestCancelled(reqId))
           case Right(a) => Concurrent[F].pure(a)
-        }.guarantee(inFlightRequests.update(_ - reqId))
-          .onCancel(cancelAndNotify(reqId))
+        }.guarantee(
+          inFlightRequests.update(_ - reqId) *>
+            progressHandlers.update(_ - reqId)
+        ).onCancel(cancelAndNotify(reqId))
           .handleErrorWith { err =>
             span.addAttribute(Attribute("error", true)) *>
               span.addAttribute(Attribute("error.type", err.getClass.getSimpleName)) *>
@@ -87,6 +96,18 @@ class McpConnectionImpl[F[_]: Concurrent](
   @targetName("callToolString")
   def callTool[A: Encoder](name: String, arguments: A): F[ToolResult] =
     callTool(ToolName(name), arguments)
+
+  def callTool[A: Encoder](name: ToolName, arguments: A, onProgress: ProgressParams => F[Unit]): F[ToolResult] =
+    request(
+      McpMethod.ToolsCall,
+      Json.obj("name" -> Json.fromString(name.value), "arguments" -> Encoder[A].apply(arguments)),
+      _.as[ToolResult].liftTo[F],
+      Some(onProgress)
+    )
+
+  @targetName("callToolStringWithProgress")
+  def callTool[A: Encoder](name: String, arguments: A, onProgress: ProgressParams => F[Unit]): F[ToolResult] =
+    callTool(ToolName(name), arguments, onProgress)
 
   def callToolIfSupported[A: Encoder](name: ToolName, arguments: A): F[Option[ToolResult]] =
     if supportsTools then callTool(name, arguments).map(Some(_))

@@ -68,6 +68,8 @@ object WebSocketClientTransport:
       requestIdGen <- CatsResource.eval(Ref.of[F, Long](0L))
       // In-flight requests for cancellation support
       inFlightRef <- CatsResource.eval(Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty))
+      // Progress handler registry (shared between connection and transport)
+      progressHandlers <- CatsResource.eval(Ref.of[F, Map[RequestId, ProgressParams => F[Unit]]](Map.empty))
       // Deferred to signal initialization complete and pass the connection
       connectionDeferred <- CatsResource.eval(Deferred[F, McpConnection[F]])
       // Signal to trigger initialization after streams are running
@@ -93,6 +95,12 @@ object WebSocketClientTransport:
               case Some(response) =>
                 outQueue.offer(WebSocketFrame.text(response.asJson.noSpaces))
               case None => Async[F].unit
+            }
+
+          case Right(notif: JsonRpcNotification) if notif.method == McpMethod.Progress =>
+            val pp = notif.params.flatMap(_.as[ProgressParams].toOption)
+            pp.traverse_ { p =>
+              progressHandlers.get.flatMap(_.get(p.progressToken).traverse_(_(p)))
             }
 
           case Right(_: JsonRpcNotification) =>
@@ -149,7 +157,8 @@ object WebSocketClientTransport:
           sendNotification,
           requestIdGen,
           inFlightRef,
-          tracer
+          tracer,
+          progressHandlers
         )
         _ <- connectionDeferred.complete(conn)
       yield ()

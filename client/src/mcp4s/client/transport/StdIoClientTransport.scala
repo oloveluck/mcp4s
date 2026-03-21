@@ -40,6 +40,7 @@ object StdioClientTransport:
       // Create queues for message passing
       inputQueue <- CatsResource.eval(Queue.unbounded[F, String])
       responseMap <- CatsResource.eval(Ref.of[F, Map[RequestId, Deferred[F, Json]]](Map.empty))
+      progressHandlers <- CatsResource.eval(Ref.of[F, Map[RequestId, ProgressParams => F[Unit]]](Map.empty))
 
       // Build the process
       processBuilder = ProcessBuilder(
@@ -62,7 +63,7 @@ object StdioClientTransport:
           .filter(_.trim.nonEmpty)
           .evalMap { line =>
             parse(line) match
-              case Right(json) => handleResponse(json, responseMap)
+              case Right(json) => handleResponse(json, responseMap, progressHandlers)
               case Left(err) =>
                 Async[F].delay(System.err.println(s"[MCP Client] Failed to parse response: $err"))
           }
@@ -99,7 +100,7 @@ object StdioClientTransport:
 
       // Create the connection
       connection <- CatsResource.eval(
-        establishConnection(client, inputQueue, responseMap, summon[Tracer[F]])
+        establishConnection(client, inputQueue, responseMap, progressHandlers, summon[Tracer[F]])
       )
 
     yield connection
@@ -107,7 +108,8 @@ object StdioClientTransport:
   /** Handle incoming JSON-RPC responses and notifications */
   private def handleResponse[F[_]: Async](
       json: Json,
-      responseMap: Ref[F, Map[RequestId, Deferred[F, Json]]]
+      responseMap: Ref[F, Map[RequestId, Deferred[F, Json]]],
+      progressHandlers: Ref[F, Map[RequestId, ProgressParams => F[Unit]]]
   ): F[Unit] =
     json.as[JsonRpcMessage] match
       case Right(JsonRpcResponse(id, result)) =>
@@ -145,8 +147,15 @@ object StdioClientTransport:
               )
         }.flatten
 
+      case Right(JsonRpcNotification(method, params)) if method == McpMethod.Progress =>
+        // Route progress notifications to registered handlers
+        val pp = params.flatMap(_.as[ProgressParams].toOption)
+        pp.traverse_ { p =>
+          progressHandlers.get.flatMap(_.get(p.progressToken).traverse_(_(p)))
+        }
+
       case Right(JsonRpcNotification(method, params)) =>
-        // Handle notification from server (e.g., logging, progress)
+        // Handle other notifications from server (e.g., logging)
         Async[F].delay(
           System.err.println(
             s"[MCP Server notification] $method: ${params.map(_.noSpaces).getOrElse("")}"
@@ -171,6 +180,7 @@ object StdioClientTransport:
       client: McpClient[F],
       inputQueue: Queue[F, String],
       responseMap: Ref[F, Map[RequestId, Deferred[F, Json]]],
+      progressHandlers: Ref[F, Map[RequestId, ProgressParams => F[Unit]]],
       tracer: Tracer[F]
   ): F[McpConnection[F]] =
     for
@@ -211,7 +221,8 @@ object StdioClientTransport:
       sendNotification,
       requestIdGen,
       inFlightRef,
-      tracer
+      tracer,
+      progressHandlers
     )
 
   /** Send initialize request and parse response */

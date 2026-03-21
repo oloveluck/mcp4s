@@ -67,8 +67,11 @@ object HttpClientTransport:
       // Create request ID generator (starts at 0, first ID will be 1)
       requestIdGen <- Ref.of[F, Long](0L)
 
+      // Create progress handler registry (shared between connection and transport)
+      progressHandlers <- Ref.of[F, Map[RequestId, ProgressParams => F[Unit]]](Map.empty)
+
       // Create the request sender function with session and trace context
-      sendRequest = createRequestSender(httpClient, endpointUri, sessionIdRef, tracer)
+      sendRequest = createRequestSender(httpClient, endpointUri, sessionIdRef, progressHandlers, tracer)
 
       // Create the notification sender function with session and trace context
       sendNotification = createNotificationSender(httpClient, endpointUri, sessionIdRef, tracer)
@@ -98,7 +101,8 @@ object HttpClientTransport:
       sendNotification,
       requestIdGen,
       inFlightRef,
-      tracer
+      tracer,
+      progressHandlers
     )
 
   /** Send initialize request and capture session ID from response header */
@@ -138,7 +142,11 @@ object HttpClientTransport:
       }
     }
 
-  private def runRequestToJson[F[_]: Async](httpClient: Client[F], request: Request[F]) =
+  private def runRequestToJson[F[_]: Async](
+      httpClient: Client[F],
+      request: Request[F],
+      progressHandlers: Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]] = None
+  ) =
     httpClient.run(request).use { response =>
       val sse = response.headers
         .get(CIString("Content-Type"))
@@ -146,24 +154,38 @@ object HttpClientTransport:
       val parsedJson = if (!sse) {
         response.asJson
       } else {
-        val streamOfJson: fs2.Stream[F, Json] =
-          response.body.through(org.http4s.ServerSentEvent.decoder[F]).evalMap {
+        response.body.through(org.http4s.ServerSentEvent.decoder[F])
+          .evalMap {
             case ServerSentEvent(data, eventType, id, retry, comment) =>
               data
                 .map(utf8String =>
                   io.circe.parser.parse(utf8String) match
                     case Left(value) =>
-                      Async[F].raiseError(
+                      Async[F].raiseError[Option[Json]](
                         McpError
                           .InternalError(s"Parse error of SSE data (expected json) ${value}")
                       )
-                    case Right(value) => Async[F].pure(value)
+                    case Right(json) =>
+                      // Check if this is a progress notification
+                      json.as[JsonRpcMessage] match
+                        case Right(notif: JsonRpcNotification) if notif.method == McpMethod.Progress =>
+                          val routed = for
+                            handlers <- progressHandlers.traverse(_.get)
+                            pp = notif.params.flatMap(_.as[ProgressParams].toOption)
+                            _ <- pp.traverse_ { p =>
+                              handlers.flatMap(_.get(p.progressToken)).traverse_(_(p))
+                            }
+                          yield ()
+                          routed.as(Option.empty[Json])
+                        case _ =>
+                          Async[F].pure(Some(json))
                 )
-                .getOrElse(Async[F].raiseError(McpError.InternalError(s"SSE has no data field")))
+                .getOrElse(Async[F].pure(Option.empty[Json]))
           }
-
-        streamOfJson.take(1).compile.lastOrError
-
+          .collect { case Some(json) => json }
+          .take(1)
+          .compile
+          .lastOrError
       }
       parsedJson.map(js => response.headers -> js)
     }
@@ -173,6 +195,7 @@ object HttpClientTransport:
       httpClient: Client[F],
       endpointUri: Uri,
       sessionIdRef: Ref[F, Option[String]],
+      progressHandlers: Ref[F, Map[RequestId, ProgressParams => F[Unit]]],
       tracer: Tracer[F]
   ): JsonRpcRequest => F[Json] = { req =>
     for
@@ -192,7 +215,7 @@ object HttpClientTransport:
       ).withEntity(req.asJson)
         .withContentType(`Content-Type`(MediaType.application.json))
 
-      responseJsonAndHeader <- runRequestToJson(httpClient, request)
+      responseJsonAndHeader <- runRequestToJson(httpClient, request, Some(progressHandlers))
       responseJson = responseJsonAndHeader._2
 
       result <-
