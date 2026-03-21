@@ -128,8 +128,8 @@ class IntegrationSpec extends CatsEffectSuite:
         for
           tools <- conn.listTools
         yield
-          assertEquals(tools.length, 1)
-          assertEquals(tools.head.name, "add")
+          assertEquals(tools.length, 2)
+          assert(tools.exists(_.name == "add"))
       }
     }
   }

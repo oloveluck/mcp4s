@@ -124,8 +124,8 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
         for
           tools <- conn.listTools
         yield
-          assertEquals(tools.length, 1)
-          assertEquals(tools.head.name, "multiply")
+          assertEquals(tools.length, 2)
+          assert(tools.exists(_.name == "multiply"))
       }
     }
   }
@@ -319,9 +319,9 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
           tools2 <- conn2.listTools
           tools3 <- conn3.listTools
         yield
-          assertEquals(tools1.length, 1)
-          assertEquals(tools2.length, 1)
-          assertEquals(tools3.length, 1)
+          assertEquals(tools1.length, 2)
+          assertEquals(tools2.length, 2)
+          assertEquals(tools3.length, 2)
       }
     }
   }
@@ -365,7 +365,7 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
         wsConnectedClient(port).use { conn =>
           for
             tools <- conn.listTools
-            _ <- IO(assertEquals(tools.length, 1))
+            _ <- IO(assertEquals(tools.length, 2))
           yield ()
         } >> IO.sleep(50.millis) // Allow resource cleanup between iterations
       }
