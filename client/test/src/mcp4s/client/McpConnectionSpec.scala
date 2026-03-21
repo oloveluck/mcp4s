@@ -48,7 +48,7 @@ class McpConnectionSpec extends CatsEffectSuite:
 
   // === Mock Connection Factory ===
 
-  def createConnection(handler: JsonRpcRequest => IO[Json]): IO[McpConnection[IO]] =
+  def createConnection(handler: JsonRpcRequest => IO[Json]): IO[McpConnectionImpl[IO]] =
     createConnection(handler, _ => IO.unit)
 
   def createConnection(
