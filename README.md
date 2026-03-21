@@ -341,16 +341,6 @@ Key scenarios include:
 | Prompts | `prompts-list`, `prompts-get-simple`, `prompts-get-with-args` |
 | Logging | `logging-set-level` |
 
-#### Expected Failures
-
-The `conformance-baseline.yml` file tracks scenarios that don't yet pass. This allows CI to pass while still catching regressions. When you fix a scenario, remove it from the baseline.
-
-```bash
-# CI will fail if:
-# - A scenario fails that's NOT in the baseline (regression)
-# - A scenario passes that IS in the baseline (stale entry)
-```
-
 ## Running Examples
 
 ```bash
