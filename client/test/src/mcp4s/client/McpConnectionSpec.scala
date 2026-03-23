@@ -1,6 +1,6 @@
 package mcp4s.client
 
-import cats.effect.{Deferred, IO, Ref}
+import cats.effect.IO
 import cats.syntax.all.*
 import io.circe.*
 import io.circe.syntax.*
@@ -49,26 +49,19 @@ class McpConnectionSpec extends CatsEffectSuite:
 
   // === Mock Connection Factory ===
 
-  def createConnection(handler: JsonRpcRequest => IO[Json]): IO[McpConnectionImpl[IO]] =
+  def createConnection(handler: JsonRpcRequest => IO[Json]): IO[McpConnection[IO]] =
     createConnection(handler, _ => IO.unit)
 
   def createConnection(
       handler: JsonRpcRequest => IO[Json],
       notificationHandler: JsonRpcNotification => IO[Unit]
-  ): IO[McpConnectionImpl[IO]] =
-    for
-      requestIdGen <- Ref.of[IO, Long](0L)
-      inFlightRef <- Ref.of[IO, Map[RequestId, Deferred[IO, Unit]]](Map.empty)
-      progressHandlers <- Ref.of[IO, Map[RequestId, ProgressParams => IO[Unit]]](Map.empty)
-    yield new McpConnectionImpl[IO](
+  ): IO[McpConnection[IO]] =
+    McpConnection[IO](
       testServerInfo,
       testServerCapabilities,
       handler,
       notificationHandler,
-      requestIdGen,
-      inFlightRef,
-      Tracer.noop[IO],
-      progressHandlers
+      Tracer.noop[IO]
     )
 
   def mockResponse(method: String, response: Json): JsonRpcRequest => IO[Json] =

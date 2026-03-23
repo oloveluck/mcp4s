@@ -1,6 +1,7 @@
 package mcp4s.server.transport
 
 import cats.effect.{Async, Resource as CatsResource}
+import cats.effect.syntax.spawn.*
 import fs2.Stream
 import fs2.io.net.Network
 import cats.syntax.all.*
@@ -261,11 +262,15 @@ object HttpTransport:
   /** Handle a request with SSE streaming response.
     *
     * Returns an SSE stream that:
-    * 1. Runs dispatch and collects any notifications from outQueue
-    * 2. Emits collected notifications followed by final response
+    * 1. Runs dispatch in a background fiber
+    * 2. Polls the outQueue for notifications (progress, logging, server requests) and emits SSE events
+    * 3. When dispatch completes, drains any remaining queue messages and emits the final response
     *
-    * For bidirectional communication (sampling/elicitation), we need a different
-    * approach where the stream stays open while awaiting client responses.
+    * Uses a Deferred to signal dispatch completion rather than interruptWhen or SignallingRef,
+    * which avoids a race condition where a queue item could be consumed by tryTake but lost
+    * before emission. When we observe the Deferred is complete, we know all notifications
+    * have been enqueued (since they are enqueued before the tool handler returns), so a
+    * final drainQueue is guaranteed to capture any stragglers.
     */
   private def handleStreamingRequest[F[_]: Async](
       session: HttpSession[F],
@@ -275,51 +280,44 @@ object HttpTransport:
     val dsl = new Http4sDsl[F] {}
     import dsl.*
 
-    import fs2.concurrent.SignallingRef
+    import cats.effect.Deferred
 
-    SignallingRef[F, Boolean](false).flatMap { dispatchDone =>
-      // The SSE stream that:
-      // 1. Runs dispatch in the background
-      // 2. Emits queue messages while dispatch runs
-      // 3. Emits final response when dispatch completes
-      val sseStream: Stream[F, ServerSentEvent] = {
-        // Start dispatch as a background effect, storing result
-        import cats.effect.Ref
-        Stream.eval(Ref.of[F, Option[JsonRpcMessage]](None)).flatMap { resultRef =>
-          // The dispatch effect runs concurrently
-          val dispatchStream = Stream.eval(
-            session.dispatcher.dispatch(message).flatMap { result =>
-              resultRef.set(result) *> dispatchDone.set(true)
+    def toSSE(msg: JsonRpcMessage): ServerSentEvent =
+      ServerSentEvent(data = Some(msg.asJson.noSpaces), eventType = Some("message"))
+
+    Deferred[F, Either[Throwable, Option[JsonRpcMessage]]].flatMap { dispatchResult =>
+      val sseStream: Stream[F, ServerSentEvent] =
+        // Start dispatch in a background fiber; result (or error) completes the Deferred
+        Stream.bracket(
+          session.dispatcher.dispatch(message).attempt.flatMap(dispatchResult.complete).void.start
+        )(_.cancel) >> {
+          // Poll the queue, emitting notifications as they arrive.
+          // When the queue is empty, check if dispatch has completed.
+          def pollQueue: Stream[F, ServerSentEvent] =
+            Stream.eval(session.outQueue.tryTake).flatMap {
+              case Some(msg) =>
+                Stream.emit(toSSE(msg)) ++ pollQueue
+              case None =>
+                Stream.eval(dispatchResult.tryGet).flatMap {
+                  case Some(result) =>
+                    // Dispatch completed. All notifications were enqueued before the
+                    // handler returned, so drain the queue to capture any remaining items,
+                    // then emit the response (or propagate the error).
+                    Stream.eval(drainQueue(session)).flatMap { remaining =>
+                      Stream.emits(remaining.map(toSSE))
+                    } ++ (result match
+                      case Right(Some(response)) => Stream.emit(toSSE(response))
+                      case Right(None)           => Stream.empty
+                      case Left(error)           => Stream.raiseError[F](error)
+                    )
+                  case None =>
+                    // Dispatch still running, wait briefly and retry
+                    Stream.eval(Async[F].sleep(scala.concurrent.duration.Duration(5, "ms"))) >> pollQueue
+                }
             }
-          ).drain
 
-          // Queue drain stream - polls the queue until dispatch is done
-          // Uses a small delay to avoid busy-waiting when queue is empty
-          val queueStream = Stream.repeatEval(
-            session.outQueue.tryTake.flatMap {
-              case Some(msg) => Async[F].pure(Some(msg))
-              case None => Async[F].sleep(scala.concurrent.duration.Duration(10, "ms")).as(None)
-            }
-          ).flatMap {
-            case Some(msg) => Stream.emit(ServerSentEvent(data = Some(msg.asJson.noSpaces), eventType = Some("message")))
-            case None => Stream.empty
-          }.interruptWhen(dispatchDone.discrete)
-
-          // Run queue draining concurrently with dispatch
-          val mainStream = queueStream.concurrently(dispatchStream)
-
-          // After main stream ends, drain any remaining queue messages and emit final response
-          mainStream ++ Stream.eval(drainQueue(session)).flatMap { remaining =>
-            val remainingEvents = remaining.map(msg => ServerSentEvent(data = Some(msg.asJson.noSpaces), eventType = Some("message")))
-            Stream.emits(remainingEvents)
-          } ++ Stream.eval(resultRef.get).flatMap {
-            case Some(response) =>
-              Stream.emit(ServerSentEvent(data = Some(response.asJson.noSpaces), eventType = Some("message")))
-            case None =>
-              Stream.empty // Notification, no response needed
-          }
+          pollQueue
         }
-      }
 
       span.addAttribute(Attribute("http.status_code", 200L)) *>
         Ok(sseStream, `Content-Type`(SseMediaType))

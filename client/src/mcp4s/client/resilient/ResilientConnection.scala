@@ -1,6 +1,6 @@
 package mcp4s.client.resilient
 
-import cats.effect.{Concurrent, Temporal}
+import cats.effect.{Concurrent, Ref, Temporal}
 import cats.syntax.all.*
 import io.circe.Encoder
 import mcp4s.client.McpConnection
@@ -188,6 +188,7 @@ object ResilientConnection:
 
     def serverInfo: ServerInfo = underlying.serverInfo
     def serverCapabilities: ServerCapabilities = underlying.serverCapabilities
+    def progressHandlers: Ref[F, Map[RequestId, ProgressParams => F[Unit]]] = underlying.progressHandlers
 
     def listTools: F[List[Tool]] =
       withResilience(underlying.listTools)

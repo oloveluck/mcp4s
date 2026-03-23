@@ -1,6 +1,6 @@
 package mcp4s.client.transport
 
-import cats.effect.{Async, Deferred, Ref, Resource as CatsResource}
+import cats.effect.{Async, Ref, Resource as CatsResource}
 import cats.syntax.all.*
 import fs2.io.net.Network
 import io.circe.*
@@ -12,7 +12,7 @@ import org.http4s.headers.`Content-Type`
 import org.typelevel.ci.CIString
 import org.typelevel.otel4s.context.propagation.TextMapUpdater
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.client.{McpClient, McpConnection, McpConnectionImpl}
+import mcp4s.client.{McpClient, McpConnection}
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 
@@ -73,22 +73,18 @@ object HttpClientTransport:
       // Create session ID ref - will be populated after initialize
       sessionIdRef <- Ref.of[F, Option[String]](None)
 
-      // Create request ID generator (starts at 0, first ID will be 1)
-      requestIdGen <- Ref.of[F, Long](0L)
-
-      // Create progress handler registry (shared between connection and transport)
-      progressHandlers <- Ref.of[F, Map[RequestId, ProgressParams => F[Unit]]](Map.empty)
+      // Indirection for progress handlers - set after connection creation
+      progressHandlersRef <- Ref.of[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]](None)
 
       // Create the request sender function with session and trace context
-      sendRequest = createRequestSender(httpClient, endpointUri, sessionIdRef, progressHandlers, config, tracer)
+      sendRequest = createRequestSender(httpClient, endpointUri, sessionIdRef, progressHandlersRef, config, tracer)
 
       // Create the notification sender function with session and trace context
       sendNotification = createNotificationSender(httpClient, endpointUri, sessionIdRef, config, tracer)
 
       // Send initialize request and capture session ID from response
-      initId <- requestIdGen.getAndUpdate(_ + 1).map(n => RequestId.NumberId(n + 1))
       initRequest = JsonRpcRequest(
-        initId,
+        RequestId.NumberId(1),
         McpMethod.Initialize,
         Some(InitializeParams(
           protocolVersion = McpVersion.Current,
@@ -101,18 +97,15 @@ object HttpClientTransport:
       // Send initialized notification (now with session ID)
       _ <- sendNotification(JsonRpcNotification(McpMethod.Initialized, None))
 
-      // Create in-flight request registry for cancellation support
-      inFlightRef <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
-    yield new McpConnectionImpl[F](
-      initResult.serverInfo,
-      initResult.capabilities,
-      sendRequest,
-      sendNotification,
-      requestIdGen,
-      inFlightRef,
-      tracer,
-      progressHandlers
-    )
+      // Create connection via factory
+      conn <- McpConnection[F](
+        initResult.serverInfo, initResult.capabilities,
+        sendRequest, sendNotification, tracer
+      )
+
+      // Wire up progress handlers so SSE routing can find them
+      _ <- progressHandlersRef.set(Some(conn.progressHandlers))
+    yield conn
 
   /** Resolve the auth token and add Authorization: Bearer header if configured */
   private def withAuth[F[_]: Async](headers: Headers, config: HttpClientConfig[F]): F[Headers] =
@@ -218,7 +211,7 @@ object HttpClientTransport:
       httpClient: Client[F],
       endpointUri: Uri,
       sessionIdRef: Ref[F, Option[String]],
-      progressHandlers: Ref[F, Map[RequestId, ProgressParams => F[Unit]]],
+      progressHandlersRef: Ref[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]],
       config: HttpClientConfig[F],
       tracer: Tracer[F]
   ): JsonRpcRequest => F[Json] = { req =>
@@ -241,7 +234,8 @@ object HttpClientTransport:
       ).withEntity(req.asJson)
         .withContentType(`Content-Type`(MediaType.application.json))
 
-      responseJsonAndHeader <- runRequestToJson(httpClient, request, Some(progressHandlers))
+      progressHandlers <- progressHandlersRef.get
+      responseJsonAndHeader <- runRequestToJson(httpClient, request, progressHandlers)
       responseJson = responseJsonAndHeader._2
 
       result <-
