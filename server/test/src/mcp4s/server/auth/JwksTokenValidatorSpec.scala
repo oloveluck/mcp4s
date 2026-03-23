@@ -1,6 +1,6 @@
 package mcp4s.server.auth
 
-import cats.effect.IO
+import cats.effect.{IO, Ref}
 import io.circe.Json
 import io.circe.syntax.*
 import mcp4s.protocol.{AuthError, TokenInfo}
@@ -209,22 +209,170 @@ class JwksTokenValidatorSpec extends CatsEffectSuite:
     val token1 = makeSignedJwt(payload)
     val token2 = makeSignedJwt("""{"sub":"user2","exp":4102444800}""")
 
-    var fetchCount = 0
-    val countingClient = Client.fromHttpApp[IO](HttpRoutes.of[IO] {
-      case GET -> Root / ".well-known" / "jwks.json" =>
-        fetchCount += 1
-        Ok(jwksJson)
-    }.orNotFound)
-
     for
+      fetchCount <- Ref.of[IO, Int](0)
+      countingClient = Client.fromHttpApp[IO](HttpRoutes.of[IO] {
+        case GET -> Root / ".well-known" / "jwks.json" =>
+          fetchCount.update(_ + 1) *> Ok(jwksJson)
+      }.orNotFound)
       validator <- JwksTokenValidator.create[IO](
         jwksUri = "http://localhost/.well-known/jwks.json",
         httpClient = countingClient
       )
       r1 <- validator.validate(token1)
       r2 <- validator.validate(token2)
+      count <- fetchCount.get
     yield
       assert(r1.isRight)
       assert(r2.isRight)
-      assertEquals(fetchCount, 1, "JWKS should only be fetched once due to caching")
+      assertEquals(count, 1, "JWKS should only be fetched once due to caching")
+  }
+
+  // === Expiration Tests (now enforced by the validator) ===
+
+  test("rejects expired token") {
+    // exp = year 2020 (well past)
+    val payload = """{"sub":"user123","exp":1577836800}"""
+    val token = makeSignedJwt(payload)
+
+    for
+      validator <- JwksTokenValidator.create[IO](
+        jwksUri = "http://localhost/.well-known/jwks.json",
+        httpClient = mockJwksClient
+      )
+      result <- validator.validate(token)
+    yield
+      assert(result.isLeft, "Should reject expired token")
+      result match
+        case Left(_: AuthError.TokenExpired) => () // expected
+        case other => fail(s"Expected TokenExpired, got $other")
+  }
+
+  test("accepts token with future expiration") {
+    // exp = year 2100
+    val payload = """{"sub":"user123","exp":4102444800}"""
+    val token = makeSignedJwt(payload)
+
+    for
+      validator <- JwksTokenValidator.create[IO](
+        jwksUri = "http://localhost/.well-known/jwks.json",
+        httpClient = mockJwksClient
+      )
+      result <- validator.validate(token)
+    yield
+      assert(result.isRight, s"Expected Right, got $result")
+  }
+
+  test("accepts token without expiration") {
+    val payload = """{"sub":"user123"}"""
+    val token = makeSignedJwt(payload)
+
+    for
+      validator <- JwksTokenValidator.create[IO](
+        jwksUri = "http://localhost/.well-known/jwks.json",
+        httpClient = mockJwksClient
+      )
+      result <- validator.validate(token)
+    yield
+      assert(result.isRight, s"Expected Right, got $result")
+  }
+
+  // === JWKS Fetch Error Handling ===
+
+  test("returns meaningful error when JWKS endpoint fails") {
+    val failingClient = Client.fromHttpApp[IO](HttpRoutes.of[IO] {
+      case GET -> Root / ".well-known" / "jwks.json" =>
+        InternalServerError("server error")
+    }.orNotFound)
+
+    val payload = """{"sub":"user123","exp":4102444800}"""
+    val token = makeSignedJwt(payload)
+
+    for
+      validator <- JwksTokenValidator.create[IO](
+        jwksUri = "http://localhost/.well-known/jwks.json",
+        httpClient = failingClient
+      )
+      result <- validator.validate(token)
+    yield
+      assert(result.isLeft)
+      result match
+        case Left(AuthError.InvalidToken(msg)) => assert(msg.contains("Failed to fetch JWKS"))
+        case other => fail(s"Expected InvalidToken with fetch error, got $other")
+  }
+
+  test("fails fast on invalid JWKS URI") {
+    val result = JwksTokenValidator.create[IO](
+      jwksUri = "not a valid uri %%%",
+      httpClient = mockJwksClient
+    ).attempt
+
+    result.map { r =>
+      assert(r.isLeft, "Should fail on invalid URI")
+    }
+  }
+
+  // === Key Rotation (retry on unknown kid) ===
+
+  test("retries JWKS fetch when kid not found in cache") {
+    val payload = """{"sub":"user123","exp":4102444800}"""
+    // First token signed with "test-key-1" (will be in initial JWKS)
+    val token1 = makeSignedJwt(payload, kid = "test-key-1")
+
+    // Second key pair for rotation
+    val keyPair2 = {
+      val gen = KeyPairGenerator.getInstance("RSA")
+      gen.initialize(2048)
+      gen.generateKeyPair()
+    }
+    val publicKey2 = keyPair2.getPublic.asInstanceOf[RSAPublicKey]
+
+    // Create a token signed with the rotated key
+    val header2B64 = b64url("""{"alg":"RS256","typ":"JWT","kid":"rotated-key"}""")
+    val payloadB64 = b64url(payload)
+    val signingInput2 = s"$header2B64.$payloadB64"
+    val sig2 = Signature.getInstance("SHA256withRSA")
+    sig2.initSign(keyPair2.getPrivate)
+    sig2.update(signingInput2.getBytes("UTF-8"))
+    val token2 = s"$header2B64.$payloadB64.${b64url(sig2.sign())}"
+
+    for
+      fetchCount <- Ref.of[IO, Int](0)
+      // Client that adds the rotated key on second fetch
+      countingClient = Client.fromHttpApp[IO](HttpRoutes.of[IO] {
+        case GET -> Root / ".well-known" / "jwks.json" =>
+          fetchCount.updateAndGet(_ + 1).flatMap { count =>
+            val n2 = b64url(publicKey2.getModulus.toByteArray)
+            val e2 = b64url(publicKey2.getPublicExponent.toByteArray)
+            val rotatedKey = Json.obj(
+              "kty" -> Json.fromString("RSA"),
+              "kid" -> Json.fromString("rotated-key"),
+              "use" -> Json.fromString("sig"),
+              "alg" -> Json.fromString("RS256"),
+              "n" -> Json.fromString(n2),
+              "e" -> Json.fromString(e2)
+            )
+            val keys = if count == 1 then
+              Json.obj("keys" -> Json.arr(jwksJson.hcursor.downField("keys").as[List[Json]].getOrElse(Nil).head))
+            else
+              Json.obj("keys" -> Json.arr(
+                jwksJson.hcursor.downField("keys").as[List[Json]].getOrElse(Nil).head,
+                rotatedKey
+              ))
+            Ok(keys)
+          }
+      }.orNotFound)
+      validator <- JwksTokenValidator.create[IO](
+        jwksUri = "http://localhost/.well-known/jwks.json",
+        httpClient = countingClient
+      )
+      // First call populates cache with only test-key-1
+      r1 <- validator.validate(token1)
+      // Second call should miss cache for "rotated-key", refetch, and succeed
+      r2 <- validator.validate(token2)
+      count <- fetchCount.get
+    yield
+      assert(r1.isRight, s"First token should succeed: $r1")
+      assert(r2.isRight, s"Rotated token should succeed after refetch: $r2")
+      assertEquals(count, 2, "Should have fetched JWKS twice (initial + retry for rotated key)")
   }

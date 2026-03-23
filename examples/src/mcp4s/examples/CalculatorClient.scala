@@ -29,7 +29,7 @@ object CalculatorClient extends IOApp.Simple:
       EmberClientBuilder.default[IO].build.use{ httpClient =>
          HttpClientTransport.connect[IO](
           client,
-          HttpClientConfig("http://localhost:3000"),
+          HttpClientConfig[IO]("http://localhost:3000"),
           httpClient
         ).use { conn =>
           for

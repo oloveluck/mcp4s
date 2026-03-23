@@ -38,7 +38,7 @@ object TokenValidator:
   /** Test validator that rejects all tokens.
     *
     * For testing auth error handling - rejects all tokens
-    * with a MissingCredentials error pointing to the metadata URI.
+    * with an InvalidToken error.
     *
     * @param resourceMetadataUri URI to the protected resource metadata endpoint
     */
@@ -80,62 +80,33 @@ object TokenValidator:
     * Does NOT verify the signature - use only for development/testing.
     *
     * Standard claims extracted:
-    * - sub → subject
-    * - aud → audience
-    * - iss → issuer
-    * - exp → expiration
-    * - scope (space-separated) or scopes (array) → scopes
+    * - sub -> subject
+    * - aud -> audience
+    * - iss -> issuer
+    * - exp -> expiration
+    * - scope (space-separated) or scopes (array) -> scopes
     */
   def jwt[F[_]: Applicative]: TokenValidator[F] = new TokenValidator[F]:
     def validate(token: String): F[Either[AuthError, TokenInfo]] =
-      parseJwt(token).pure[F]
-
-  private def parseJwt(token: String): Either[AuthError, TokenInfo] =
-    token.split('.').toList match
-      case _ :: payload :: _ =>
-        for
-          decoded <- decodeBase64(payload)
-          json <- io.circe.parser.parse(decoded).leftMap(_ => AuthError.InvalidToken("Invalid JSON in JWT payload"))
-          tokenInfo <- extractClaims(json)
-        yield tokenInfo
-      case _ =>
-        Left(AuthError.InvalidToken("Invalid JWT format"))
-
-  private def decodeBase64(s: String): Either[AuthError, String] =
-    try
-      // Handle URL-safe base64
-      val padded = s + "=" * ((4 - s.length % 4) % 4)
-      val decoded = java.util.Base64.getUrlDecoder.decode(padded)
-      Right(new String(decoded, "UTF-8"))
-    catch
-      case _: Exception => Left(AuthError.InvalidToken("Invalid base64 encoding"))
-
-  private def extractClaims(json: io.circe.Json): Either[AuthError, TokenInfo] =
-    val cursor = json.hcursor
-    val subject = cursor.get[String]("sub").getOrElse("unknown")
-    val audience = cursor.get[String]("aud").toOption
-    val issuer = cursor.get[String]("iss").toOption
-    val expiration = cursor.get[Long]("exp").toOption
-
-    // Scopes can be space-separated string or array
-    val scopes = cursor.get[String]("scope").map(_.split(' ').toSet).toOption
-      .orElse(cursor.get[List[String]]("scopes").map(_.toSet).toOption)
-      .getOrElse(Set.empty)
-
-    Right(TokenInfo(
-      subject = subject,
-      audience = audience,
-      scopes = scopes,
-      issuer = issuer,
-      expiration = expiration,
-      claims = json.asObject.map(_.toMap).getOrElse(Map.empty)
-    ))
+      (for
+        parts <- JwtClaims.splitJwt(token)
+        (_, payloadB64, _) = parts
+        payload <- JwtClaims.decodeJson(payloadB64)
+        tokenInfo <- JwtClaims.extractAndValidate(payload)
+      yield tokenInfo).pure[F]
 
   /** Production JWT validator that verifies signatures against a JWKS endpoint.
     *
     * Fetches the auth server's public keys from its JWKS URI, caches them,
     * and verifies JWT signatures (RS256, RS384, RS512, ES256, ES384).
-    * Also validates issuer and audience claims when configured.
+    * Also validates issuer and audience claims when configured, and enforces
+    * token expiration with configurable clock skew tolerance.
+    *
+    * This factory is effectful (`F[TokenValidator[F]]`) because it allocates a `Ref`
+    * for JWKS key caching and eagerly validates the JWKS URI.
+    *
+    * On `kid` not found, automatically refetches JWKS once before failing,
+    * to handle auth server key rotation.
     *
     * Example:
     * {{{

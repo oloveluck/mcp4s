@@ -89,7 +89,7 @@ class IntegrationSpec extends CatsEffectSuite:
     EmberClientBuilder.default[IO].build.flatMap{ httpClient =>
       HttpClientTransport.connect[IO](
         testClient,
-        HttpClientConfig(s"http://localhost:$serverPort"),
+        HttpClientConfig[IO](s"http://localhost:$serverPort"),
         httpClient
       )
     }

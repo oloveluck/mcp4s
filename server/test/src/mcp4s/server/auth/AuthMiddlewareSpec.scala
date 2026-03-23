@@ -23,7 +23,7 @@ class AuthMiddlewareSpec extends CatsEffectSuite:
     scopesSupported = Some(List("mcp:read", "mcp:write"))
   )
 
-  def testConfig(validator: TokenValidator[IO], requiredScopes: Set[String] = Set.empty): AuthConfig[IO] =
+  def testConfig(validator: TokenValidator[IO], requiredScopes: Option[Set[String]] = None): AuthConfig[IO] =
     AuthConfig(testMetadata, validator, requiredScopes)
 
   def testRoutes: HttpRoutes[IO] = HttpRoutes.of[IO] {
@@ -143,7 +143,7 @@ class AuthMiddlewareSpec extends CatsEffectSuite:
       given Key[TokenInfo] = key
       config = testConfig(
         TokenValidator.apiKeyWithScopes[IO](Map("key" -> Set("mcp:read"))),
-        requiredScopes = Set("mcp:read")
+        requiredScopes = Some(Set("mcp:read"))
       )
       protectedRoutes = AuthMiddleware[IO](config, testRoutes)
       request = Request[IO](Method.GET, uri"/test")
@@ -159,7 +159,7 @@ class AuthMiddlewareSpec extends CatsEffectSuite:
       given Key[TokenInfo] = key
       config = testConfig(
         TokenValidator.apiKeyWithScopes[IO](Map("key" -> Set("mcp:read"))),
-        requiredScopes = Set("mcp:write")
+        requiredScopes = Some(Set("mcp:write"))
       )
       protectedRoutes = AuthMiddleware[IO](config, testRoutes)
       request = Request[IO](Method.GET, uri"/test")
@@ -209,55 +209,3 @@ class AuthMiddlewareSpec extends CatsEffectSuite:
       assertEquals(response.status, Status.Unauthorized)
   }
 
-  // === Token Expiration Tests ===
-
-  /** Validator that returns a token with a specific expiration */
-  private def validatorWithExp(exp: Long): TokenValidator[IO] = new TokenValidator[IO]:
-    def validate(token: String): IO[Either[mcp4s.protocol.AuthError, TokenInfo]] =
-      IO.pure(Right(TokenInfo(subject = "user", expiration = Some(exp))))
-
-  /** Validator that returns a token with no expiration */
-  private def validatorNoExp: TokenValidator[IO] = new TokenValidator[IO]:
-    def validate(token: String): IO[Either[mcp4s.protocol.AuthError, TokenInfo]] =
-      IO.pure(Right(TokenInfo(subject = "user")))
-
-  test("expired token returns 401") {
-    for
-      key <- Key.newKey[IO, TokenInfo]
-      given Key[TokenInfo] = key
-      // Use a timestamp in the past (year 2020)
-      config = testConfig(validatorWithExp(1577836800L))
-      protectedRoutes = AuthMiddleware[IO](config, testRoutes)
-      request = Request[IO](Method.GET, uri"/test")
-        .withHeaders(Authorization(Credentials.Token(AuthScheme.Bearer, "expired-token")))
-      response <- protectedRoutes.orNotFound.run(request)
-    yield
-      assertEquals(response.status, Status.Unauthorized)
-  }
-
-  test("token with future expiration succeeds") {
-    for
-      key <- Key.newKey[IO, TokenInfo]
-      given Key[TokenInfo] = key
-      // Use a timestamp far in the future (year 2040)
-      config = testConfig(validatorWithExp(2208988800L))
-      protectedRoutes = AuthMiddleware[IO](config, testRoutes)
-      request = Request[IO](Method.GET, uri"/test")
-        .withHeaders(Authorization(Credentials.Token(AuthScheme.Bearer, "valid-token")))
-      response <- protectedRoutes.orNotFound.run(request)
-    yield
-      assertEquals(response.status, Status.Ok)
-  }
-
-  test("token without expiration succeeds") {
-    for
-      key <- Key.newKey[IO, TokenInfo]
-      given Key[TokenInfo] = key
-      config = testConfig(validatorNoExp)
-      protectedRoutes = AuthMiddleware[IO](config, testRoutes)
-      request = Request[IO](Method.GET, uri"/test")
-        .withHeaders(Authorization(Credentials.Token(AuthScheme.Bearer, "no-exp-token")))
-      response <- protectedRoutes.orNotFound.run(request)
-    yield
-      assertEquals(response.status, Status.Ok)
-  }

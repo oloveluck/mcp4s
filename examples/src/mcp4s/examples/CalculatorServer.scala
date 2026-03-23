@@ -56,8 +56,7 @@ object CalculatorServer extends IOApp.Simple:
       authorizationServers = List("https://auth.example.com"),
       scopesSupported = Some(List("mcp:read", "mcp:write"))
     ),
-    validator = TokenValidator.allowAll[IO],
-    requiredScopes = Set.empty
+    validator = TokenValidator.allowAll[IO]
   )
 
   val mathTools: McpTools[IO] =

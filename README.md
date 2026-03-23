@@ -165,7 +165,7 @@ val authConfig = AuthConfig[IO](
     scopesSupported = Some(List("mcp:read", "mcp:write"))
   ),
   validator = TokenValidator.jwt[IO],  // or .apiKey, .allowAll
-  requiredScopes = Set("mcp:read")
+  requiredScopes = Some(Set("mcp:read"))
 )
 
 HttpTransport.serve[IO](server, auth = Some(authConfig)).useForever

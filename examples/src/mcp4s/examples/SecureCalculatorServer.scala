@@ -44,8 +44,7 @@ object SecureCalculatorServer extends IOApp.Simple:
     ),
     // Use allowAll for development - accepts any non-empty token
     // For production, use apiKey or a JWT validator
-    validator = TokenValidator.allowAll[IO],
-    requiredScopes = Set.empty
+    validator = TokenValidator.allowAll[IO]
   )
 
   // Alternative 1: Use API key validation for simple cases:
@@ -55,8 +54,7 @@ object SecureCalculatorServer extends IOApp.Simple:
   //     authorizationServers = List("https://auth.example.com"),
   //     scopesSupported = Some(List("mcp:read", "mcp:write"))
   //   ),
-  //   validator = TokenValidator.apiKey[IO](Set("secret-key-123", "another-key")),
-  //   requiredScopes = Set.empty
+  //   validator = TokenValidator.apiKey[IO](Set("secret-key-123", "another-key"))
   // )
 
   // Alternative 2: Production JWKS validation (use with Auth0, Keycloak, etc.):
@@ -78,7 +76,7 @@ object SecureCalculatorServer extends IOApp.Simple:
   //           scopesSupported = Some(List("mcp:read", "mcp:write"))
   //         ),
   //         validator = validator,
-  //         requiredScopes = Set("mcp:read")
+  //         requiredScopes = Some(Set("mcp:read"))
   //       )
   //       httpConfig = HttpConfig[IO](auth = Some(config))
   //       _ <- HttpTransport.serve[IO](server, httpConfig).useForever

@@ -3,7 +3,6 @@ package mcp4s.server.auth
 import cats.effect.{Async, Ref, Clock}
 import cats.syntax.all.*
 import io.circe.*
-import io.circe.syntax.*
 import mcp4s.protocol.{AuthError, TokenInfo}
 import org.http4s.Uri
 import org.http4s.client.Client
@@ -11,14 +10,16 @@ import org.http4s.client.Client
 import java.math.BigInteger
 import java.security.{KeyFactory, Signature}
 import java.security.spec.{RSAPublicKeySpec, ECPoint, ECPublicKeySpec}
-import java.security.interfaces.{RSAPublicKey, ECPublicKey}
 
 import scala.concurrent.duration.*
 
 /** JWT token validator that verifies signatures against a JWKS (JSON Web Key Set) endpoint.
   *
   * Fetches public keys from the auth server's JWKS URI, caches them, and uses them
-  * to verify JWT signatures. Supports RS256 and ES256 algorithms.
+  * to verify JWT signatures. Supports RS256, RS384, RS512, ES256, and ES384 algorithms.
+  *
+  * This factory returns `F[TokenValidator[F]]` because it allocates a `Ref` for JWKS key caching.
+  * All other `TokenValidator` factories are pure — this one is effectful by necessity.
   *
   * Example usage:
   * {{{
@@ -69,8 +70,12 @@ object JwksTokenValidator:
       httpClient: Client[F]
   ): F[TokenValidator[F]] =
     for
+      // Parse URI eagerly — fail fast on malformed URIs
+      uri <- Async[F].fromEither(
+        Uri.fromString(config.jwksUri).leftMap(e => AuthError.InvalidToken(s"Invalid JWKS URI: ${e.message}"))
+      )
       cacheRef <- Ref.of[F, Option[CachedKeys]](None)
-    yield new JwksValidator[F](config, httpClient, cacheRef)
+    yield new JwksValidator[F](config, uri, httpClient, cacheRef)
 
   // === Internal Types ===
 
@@ -107,44 +112,78 @@ object JwksTokenValidator:
 
   private class JwksValidator[F[_]: Async](
       config: Config,
+      jwksUri: Uri,
       httpClient: Client[F],
       cacheRef: Ref[F, Option[CachedKeys]]
   ) extends TokenValidator[F]:
 
     def validate(token: String): F[Either[AuthError, TokenInfo]] =
       (for
-        parts <- Async[F].fromEither(splitJwt(token))
+        parts <- Async[F].fromEither(JwtClaims.splitJwt(token))
         (headerB64, payloadB64, signatureB64) = parts
-        header <- Async[F].fromEither(decodeJson(headerB64))
-        payload <- Async[F].fromEither(decodeJson(payloadB64))
+        header <- Async[F].fromEither(JwtClaims.decodeJson(headerB64))
+        payload <- Async[F].fromEither(JwtClaims.decodeJson(payloadB64))
         alg <- Async[F].fromEither(
           header.hcursor.get[String]("alg").leftMap(_ => AuthError.InvalidToken("Missing alg in JWT header"))
         )
         kid = header.hcursor.get[String]("kid").toOption
-        keys <- getKeys
-        key <- Async[F].fromEither(findKey(keys, kid, alg))
+        key <- getKeyWithRetry(kid, alg)
         _ <- Async[F].fromEither(verifySignature(headerB64, payloadB64, signatureB64, key, alg))
-        tokenInfo <- Async[F].fromEither(extractAndValidateClaims(payload))
+        tokenInfo <- Async[F].fromEither(
+          JwtClaims.extractAndValidate(payload, config.issuer, config.audience)
+        )
+        // Enforce expiration with clock skew tolerance
+        _ <- checkExpiration(tokenInfo)
       yield tokenInfo).attempt.map {
         case Right(info) => Right(info)
         case Left(e: AuthError) => Left(e)
         case Left(e) => Left(AuthError.InvalidToken(e.getMessage))
       }
 
-    private def getKeys: F[Map[String, JwkKey]] =
+    /** Check token expiration with clock skew tolerance */
+    private def checkExpiration(tokenInfo: TokenInfo): F[Unit] =
+      tokenInfo.expiration match
+        case Some(exp) =>
+          Clock[F].realTime.flatMap { now =>
+            val nowSeconds = now.toSeconds
+            if exp + config.clockSkew.toSeconds < nowSeconds then
+              Async[F].raiseError(AuthError.TokenExpired(exp))
+            else
+              Async[F].unit
+          }
+        case None => Async[F].unit
+
+    /** Get a key, retrying with a fresh JWKS fetch if the kid is not found in cache */
+    private def getKeyWithRetry(kid: Option[String], alg: String): F[JwkKey] =
+      for
+        keys <- getKeys(forceRefresh = false)
+        result <- findKey(keys, kid, alg) match
+          case Right(key) => Async[F].pure(key)
+          case Left(_) if kid.isDefined =>
+            // Key not found — maybe the auth server rotated keys. Refetch once.
+            getKeys(forceRefresh = true).flatMap { freshKeys =>
+              Async[F].fromEither(findKey(freshKeys, kid, alg))
+            }
+          case Left(err) => Async[F].raiseError(err)
+      yield result
+
+    /** Get cached keys, using Ref.modify for stampede protection */
+    private def getKeys(forceRefresh: Boolean): F[Map[String, JwkKey]] =
       for
         now <- Clock[F].realTime.map(_.toSeconds)
         cached <- cacheRef.get
         keys <- cached match
-          case Some(c) if now - c.fetchedAt < config.cacheTtl.toSeconds =>
+          case Some(c) if !forceRefresh && now - c.fetchedAt < config.cacheTtl.toSeconds =>
             Async[F].pure(c.keys)
           case _ =>
             fetchAndCacheKeys(now)
       yield keys
 
     private def fetchAndCacheKeys(now: Long): F[Map[String, JwkKey]] =
-      val uri = Uri.unsafeFromString(config.jwksUri)
-      httpClient.expect[Json](uri).flatMap { json =>
+      import org.http4s.circe.*
+      httpClient.expect[Json](jwksUri).handleErrorWith { e =>
+        Async[F].raiseError(AuthError.InvalidToken(s"Failed to fetch JWKS from $jwksUri: ${e.getMessage}"))
+      }.flatMap { json =>
         json.hcursor.downField("keys").as[List[JwkKey]] match
           case Right(jwkKeys) =>
             val keyMap = jwkKeys
@@ -153,7 +192,7 @@ object JwksTokenValidator:
               .toMap
             cacheRef.set(Some(CachedKeys(keyMap, now))).as(keyMap)
           case Left(_) =>
-            Async[F].raiseError(AuthError.InvalidToken("Failed to parse JWKS response"))
+            Async[F].raiseError(AuthError.InvalidToken("Failed to parse JWKS response: missing or malformed 'keys' array"))
       }
 
     private def findKey(
@@ -179,7 +218,7 @@ object JwksTokenValidator:
     ): Either[AuthError, Unit] =
       try
         val signingInput = s"$headerB64.$payloadB64".getBytes("UTF-8")
-        val signatureBytes = decodeBase64Bytes(signatureB64)
+        val signatureBytes = JwtClaims.decodeBase64Bytes(signatureB64)
 
         alg match
           case "RS256" => verifyRsa(signingInput, signatureBytes, key, "SHA256withRSA")
@@ -200,8 +239,8 @@ object JwksTokenValidator:
       for
         n <- key.n.toRight(AuthError.InvalidToken("RSA key missing modulus (n)"))
         e <- key.e.toRight(AuthError.InvalidToken("RSA key missing exponent (e)"))
-        modulus = new BigInteger(1, decodeBase64Bytes(n))
-        exponent = new BigInteger(1, decodeBase64Bytes(e))
+        modulus = new BigInteger(1, JwtClaims.decodeBase64Bytes(n))
+        exponent = new BigInteger(1, JwtClaims.decodeBase64Bytes(e))
         spec = RSAPublicKeySpec(modulus, exponent)
         publicKey = KeyFactory.getInstance("RSA").generatePublic(spec)
         sig = Signature.getInstance(jcaAlg)
@@ -220,8 +259,8 @@ object JwksTokenValidator:
       for
         xStr <- key.x.toRight(AuthError.InvalidToken("EC key missing x coordinate"))
         yStr <- key.y.toRight(AuthError.InvalidToken("EC key missing y coordinate"))
-        xBytes = decodeBase64Bytes(xStr)
-        yBytes = decodeBase64Bytes(yStr)
+        xBytes = JwtClaims.decodeBase64Bytes(xStr)
+        yBytes = JwtClaims.decodeBase64Bytes(yStr)
         point = ECPoint(new BigInteger(1, xBytes), new BigInteger(1, yBytes))
         paramSpec = java.security.AlgorithmParameters.getInstance("EC")
         _ = paramSpec.init(java.security.spec.ECGenParameterSpec(curveName))
@@ -232,82 +271,40 @@ object JwksTokenValidator:
         _ = sig.initVerify(publicKey)
         _ = sig.update(signingInput)
         // EC signatures from JWTs are in raw R||S format, convert to DER for JCA
-        derSig = ecRawToDer(signatureBytes, curveName)
+        derSig = ecRawToDer(signatureBytes)
         result <- if sig.verify(derSig) then Right(()) else Left(AuthError.InvalidToken("Invalid JWT signature"))
       yield result
 
-    /** Convert raw R||S EC signature to DER format expected by JCA */
-    private def ecRawToDer(raw: Array[Byte], curveName: String): Array[Byte] =
+    /** Convert raw R||S EC signature to DER format expected by JCA.
+      * Handles lengths > 127 using proper DER multi-byte length encoding.
+      */
+    private def ecRawToDer(raw: Array[Byte]): Array[Byte] =
       val componentLen = raw.length / 2
       val r = new BigInteger(1, raw.take(componentLen))
       val s = new BigInteger(1, raw.drop(componentLen))
       val rBytes = r.toByteArray
       val sBytes = s.toByteArray
-      val totalLen = rBytes.length + sBytes.length + 4
+      // Build inner content: INTEGER r, INTEGER s
+      val innerLen = rBytes.length + sBytes.length + 4 // 2 tag bytes + 2 length bytes
       val der = Array.newBuilder[Byte]
-      der += 0x30.toByte
-      der += totalLen.toByte
-      der += 0x02.toByte
-      der += rBytes.length.toByte
+      der += 0x30.toByte // SEQUENCE tag
+      encodeDerLength(der, innerLen)
+      der += 0x02.toByte // INTEGER tag
+      encodeDerLength(der, rBytes.length)
       der ++= rBytes
-      der += 0x02.toByte
-      der += sBytes.length.toByte
+      der += 0x02.toByte // INTEGER tag
+      encodeDerLength(der, sBytes.length)
       der ++= sBytes
       der.result()
 
-    private def extractAndValidateClaims(payload: Json): Either[AuthError, TokenInfo] =
-      val cursor = payload.hcursor
-      val subject = cursor.get[String]("sub").getOrElse("unknown")
-      val audience = cursor.get[String]("aud").toOption
-        .orElse(cursor.get[List[String]]("aud").toOption.flatMap(_.headOption))
-      val issuer = cursor.get[String]("iss").toOption
-      val expiration = cursor.get[Long]("exp").toOption
-
-      // Scopes: space-separated string or array
-      val scopes = cursor.get[String]("scope").map(_.split(' ').toSet).toOption
-        .orElse(cursor.get[List[String]]("scopes").map(_.toSet).toOption)
-        .getOrElse(Set.empty)
-
-      // Validate issuer
-      val issuerValid = config.issuer match
-        case Some(expected) => issuer.contains(expected)
-        case None => true
-
-      // Validate audience
-      val audienceValid = config.audience match
-        case Some(expected) => audience.contains(expected)
-        case None => true
-
-      if !issuerValid then
-        Left(AuthError.InvalidToken(s"Invalid issuer: expected ${config.issuer.getOrElse("")}, got ${issuer.getOrElse("none")}"))
-      else if !audienceValid then
-        Left(AuthError.InvalidAudience(config.audience.getOrElse(""), audience.getOrElse("none")))
+    /** Encode a DER length — single byte for 0-127, multi-byte for 128+ */
+    private def encodeDerLength(der: scala.collection.mutable.Builder[Byte, Array[Byte]], length: Int): Unit =
+      if length < 128 then
+        der += length.toByte
+      else if length < 256 then
+        der += 0x81.toByte
+        der += length.toByte
       else
-        Right(TokenInfo(
-          subject = subject,
-          audience = audience,
-          scopes = scopes,
-          issuer = issuer,
-          expiration = expiration,
-          claims = payload.asObject.map(_.toMap).getOrElse(Map.empty)
-        ))
-
-  // === Shared Helpers ===
-
-  private def splitJwt(token: String): Either[AuthError, (String, String, String)] =
-    token.split('.').toList match
-      case header :: payload :: signature :: Nil => Right((header, payload, signature))
-      case _ => Left(AuthError.InvalidToken("Invalid JWT format: expected 3 parts"))
-
-  private def decodeJson(base64: String): Either[AuthError, Json] =
-    try
-      val padded = base64 + "=" * ((4 - base64.length % 4) % 4)
-      val decoded = java.util.Base64.getUrlDecoder.decode(padded)
-      val str = new String(decoded, "UTF-8")
-      io.circe.parser.parse(str).leftMap(_ => AuthError.InvalidToken("Invalid JSON in JWT"))
-    catch
-      case _: Exception => Left(AuthError.InvalidToken("Invalid base64 encoding in JWT"))
-
-  private def decodeBase64Bytes(s: String): Array[Byte] =
-    val padded = s + "=" * ((4 - s.length % 4) % 4)
-    java.util.Base64.getUrlDecoder.decode(padded)
+        der += 0x82.toByte
+        der += (length >> 8).toByte
+        der += (length & 0xff).toByte
