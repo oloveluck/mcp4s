@@ -29,7 +29,7 @@ trait Mcp4sModule extends ScalaModule with ScalafmtModule with PublishModule {
     "-Xfatal-warnings"
   )
 
-  def publishVersion = "0.1.3"
+  def publishVersion = "0.1.4"
 
   def pomSettings = PomSettings(
     description = "MCP (Model Context Protocol) for Scala",
@@ -68,6 +68,7 @@ object server extends Mcp4sModule {
     mvn"co.fs2::fs2-core::${Versions.fs2}",
     mvn"co.fs2::fs2-io::${Versions.fs2}",
     mvn"org.http4s::http4s-ember-server::${Versions.http4s}",
+    mvn"org.http4s::http4s-client::${Versions.http4s}",
     mvn"org.http4s::http4s-dsl::${Versions.http4s}",
     mvn"org.http4s::http4s-circe::${Versions.http4s}",
     mvn"org.typelevel::otel4s-oteljava::${Versions.otel4s}"
@@ -151,7 +152,7 @@ def unitTests(): Command[Unit] = Task.Command {
 //   - Install dependencies: cd conformance && npm install
 //
 // Usage:
-//   mill conformance                          # Run active scenarios against localhost:3001
+//   mill conformance                          # Run active scenarios against localhost:3000
 //   mill conformance --scenario tools-list    # Run a specific scenario
 //   mill conformance --suite all              # Run all scenarios (including pending)
 //   mill conformance --url http://host:port/mcp  # Test against a different server
@@ -161,13 +162,13 @@ def unitTests(): Command[Unit] = Task.Command {
   *
   * @param scenario Single scenario to run (e.g., "server-initialize", "tools-list")
   * @param suite    Suite to run: "active" (default), "all", or "pending"
-  * @param url      Server URL (default: http://localhost:3001/mcp)
+  * @param url      Server URL (default: http://localhost:3000/mcp)
   * @param verbose  Show detailed output
   */
 def conformance(
     scenario: String = "",
     suite: String = "active",
-    url: String = "http://localhost:3001/mcp",
+    url: String = "http://localhost:3000/mcp",
     verbose: Boolean = false
 ): Command[Unit] = Task.Command {
   val conformanceDir = os.Path(sys.env.getOrElse("MILL_WORKSPACE_ROOT", sys.props("user.dir"))) / "conformance"

@@ -6,12 +6,12 @@ import mcp4s.protocol.ProtectedResourceMetadata
   *
   * @param metadata Protected resource metadata exposed at well-known endpoint
   * @param validator Token validator for verifying bearer tokens
-  * @param requiredScopes Global scopes required for all MCP operations
+  * @param requiredScopes Scopes required for all MCP operations. `None` means no scope check; `Some(set)` requires those scopes.
   */
 final case class AuthConfig[F[_]](
     metadata: ProtectedResourceMetadata,
     validator: TokenValidator[F],
-    requiredScopes: Set[String] = Set.empty
+    requiredScopes: Option[Set[String]] = None
 ):
   /** URI for the protected resource metadata endpoint. */
   def metadataUri: String = s"${metadata.resource}/.well-known/oauth-protected-resource"

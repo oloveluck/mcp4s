@@ -1,7 +1,8 @@
 package mcp4s.server
 
-import cats.effect.IO
+import cats.effect.{IO, Ref}
 import io.circe.*
+
 import org.typelevel.otel4s.trace.Tracer
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
@@ -81,7 +82,7 @@ class DispatcherSpec extends CatsEffectSuite:
   // === Helper for valid init params ===
 
   val validInitParams: Json = Json.obj(
-    "protocolVersion" -> Json.fromString("2025-03-26"),
+    "protocolVersion" -> Json.fromString("2025-11-25"),
     "capabilities" -> Json.obj(),
     "clientInfo" -> Json.obj("name" -> Json.fromString("test-client"), "version" -> Json.fromString("1.0"))
   )
@@ -95,7 +96,7 @@ class DispatcherSpec extends CatsEffectSuite:
     yield
       response match
         case JsonRpcResponse(_, result) =>
-          assertEquals(result.hcursor.get[String]("protocolVersion"), Right("2025-03-26"))
+          assertEquals(result.hcursor.get[String]("protocolVersion"), Right("2025-11-25"))
           assert(result.hcursor.downField("serverInfo").get[String]("name").contains("test-server"))
           assert(result.hcursor.downField("capabilities").downField("tools").succeeded)
         case _ => fail("Expected response")
@@ -113,7 +114,7 @@ class DispatcherSpec extends CatsEffectSuite:
       response match
         case JsonRpcResponse(_, result) =>
           // Server responds with its supported version, client decides if compatible
-          assertEquals(result.hcursor.get[String]("protocolVersion"), Right("2025-03-26"))
+          assertEquals(result.hcursor.get[String]("protocolVersion"), Right("2025-11-25"))
         case _ => fail("Expected successful response with server's protocol version")
   }
 
@@ -346,7 +347,7 @@ class DispatcherSpec extends CatsEffectSuite:
     for
       dispatcher <- createDispatcher
       _ <- sendRequest(dispatcher, McpMethod.Initialize, Json.obj(
-        "protocolVersion" -> Json.fromString("2025-03-26"),
+        "protocolVersion" -> Json.fromString("2025-11-25"),
         "capabilities" -> Json.obj(),
         "clientInfo" -> Json.obj("name" -> Json.fromString("test"), "version" -> Json.fromString("1.0"))
       ))
@@ -391,4 +392,115 @@ class DispatcherSpec extends CatsEffectSuite:
         case JsonRpcResponse(_, _) => fail("Expected error response, got success")
         case _: JsonRpcRequest => fail("Unexpected request")
         case _: JsonRpcNotification => fail("Unexpected notification")
+  }
+
+  // === Progress Token Tests ===
+
+  /** Server whose callToolWithContext sends progress notifications via the context */
+  def progressServer: McpServer[IO] = new McpServer[IO]:
+    val info: ServerInfo = ServerInfo("progress-server", "1.0.0")
+    val capabilities: ServerCapabilities = ServerCapabilities(tools = Some(ToolsCapability()))
+
+    def listTools: IO[List[Tool]] = IO.pure(List(
+      Tool("progress_tool", Some("Reports progress"), JsonSchema.obj(Map.empty, Nil))
+    ))
+
+    def callTool(name: String, arguments: Json): IO[ToolResult] =
+      IO.pure(ToolResult.text("done"))
+
+    override def callToolWithContext(name: String, arguments: Json, context: ToolContext[IO]): IO[ToolResult] =
+      for
+        _ <- context.progress(0, Some(100))
+        _ <- context.progress(50, Some(100))
+        _ <- context.progress(100, Some(100))
+      yield ToolResult.text("done")
+
+    def listResources: IO[List[Resource]] = IO.pure(Nil)
+    def listResourceTemplates: IO[List[ResourceTemplate]] = IO.pure(Nil)
+    def readResource(uri: String): IO[ResourceContent] = IO.raiseError(McpError.ResourceNotFound(uri))
+    def listPrompts: IO[List[Prompt]] = IO.pure(Nil)
+    def getPrompt(name: String, arguments: Map[String, String]): IO[GetPromptResult] =
+      IO.raiseError(McpError.PromptNotFound(name))
+
+  test("tools/call uses _meta.progressToken for progress notifications") {
+    for
+      captured <- Ref.of[IO, List[(RequestId, Double, Option[Double])]](Nil)
+      contextFactory = (reqId: RequestId, progressToken: Option[RequestId]) =>
+        ToolContext[IO](
+          SamplingRequester.unsupported[IO],
+          ElicitationRequester.unsupported[IO],
+          reqId,
+          progressToken,
+          (token, prog, total) => captured.update(_ :+ (token, prog, total)),
+          (_, _, _) => IO.unit
+        )
+      dispatcher <- Dispatcher.withContext[IO](progressServer, contextFactory)
+      _ <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
+      _ <- sendNotification(dispatcher, McpMethod.Initialized)
+      _ <- sendRequest(dispatcher, McpMethod.ToolsCall, Json.obj(
+        "name" -> Json.fromString("progress_tool"),
+        "_meta" -> Json.obj("progressToken" -> Json.fromString("my-token"))
+      ))
+      notifications <- captured.get
+    yield
+      assertEquals(notifications.length, 3)
+      // All notifications should use the client-provided progressToken, not the request ID
+      notifications.foreach { case (token, _, _) =>
+        assertEquals(token, RequestId.StringId("my-token"))
+      }
+      assertEquals(notifications.map(_._2), List(0.0, 50.0, 100.0))
+  }
+
+  test("tools/call falls back to request ID when no progressToken in _meta") {
+    for
+      captured <- Ref.of[IO, List[(RequestId, Double, Option[Double])]](Nil)
+      contextFactory = (reqId: RequestId, progressToken: Option[RequestId]) =>
+        ToolContext[IO](
+          SamplingRequester.unsupported[IO],
+          ElicitationRequester.unsupported[IO],
+          reqId,
+          progressToken,
+          (token, prog, total) => captured.update(_ :+ (token, prog, total)),
+          (_, _, _) => IO.unit
+        )
+      dispatcher <- Dispatcher.withContext[IO](progressServer, contextFactory)
+      _ <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
+      _ <- sendNotification(dispatcher, McpMethod.Initialized)
+      _ <- sendRequest(dispatcher, McpMethod.ToolsCall, Json.obj(
+        "name" -> Json.fromString("progress_tool")
+      ))
+      notifications <- captured.get
+    yield
+      assertEquals(notifications.length, 3)
+      // Without _meta.progressToken, should fall back to the JSON-RPC request ID
+      notifications.foreach { case (token, _, _) =>
+        assertEquals(token, RequestId.NumberId(1))
+      }
+  }
+
+  test("tools/call supports numeric progressToken") {
+    for
+      captured <- Ref.of[IO, List[(RequestId, Double, Option[Double])]](Nil)
+      contextFactory = (reqId: RequestId, progressToken: Option[RequestId]) =>
+        ToolContext[IO](
+          SamplingRequester.unsupported[IO],
+          ElicitationRequester.unsupported[IO],
+          reqId,
+          progressToken,
+          (token, prog, total) => captured.update(_ :+ (token, prog, total)),
+          (_, _, _) => IO.unit
+        )
+      dispatcher <- Dispatcher.withContext[IO](progressServer, contextFactory)
+      _ <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
+      _ <- sendNotification(dispatcher, McpMethod.Initialized)
+      _ <- sendRequest(dispatcher, McpMethod.ToolsCall, Json.obj(
+        "name" -> Json.fromString("progress_tool"),
+        "_meta" -> Json.obj("progressToken" -> Json.fromInt(42))
+      ))
+      notifications <- captured.get
+    yield
+      assertEquals(notifications.length, 3)
+      notifications.foreach { case (token, _, _) =>
+        assertEquals(token, RequestId.NumberId(42))
+      }
   }

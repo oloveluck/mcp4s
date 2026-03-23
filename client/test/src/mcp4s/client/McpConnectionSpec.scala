@@ -1,6 +1,7 @@
 package mcp4s.client
 
-import cats.effect.{Deferred, IO, Ref}
+import cats.effect.IO
+import cats.syntax.all.*
 import io.circe.*
 import io.circe.syntax.*
 import org.typelevel.otel4s.trace.Tracer
@@ -55,16 +56,11 @@ class McpConnectionSpec extends CatsEffectSuite:
       handler: JsonRpcRequest => IO[Json],
       notificationHandler: JsonRpcNotification => IO[Unit]
   ): IO[McpConnection[IO]] =
-    for
-      requestIdGen <- Ref.of[IO, Long](0L)
-      inFlightRef <- Ref.of[IO, Map[RequestId, Deferred[IO, Unit]]](Map.empty)
-    yield new McpConnectionImpl[IO](
+    McpConnection[IO](
       testServerInfo,
       testServerCapabilities,
       handler,
       notificationHandler,
-      requestIdGen,
-      inFlightRef,
       Tracer.noop[IO]
     )
 
@@ -382,4 +378,72 @@ class McpConnectionSpec extends CatsEffectSuite:
     yield
       assert(sentNotification.isDefined)
       assertEquals(sentNotification.get.method, McpMethod.Cancelled)
+  }
+
+  // === Progress Tests ===
+
+  test("callTool with onProgress injects _meta.progressToken into request") {
+    var capturedRequest: Option[JsonRpcRequest] = None
+    val response = ToolResult.text("done").asJson
+
+    for
+      conn <- createConnection { req =>
+        capturedRequest = Some(req)
+        IO.pure(response)
+      }
+      _ <- conn.callTool("my-tool", Map.empty[String, String], _ => IO.unit)
+    yield
+      assert(capturedRequest.isDefined)
+      val params = capturedRequest.get.params.get
+      val progressToken = params.hcursor.downField("_meta").downField("progressToken").focus
+      assert(progressToken.isDefined, "Request should contain _meta.progressToken")
+  }
+
+  test("callTool without onProgress does not inject _meta.progressToken") {
+    var capturedRequest: Option[JsonRpcRequest] = None
+    val response = ToolResult.text("done").asJson
+
+    for
+      conn <- createConnection { req =>
+        capturedRequest = Some(req)
+        IO.pure(response)
+      }
+      _ <- conn.callTool("my-tool", Map.empty[String, String])
+    yield
+      assert(capturedRequest.isDefined)
+      val params = capturedRequest.get.params.get
+      val meta = params.hcursor.downField("_meta").focus
+      assert(meta.isEmpty, "Request should not contain _meta when no progress callback")
+  }
+
+  test("progress handler is registered and cleaned up after request completes") {
+    val response = ToolResult.text("done").asJson
+
+    for
+      conn <- createConnection(_ => IO.pure(response))
+      _ <- conn.callTool("my-tool", Map.empty[String, String], _ => IO.unit)
+      handlers <- conn.progressHandlers.get
+    yield
+      assert(handlers.isEmpty, "Progress handlers should be cleaned up after request completes")
+  }
+
+  test("progress handler receives notifications routed by transport") {
+    val progressUpdates = scala.collection.mutable.ArrayBuffer[ProgressParams]()
+    val response = ToolResult.text("done").asJson
+
+    for
+      conn <- createConnection(_ => IO.pure(response))
+      // Register a progress handler manually to simulate what happens during a request
+      _ <- conn.progressHandlers.update(_ + (RequestId.NumberId(42) ->
+        ((p: ProgressParams) => IO { progressUpdates += p; () })))
+      // Simulate transport routing a progress notification
+      handlers <- conn.progressHandlers.get
+      pp = ProgressParams(RequestId.NumberId(42), 50.0, Some(100.0))
+      _ <- handlers.get(pp.progressToken).traverse_(_(pp))
+      // Clean up
+      _ <- conn.progressHandlers.update(_ - RequestId.NumberId(42))
+    yield
+      assertEquals(progressUpdates.length, 1)
+      assertEquals(progressUpdates.head.progress, 50.0)
+      assertEquals(progressUpdates.head.total, Some(100.0))
   }

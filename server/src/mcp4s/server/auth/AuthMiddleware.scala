@@ -52,13 +52,14 @@ object AuthMiddleware:
 
             case Right(tokenInfo) =>
               // Check required scopes
-              if config.requiredScopes.subsetOf(tokenInfo.scopes) || config.requiredScopes.isEmpty then
-                // Token valid and has required scopes - attach to request and continue
-                val enrichedReq = req.withAttribute(key, tokenInfo)
-                routes(enrichedReq)
-              else
-                // Insufficient scopes - return 403
-                OptionT.liftF(forbiddenResponse[F](config))
+              config.requiredScopes match
+                case Some(required) if !required.subsetOf(tokenInfo.scopes) =>
+                  // Insufficient scopes - return 403
+                  OptionT.liftF(forbiddenResponse[F](config))
+                case _ =>
+                  // Token valid and has required scopes - attach to request and continue
+                  val enrichedReq = req.withAttribute(key, tokenInfo)
+                  routes(enrichedReq)
           }
     }
 
@@ -121,7 +122,7 @@ object AuthMiddleware:
       .putHeaders(
         wwwAuthenticateChallenge(
           config.metadata.resource,
-          Map("error" -> "insufficient_scope", "scope" -> config.requiredScopes.mkString(" "))
+          Map("error" -> "insufficient_scope", "scope" -> config.requiredScopes.getOrElse(Set.empty).mkString(" "))
         )
       )
       .pure[F]

@@ -23,7 +23,7 @@ class AuthMiddlewareSpec extends CatsEffectSuite:
     scopesSupported = Some(List("mcp:read", "mcp:write"))
   )
 
-  def testConfig(validator: TokenValidator[IO], requiredScopes: Set[String] = Set.empty): AuthConfig[IO] =
+  def testConfig(validator: TokenValidator[IO], requiredScopes: Option[Set[String]] = None): AuthConfig[IO] =
     AuthConfig(testMetadata, validator, requiredScopes)
 
   def testRoutes: HttpRoutes[IO] = HttpRoutes.of[IO] {
@@ -143,7 +143,7 @@ class AuthMiddlewareSpec extends CatsEffectSuite:
       given Key[TokenInfo] = key
       config = testConfig(
         TokenValidator.apiKeyWithScopes[IO](Map("key" -> Set("mcp:read"))),
-        requiredScopes = Set("mcp:read")
+        requiredScopes = Some(Set("mcp:read"))
       )
       protectedRoutes = AuthMiddleware[IO](config, testRoutes)
       request = Request[IO](Method.GET, uri"/test")
@@ -159,7 +159,7 @@ class AuthMiddlewareSpec extends CatsEffectSuite:
       given Key[TokenInfo] = key
       config = testConfig(
         TokenValidator.apiKeyWithScopes[IO](Map("key" -> Set("mcp:read"))),
-        requiredScopes = Set("mcp:write")
+        requiredScopes = Some(Set("mcp:write"))
       )
       protectedRoutes = AuthMiddleware[IO](config, testRoutes)
       request = Request[IO](Method.GET, uri"/test")
@@ -208,3 +208,4 @@ class AuthMiddlewareSpec extends CatsEffectSuite:
     yield
       assertEquals(response.status, Status.Unauthorized)
   }
+

@@ -84,13 +84,13 @@ class SessionManagerSpec extends CatsEffectSuite:
   }
 
   test("HttpSession.isExpired returns true for expired sessions") {
-    val shortTimeout = SessionConfig(timeout = 10.millis)
+    val shortTimeout = SessionConfig(timeout = 100.millis)
     for
       manager <- SessionManager[IO](testServer, shortTimeout)
       session <- manager.create
       expired1 <- session.isExpired
       _ = assertEquals(expired1, false)
-      _ <- IO.sleep(20.millis)
+      _ <- IO.sleep(200.millis)
       expired2 <- session.isExpired
       _ = assertEquals(expired2, true)
     yield ()
@@ -139,14 +139,14 @@ class SessionManagerSpec extends CatsEffectSuite:
   // === pruneExpired Tests ===
 
   test("pruneExpired removes expired sessions based on lastAccessedAt") {
-    val shortTimeout = SessionConfig(timeout = 100.millis)
+    val shortTimeout = SessionConfig(timeout = 500.millis)
     for
       manager <- SessionManager[IO](testServer, shortTimeout)
       session1 <- manager.create
       session2 <- manager.create
-      _ <- IO.sleep(50.millis)
-      _ <- manager.get(session1.id)  // touch session1
-      _ <- IO.sleep(75.millis)  // session2 now expired (125ms), session1 not (75ms since touch)
+      _ <- IO.sleep(250.millis)
+      _ <- manager.get(session1.id)  // touch session1, resetting its expiry
+      _ <- IO.sleep(350.millis)  // session2 now expired (600ms), session1 not (350ms since touch)
       pruned <- manager.pruneExpired
       _ = assertEquals(pruned, 1)
       s1 <- manager.get(session1.id)
@@ -157,13 +157,13 @@ class SessionManagerSpec extends CatsEffectSuite:
   }
 
   test("pruneExpired returns count of removed sessions") {
-    val shortTimeout = SessionConfig(timeout = 50.millis)
+    val shortTimeout = SessionConfig(timeout = 100.millis)
     for
       manager <- SessionManager[IO](testServer, shortTimeout)
       _ <- manager.create
       _ <- manager.create
       _ <- manager.create
-      _ <- IO.sleep(100.millis)
+      _ <- IO.sleep(200.millis)
       pruned <- manager.pruneExpired
       _ = assertEquals(pruned, 3)
       count <- manager.sessionCount

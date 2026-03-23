@@ -1,6 +1,6 @@
 package mcp4s.client.resilient
 
-import cats.effect.{Concurrent, Temporal}
+import cats.effect.{Concurrent, Ref, Temporal}
 import cats.syntax.all.*
 import io.circe.Encoder
 import mcp4s.client.McpConnection
@@ -188,6 +188,7 @@ object ResilientConnection:
 
     def serverInfo: ServerInfo = underlying.serverInfo
     def serverCapabilities: ServerCapabilities = underlying.serverCapabilities
+    def progressHandlers: Ref[F, Map[RequestId, ProgressParams => F[Unit]]] = underlying.progressHandlers
 
     def listTools: F[List[Tool]] =
       withResilience(underlying.listTools)
@@ -198,6 +199,13 @@ object ResilientConnection:
     @scala.annotation.targetName("callToolString")
     def callTool[A: Encoder](name: String, arguments: A): F[ToolResult] =
       withResilience(underlying.callTool(name, arguments))
+
+    def callTool[A: Encoder](name: ToolName, arguments: A, onProgress: ProgressParams => F[Unit]): F[ToolResult] =
+      withResilience(underlying.callTool(name, arguments, onProgress))
+
+    @scala.annotation.targetName("callToolStringWithProgress")
+    def callTool[A: Encoder](name: String, arguments: A, onProgress: ProgressParams => F[Unit]): F[ToolResult] =
+      withResilience(underlying.callTool(name, arguments, onProgress))
 
     def callToolIfSupported[A: Encoder](name: ToolName, arguments: A): F[Option[ToolResult]] =
       withResilience(underlying.callToolIfSupported(name, arguments))

@@ -30,7 +30,7 @@ import org.typelevel.otel4s.trace.Tracer
   * 4. With API key (when using apiKey validator):
   *    curl -H "Authorization: Bearer secret-key-123" \
   *         -H "Content-Type: application/json" \
-  *         -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
+  *         -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
   *         http://localhost:3000/mcp
   */
 object SecureCalculatorServer extends IOApp.Simple:
@@ -44,20 +44,44 @@ object SecureCalculatorServer extends IOApp.Simple:
     ),
     // Use allowAll for development - accepts any non-empty token
     // For production, use apiKey or a JWT validator
-    validator = TokenValidator.allowAll[IO],
-    requiredScopes = Set.empty
+    validator = TokenValidator.allowAll[IO]
   )
 
-  // Alternative: Use API key validation for simple cases:
+  // Alternative 1: Use API key validation for simple cases:
   // val authConfig: AuthConfig[IO] = AuthConfig[IO](
   //   metadata = ProtectedResourceMetadata(
   //     resource = "http://localhost:3000",
   //     authorizationServers = List("https://auth.example.com"),
   //     scopesSupported = Some(List("mcp:read", "mcp:write"))
   //   ),
-  //   validator = TokenValidator.apiKey[IO](Set("secret-key-123", "another-key")),
-  //   requiredScopes = Set.empty
+  //   validator = TokenValidator.apiKey[IO](Set("secret-key-123", "another-key"))
   // )
+
+  // Alternative 2: Production JWKS validation (use with Auth0, Keycloak, etc.):
+  // Create inside `run` since it requires an HTTP client:
+  //
+  //   import org.http4s.ember.client.EmberClientBuilder
+  //   EmberClientBuilder.default[IO].build.use { httpClient =>
+  //     for
+  //       validator <- TokenValidator.jwks[IO](
+  //         jwksUri = "https://auth.example.com/.well-known/jwks.json",
+  //         httpClient = httpClient,
+  //         issuer = Some("https://auth.example.com"),
+  //         audience = Some("http://localhost:3000")
+  //       )
+  //       config = AuthConfig[IO](
+  //         metadata = ProtectedResourceMetadata(
+  //           resource = "http://localhost:3000",
+  //           authorizationServers = List("https://auth.example.com"),
+  //           scopesSupported = Some(List("mcp:read", "mcp:write"))
+  //         ),
+  //         validator = validator,
+  //         requiredScopes = Some(Set("mcp:read"))
+  //       )
+  //       httpConfig = HttpConfig[IO](auth = Some(config))
+  //       _ <- HttpTransport.serve[IO](server, httpConfig).useForever
+  //     yield ()
+  //   }
 
   val server: McpServer[IO] = McpServer
     .builder[IO]

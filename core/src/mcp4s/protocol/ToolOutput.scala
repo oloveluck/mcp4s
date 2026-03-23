@@ -7,7 +7,7 @@ import scala.deriving.Mirror
 /** Typeclass for tool output types that can be encoded to ToolResult and have a schema.
   *
   * Enables typed tool outputs with automatic `outputSchema` generation and
-  * `structuredContent` serialization per MCP spec (2025-03-26).
+  * `structuredContent` serialization per MCP spec (2025-11-25).
   *
   * Example:
   * {{{

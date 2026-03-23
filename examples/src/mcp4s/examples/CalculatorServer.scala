@@ -30,6 +30,10 @@ case class DivideArgs(
     @description("Divisor") b: Double
 ) derives ToolInput
 
+case class BatchAddArgs(
+    @description("List of numbers to sum") numbers: List[Double]
+) derives ToolInput
+
 case class CalculatePromptArgs(
     @description("The operation: add, subtract, multiply, or divide") operation: String,
     @description("First number") a: String,
@@ -42,7 +46,7 @@ case class CalculatePromptArgs(
   * Test with: curl -X POST http://localhost:3000/mcp \
   *   -H "Content-Type: application/json" \
   *   -H "Accept: application/json, text/event-stream" \
-  *   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
+  *   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
   */
 object CalculatorServer extends IOApp.Simple:
 
@@ -52,8 +56,7 @@ object CalculatorServer extends IOApp.Simple:
       authorizationServers = List("https://auth.example.com"),
       scopesSupported = Some(List("mcp:read", "mcp:write"))
     ),
-    validator = TokenValidator.allowAll[IO],
-    requiredScopes = Set.empty
+    validator = TokenValidator.allowAll[IO]
   )
 
   val mathTools: McpTools[IO] =
@@ -69,6 +72,22 @@ object CalculatorServer extends IOApp.Simple:
     mcp.Tool[IO, DivideArgs]("divide", "Divide two numbers") { args =>
       if args.b == 0 then error("Cannot divide by zero").pure[IO]
       else ok(s"Result: ${args.a / args.b}").pure[IO]
+    } |+|
+    mcp.Tool.withContext[IO, BatchAddArgs]("batch_add", "Sum a list of numbers with progress reporting") { (args, ctx) =>
+      import scala.concurrent.duration.*
+      val total = args.numbers.length.toDouble
+      args.numbers.zipWithIndex
+        .foldLeft(IO.pure(0.0)) { case (accF, (n, i)) =>
+          for
+            acc <- accF
+            _ <- ctx.progress(i.toDouble, Some(total))
+            _ <- IO.sleep(50.millis)
+          yield acc + n
+        }
+        .flatMap { sum =>
+          ctx.progress(total, Some(total)) *>
+            IO.pure(ok(s"Result: $sum"))
+        }
     }
 
   val resources: McpResources[IO] =

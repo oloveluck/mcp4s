@@ -307,10 +307,11 @@ private object WebSocketSession:
       // Create session
       session = new WebSocketSession(dispatcherRef, requestIdGen, pendingRequests, clientCapsRef, outQueueRef, tracer)
       // Create context factory with full capabilities: sampling, elicitation, progress, logging
-      contextFactory = (reqId: RequestId) => ToolContext[F](
+      contextFactory = (reqId: RequestId, progressToken: Option[RequestId]) => ToolContext[F](
         session.samplingRequester,
         session.elicitationRequester,
         reqId,
+        progressToken,
         session.sendProgressNotification,
         session.sendLoggingNotification
       )

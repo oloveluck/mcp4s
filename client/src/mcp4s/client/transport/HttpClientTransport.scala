@@ -1,6 +1,6 @@
 package mcp4s.client.transport
 
-import cats.effect.{Async, Deferred, Ref, Resource as CatsResource}
+import cats.effect.{Async, Ref, Resource as CatsResource}
 import cats.syntax.all.*
 import fs2.io.net.Network
 import io.circe.*
@@ -12,19 +12,28 @@ import org.http4s.headers.`Content-Type`
 import org.typelevel.ci.CIString
 import org.typelevel.otel4s.context.propagation.TextMapUpdater
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.client.{McpClient, McpConnection, McpConnectionImpl}
+import mcp4s.client.{McpClient, McpConnection}
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 
+/** Authentication method for the HTTP transport. */
+enum HttpAuth[F[_]]:
+  /** Static bearer token. */
+  case Bearer(token: String) extends HttpAuth[F]
+  /** Dynamic token provider called before each request. Use for token refresh, Ref-based tokens, etc. */
+  case TokenProvider(provide: F[String]) extends HttpAuth[F]
+
 /** Streamable HTTP transport configuration for MCP clients */
-final case class HttpClientConfig(
+final case class HttpClientConfig[F[_]](
     baseUrl: String,
-    endpoint: String = "/mcp"
+    endpoint: String = "/mcp",
+    /** Authentication method. `None` means no auth header is sent. */
+    auth: Option[HttpAuth[F]] = None
 )
 
 /** Streamable HTTP transport for MCP clients.
   *
-  * Implements the MCP Streamable HTTP transport (spec 2025-03-26):
+  * Implements the MCP Streamable HTTP transport (spec 2025-11-25):
   *   - POST /{endpoint}: Send JSON-RPC requests
   */
 object HttpClientTransport:
@@ -42,7 +51,7 @@ object HttpClientTransport:
     */
   def connect[F[_]: Async: Network](
       client: McpClient[F],
-      config: HttpClientConfig,
+      config: HttpClientConfig[F],
       httpClient: Client[F]
   )(using Tracer[F]): CatsResource[F, McpConnection[F]] =
     for
@@ -55,7 +64,7 @@ object HttpClientTransport:
   private def establishConnection[F[_]: Async](
       client: McpClient[F],
       httpClient: Client[F],
-      config: HttpClientConfig,
+      config: HttpClientConfig[F],
       tracer: Tracer[F]
   ): F[McpConnection[F]] =
     val endpointUri = Uri.unsafeFromString(s"${config.baseUrl}${config.endpoint}")
@@ -64,19 +73,18 @@ object HttpClientTransport:
       // Create session ID ref - will be populated after initialize
       sessionIdRef <- Ref.of[F, Option[String]](None)
 
-      // Create request ID generator (starts at 0, first ID will be 1)
-      requestIdGen <- Ref.of[F, Long](0L)
+      // Indirection for progress handlers - set after connection creation
+      progressHandlersRef <- Ref.of[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]](None)
 
       // Create the request sender function with session and trace context
-      sendRequest = createRequestSender(httpClient, endpointUri, sessionIdRef, tracer)
+      sendRequest = createRequestSender(httpClient, endpointUri, sessionIdRef, progressHandlersRef, config, tracer)
 
       // Create the notification sender function with session and trace context
-      sendNotification = createNotificationSender(httpClient, endpointUri, sessionIdRef, tracer)
+      sendNotification = createNotificationSender(httpClient, endpointUri, sessionIdRef, config, tracer)
 
       // Send initialize request and capture session ID from response
-      initId <- requestIdGen.getAndUpdate(_ + 1).map(n => RequestId.NumberId(n + 1))
       initRequest = JsonRpcRequest(
-        initId,
+        RequestId.NumberId(1),
         McpMethod.Initialize,
         Some(InitializeParams(
           protocolVersion = McpVersion.Current,
@@ -84,22 +92,30 @@ object HttpClientTransport:
           clientInfo = client.info
         ).asJson)
       )
-      initResult <- sendInitRequest(httpClient, endpointUri, initRequest, sessionIdRef, tracer)
+      initResult <- sendInitRequest(httpClient, endpointUri, initRequest, sessionIdRef, config, tracer)
 
       // Send initialized notification (now with session ID)
       _ <- sendNotification(JsonRpcNotification(McpMethod.Initialized, None))
 
-      // Create in-flight request registry for cancellation support
-      inFlightRef <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
-    yield new McpConnectionImpl[F](
-      initResult.serverInfo,
-      initResult.capabilities,
-      sendRequest,
-      sendNotification,
-      requestIdGen,
-      inFlightRef,
-      tracer
-    )
+      // Create connection via factory
+      conn <- McpConnection[F](
+        initResult.serverInfo, initResult.capabilities,
+        sendRequest, sendNotification, tracer
+      )
+
+      // Wire up progress handlers so SSE routing can find them
+      _ <- progressHandlersRef.set(Some(conn.progressHandlers))
+    yield conn
+
+  /** Resolve the auth token and add Authorization: Bearer header if configured */
+  private def withAuth[F[_]: Async](headers: Headers, config: HttpClientConfig[F]): F[Headers] =
+    config.auth match
+      case Some(HttpAuth.Bearer(token)) =>
+        Async[F].pure(headers.put(Header.Raw(CIString("Authorization"), s"Bearer $token")))
+      case Some(HttpAuth.TokenProvider(provide)) =>
+        provide.map(token => headers.put(Header.Raw(CIString("Authorization"), s"Bearer $token")))
+      case None =>
+        Async[F].pure(headers)
 
   /** Send initialize request and capture session ID from response header */
   private def sendInitRequest[F[_]: Async](
@@ -107,38 +123,46 @@ object HttpClientTransport:
       endpointUri: Uri,
       initRequest: JsonRpcRequest,
       sessionIdRef: Ref[F, Option[String]],
+      config: HttpClientConfig[F],
       tracer: Tracer[F]
   ): F[InitializeResult] =
     tracer.propagate(Headers.empty).flatMap { traceHeaders =>
-      val request = Request[F](
-        method = Method.POST,
-        uri = endpointUri,
-        headers = traceHeaders.put(
-          Header.Raw(CIString("Accept"), "application/json, text/event-stream")
-        )
-      ).withEntity(initRequest.asJson)
-        .withContentType(`Content-Type`(MediaType.application.json))
+      withAuth(
+        traceHeaders.put(Header.Raw(CIString("Accept"), "application/json, text/event-stream")),
+        config
+      ).flatMap { authedHeaders =>
+        val request = Request[F](
+          method = Method.POST,
+          uri = endpointUri,
+          headers = authedHeaders
+        ).withEntity(initRequest.asJson)
+          .withContentType(`Content-Type`(MediaType.application.json))
 
-      runRequestToJson(httpClient, request).flatMap { case (headers, responseJson) =>
-        // Extract session ID from response header
-        val sessionIdOpt = headers.get(SessionHeaderName).map(_.head.value)
-        sessionIdRef.set(sessionIdOpt).flatMap { _ =>
-          responseJson.as[JsonRpcMessage] match
-            case Right(JsonRpcResponse(_, result)) =>
-              result.as[InitializeResult].liftTo[F]
-            case Right(JsonRpcErrorResponse(_, error)) =>
-              Async[F].raiseError(McpError.fromJsonRpcError(error))
-            case Right(_) =>
-              Async[F].raiseError(McpError.InternalError("Unexpected response type"))
-            case Left(err) =>
-              Async[F]
-                .raiseError(McpError.InternalError(s"Failed to parse response: ${err.getMessage}"))
+        runRequestToJson(httpClient, request).flatMap { case (headers, responseJson) =>
+          // Extract session ID from response header
+          val sessionIdOpt = headers.get(SessionHeaderName).map(_.head.value)
+          sessionIdRef.set(sessionIdOpt).flatMap { _ =>
+            responseJson.as[JsonRpcMessage] match
+              case Right(JsonRpcResponse(_, result)) =>
+                result.as[InitializeResult].liftTo[F]
+              case Right(JsonRpcErrorResponse(_, error)) =>
+                Async[F].raiseError(McpError.fromJsonRpcError(error))
+              case Right(_) =>
+                Async[F].raiseError(McpError.InternalError("Unexpected response type"))
+              case Left(err) =>
+                Async[F]
+                  .raiseError(McpError.InternalError(s"Failed to parse response: ${err.getMessage}"))
+          }
+
         }
-
       }
     }
 
-  private def runRequestToJson[F[_]: Async](httpClient: Client[F], request: Request[F]) =
+  private def runRequestToJson[F[_]: Async](
+      httpClient: Client[F],
+      request: Request[F],
+      progressHandlers: Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]] = None
+  ) =
     httpClient.run(request).use { response =>
       val sse = response.headers
         .get(CIString("Content-Type"))
@@ -146,24 +170,38 @@ object HttpClientTransport:
       val parsedJson = if (!sse) {
         response.asJson
       } else {
-        val streamOfJson: fs2.Stream[F, Json] =
-          response.body.through(org.http4s.ServerSentEvent.decoder[F]).evalMap {
+        response.body.through(org.http4s.ServerSentEvent.decoder[F])
+          .evalMap {
             case ServerSentEvent(data, eventType, id, retry, comment) =>
               data
                 .map(utf8String =>
                   io.circe.parser.parse(utf8String) match
                     case Left(value) =>
-                      Async[F].raiseError(
+                      Async[F].raiseError[Option[Json]](
                         McpError
                           .InternalError(s"Parse error of SSE data (expected json) ${value}")
                       )
-                    case Right(value) => Async[F].pure(value)
+                    case Right(json) =>
+                      // Check if this is a progress notification
+                      json.as[JsonRpcMessage] match
+                        case Right(notif: JsonRpcNotification) if notif.method == McpMethod.Progress =>
+                          val routed = for
+                            handlers <- progressHandlers.traverse(_.get)
+                            pp = notif.params.flatMap(_.as[ProgressParams].toOption)
+                            _ <- pp.traverse_ { p =>
+                              handlers.flatMap(_.get(p.progressToken)).traverse_(_(p))
+                            }
+                          yield ()
+                          routed.as(Option.empty[Json])
+                        case _ =>
+                          Async[F].pure(Some(json))
                 )
-                .getOrElse(Async[F].raiseError(McpError.InternalError(s"SSE has no data field")))
+                .getOrElse(Async[F].pure(Option.empty[Json]))
           }
-
-        streamOfJson.take(1).compile.lastOrError
-
+          .collect { case Some(json) => json }
+          .take(1)
+          .compile
+          .lastOrError
       }
       parsedJson.map(js => response.headers -> js)
     }
@@ -173,18 +211,22 @@ object HttpClientTransport:
       httpClient: Client[F],
       endpointUri: Uri,
       sessionIdRef: Ref[F, Option[String]],
+      progressHandlersRef: Ref[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]],
+      config: HttpClientConfig[F],
       tracer: Tracer[F]
   ): JsonRpcRequest => F[Json] = { req =>
     for
       sessionIdOpt <- sessionIdRef.get
       traceHeaders <- tracer.propagate(Headers.empty)
+      baseHeaders <- withAuth(
+        traceHeaders.put(Header.Raw(CIString("Accept"), "application/json, text/event-stream")),
+        config
+      )
       headersWithSession = sessionIdOpt match
         case Some(sessionId) =>
-          traceHeaders
-            .put(Header.Raw(CIString("Accept"), "application/json, text/event-stream"))
-            .put(Header.Raw(SessionHeaderName, sessionId))
+          baseHeaders.put(Header.Raw(SessionHeaderName, sessionId))
         case None =>
-          traceHeaders.put(Header.Raw(CIString("Accept"), "application/json, text/event-stream"))
+          baseHeaders
       request = Request[F](
         method = Method.POST,
         uri = endpointUri,
@@ -192,7 +234,8 @@ object HttpClientTransport:
       ).withEntity(req.asJson)
         .withContentType(`Content-Type`(MediaType.application.json))
 
-      responseJsonAndHeader <- runRequestToJson(httpClient, request)
+      progressHandlers <- progressHandlersRef.get
+      responseJsonAndHeader <- runRequestToJson(httpClient, request, progressHandlers)
       responseJson = responseJsonAndHeader._2
 
       result <-
@@ -215,18 +258,21 @@ object HttpClientTransport:
       httpClient: Client[F],
       endpointUri: Uri,
       sessionIdRef: Ref[F, Option[String]],
+      config: HttpClientConfig[F],
       tracer: Tracer[F]
   ): JsonRpcNotification => F[Unit] = { notif =>
     for
       sessionIdOpt <- sessionIdRef.get
       traceHeaders <- tracer.propagate(Headers.empty)
+      baseHeaders <- withAuth(
+        traceHeaders.put(Header.Raw(CIString("Accept"), "application/json, text/event-stream")),
+        config
+      )
       headersWithSession = sessionIdOpt match
         case Some(sessionId) =>
-          traceHeaders
-            .put(Header.Raw(CIString("Accept"), "application/json, text/event-stream"))
-            .put(Header.Raw(SessionHeaderName, sessionId))
+          baseHeaders.put(Header.Raw(SessionHeaderName, sessionId))
         case None =>
-          traceHeaders.put(Header.Raw(CIString("Accept"), "application/json, text/event-stream"))
+          baseHeaders
       request = Request[F](
         method = Method.POST,
         uri = endpointUri,

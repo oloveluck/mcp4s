@@ -15,7 +15,7 @@ import sttp.client4.httpclient.fs2.HttpClientFs2Backend
 import sttp.client4.ws.stream.*
 import sttp.ws.WebSocketFrame
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.client.{ClientDispatcher, McpClient, McpConnection, McpConnectionImpl}
+import mcp4s.client.{ClientDispatcher, McpClient, McpConnection}
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 
@@ -64,10 +64,10 @@ object WebSocketClientTransport:
       )
       // Queue for outgoing messages
       outQueue <- CatsResource.eval(Queue.unbounded[F, WebSocketFrame])
-      // Request ID generator
-      requestIdGen <- CatsResource.eval(Ref.of[F, Long](0L))
-      // In-flight requests for cancellation support
-      inFlightRef <- CatsResource.eval(Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty))
+      // Indirection for progress handlers - set after connection creation
+      progressHandlersRef <- CatsResource.eval(
+        Ref.of[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]](None)
+      )
       // Deferred to signal initialization complete and pass the connection
       connectionDeferred <- CatsResource.eval(Deferred[F, McpConnection[F]])
       // Signal to trigger initialization after streams are running
@@ -93,6 +93,14 @@ object WebSocketClientTransport:
               case Some(response) =>
                 outQueue.offer(WebSocketFrame.text(response.asJson.noSpaces))
               case None => Async[F].unit
+            }
+
+          case Right(notif: JsonRpcNotification) if notif.method == McpMethod.Progress =>
+            val pp = notif.params.flatMap(_.as[ProgressParams].toOption)
+            pp.traverse_ { p =>
+              progressHandlersRef.get.flatMap(_.traverse_ { handlers =>
+                handlers.get.flatMap(_.get(p.progressToken).traverse_(_(p)))
+              })
             }
 
           case Right(_: JsonRpcNotification) =>
@@ -127,30 +135,25 @@ object WebSocketClientTransport:
       }
 
       // Initialization logic - runs after streams are active
+      initRequest = JsonRpcRequest(
+        RequestId.NumberId(1),
+        McpMethod.Initialize,
+        Some(InitializeParams(
+          protocolVersion = McpVersion.Current,
+          capabilities = client.capabilities,
+          clientInfo = client.info
+        ).asJson)
+      )
       doInit = for
-        initId <- requestIdGen.getAndUpdate(_ + 1).map(n => RequestId.NumberId(n + 1))
-        initRequest = JsonRpcRequest(
-          initId,
-          McpMethod.Initialize,
-          Some(InitializeParams(
-            protocolVersion = McpVersion.Current,
-            capabilities = client.capabilities,
-            clientInfo = client.info
-          ).asJson)
-        )
         initResult <- sendRequest(initRequest).flatMap { result =>
           result.as[InitializeResult].liftTo[F]
         }
         _ <- sendNotification(JsonRpcNotification(McpMethod.Initialized, None))
-        conn = new McpConnectionImpl[F](
-          initResult.serverInfo,
-          initResult.capabilities,
-          sendRequest,
-          sendNotification,
-          requestIdGen,
-          inFlightRef,
-          tracer
+        conn <- McpConnection[F](
+          initResult.serverInfo, initResult.capabilities,
+          sendRequest, sendNotification, tracer
         )
+        _ <- progressHandlersRef.set(Some(conn.progressHandlers))
         _ <- connectionDeferred.complete(conn)
       yield ()
 

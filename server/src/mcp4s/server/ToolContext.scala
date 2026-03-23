@@ -61,6 +61,7 @@ object ToolContext:
     * @param sampler The sampling requester to use
     * @param eliciter The elicitation requester to use
     * @param reqId The request ID for progress reporting
+    * @param progressToken Optional progress token from _meta (used instead of reqId for progress notifications)
     * @param progressFn Function to send progress notifications
     * @param loggingFn Function to send logging notifications
     */
@@ -68,15 +69,17 @@ object ToolContext:
       sampler: SamplingRequester[F],
       eliciter: ElicitationRequester[F],
       reqId: RequestId,
+      progressToken: Option[RequestId],
       progressFn: (RequestId, Double, Option[Double]) => F[Unit],
       loggingFn: (LogLevel, String, Option[Json]) => F[Unit]
   ): ToolContext[F] =
+    val token = progressToken.getOrElse(reqId)
     new ToolContext[F]:
       def sampling: SamplingRequester[F] = sampler
       def elicitation: ElicitationRequester[F] = eliciter
       def requestId: RequestId = reqId
       def progress(prog: Double, total: Option[Double]): F[Unit] =
-        progressFn(reqId, prog, total)
+        progressFn(token, prog, total)
       def log(level: LogLevel, message: String, data: Option[Json]): F[Unit] =
         loggingFn(level, message, data)
 

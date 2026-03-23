@@ -1,6 +1,6 @@
 package mcp4s.examples
 
-import cats.effect.{IO, Resource}
+import cats.effect.{IO, Ref, Resource}
 import cats.syntax.all.*
 import com.comcast.ip4s.port
 import scala.concurrent.duration.*
@@ -52,6 +52,20 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
         b <- cursor.get[Double]("b").liftTo[IO]
       yield ToolResult.text(s"${a * b}")
     })
+    .toolWithContext("slow_multiply", "Multiply with progress") { (args, ctx) =>
+      val cursor = args.hcursor
+      for
+        a <- cursor.get[Double]("a").liftTo[IO]
+        b <- cursor.get[Double]("b").liftTo[IO]
+        _ <- ctx.progress(0, Some(3))
+        _ <- IO.sleep(20.millis)
+        _ <- ctx.progress(1, Some(3))
+        _ <- IO.sleep(20.millis)
+        _ <- ctx.progress(2, Some(3))
+        _ <- IO.sleep(20.millis)
+        _ <- ctx.progress(3, Some(3))
+      yield ToolResult.text(s"${a * b}")
+    }
     .withResource(testResource, _ => IO.pure(ResourceContent.text("file:///ws-test.txt", "WebSocket test content")))
     .withPrompt(testPrompt, args => {
       val name = args.getOrElse("name", "World")
@@ -110,8 +124,8 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
         for
           tools <- conn.listTools
         yield
-          assertEquals(tools.length, 1)
-          assertEquals(tools.head.name, "multiply")
+          assertEquals(tools.length, 2)
+          assert(tools.exists(_.name == "multiply"))
       }
     }
   }
@@ -214,6 +228,35 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
     }
   }
 
+  test("WebSocket: client calls tool with progress and receives progress notifications") {
+    wsServerResource.use { server =>
+      val port = server.address.getPort
+      wsConnectedClient(port).use { conn =>
+        for
+          progressUpdates <- Ref.of[IO, List[ProgressParams]](Nil)
+          result <- conn.callTool(
+            "slow_multiply",
+            Json.obj("a" -> Json.fromDouble(5.0).get, "b" -> Json.fromDouble(3.0).get),
+            p => progressUpdates.update(_ :+ p)
+          )
+          updates <- progressUpdates.get
+        yield
+          // Verify the tool result
+          assertEquals(result.isError.getOrElse(false), false)
+          result.content.head match
+            case TextContent(text, _, _) => assertEquals(text, "15.0")
+            case _ => fail("Expected text content")
+
+          // Verify progress notifications were received
+          assert(updates.nonEmpty, s"Expected progress notifications, got none")
+          assertEquals(updates.length, 4)
+          assertEquals(updates.head.progress, 0.0)
+          assertEquals(updates.last.progress, 3.0)
+          assert(updates.forall(_.total == Some(3.0)))
+      }
+    }
+  }
+
   test("WebSocket: multiple concurrent tool calls") {
     wsServerResource.use { server =>
       val port = server.address.getPort
@@ -276,9 +319,9 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
           tools2 <- conn2.listTools
           tools3 <- conn3.listTools
         yield
-          assertEquals(tools1.length, 1)
-          assertEquals(tools2.length, 1)
-          assertEquals(tools3.length, 1)
+          assertEquals(tools1.length, 2)
+          assertEquals(tools2.length, 2)
+          assertEquals(tools3.length, 2)
       }
     }
   }
@@ -322,7 +365,7 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
         wsConnectedClient(port).use { conn =>
           for
             tools <- conn.listTools
-            _ <- IO(assertEquals(tools.length, 1))
+            _ <- IO(assertEquals(tools.length, 2))
           yield ()
         } >> IO.sleep(50.millis) // Allow resource cleanup between iterations
       }
