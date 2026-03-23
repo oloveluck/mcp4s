@@ -2,7 +2,6 @@ package mcp4s.server.auth
 
 import cats.effect.{IO, Ref}
 import io.circe.Json
-import io.circe.syntax.*
 import mcp4s.protocol.{AuthError, TokenInfo}
 import munit.CatsEffectSuite
 import org.http4s.*
