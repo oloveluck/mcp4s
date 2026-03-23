@@ -1,8 +1,12 @@
 package mcp4s.server.auth
 
 import cats.Applicative
+import cats.effect.Async
 import cats.syntax.all.*
+import org.http4s.client.Client
 import mcp4s.protocol.{AuthError, TokenInfo}
+
+import scala.concurrent.duration.*
 
 /** Abstract token validation trait.
   *
@@ -126,3 +130,36 @@ object TokenValidator:
       expiration = expiration,
       claims = json.asObject.map(_.toMap).getOrElse(Map.empty)
     ))
+
+  /** Production JWT validator that verifies signatures against a JWKS endpoint.
+    *
+    * Fetches the auth server's public keys from its JWKS URI, caches them,
+    * and verifies JWT signatures (RS256, RS384, RS512, ES256, ES384).
+    * Also validates issuer and audience claims when configured.
+    *
+    * Example:
+    * {{{
+    * for
+    *   validator <- TokenValidator.jwks[IO](
+    *     jwksUri = "https://auth.example.com/.well-known/jwks.json",
+    *     httpClient = client,
+    *     issuer = Some("https://auth.example.com"),
+    *     audience = Some("https://api.example.com")
+    *   )
+    * yield AuthConfig[IO](metadata, validator)
+    * }}}
+    *
+    * @param jwksUri JWKS endpoint URI
+    * @param httpClient http4s Client for fetching JWKS
+    * @param issuer Expected issuer claim (optional)
+    * @param audience Expected audience claim (optional)
+    * @param cacheTtl How long to cache JWKS keys (default 5 minutes)
+    */
+  def jwks[F[_]: Async](
+      jwksUri: String,
+      httpClient: Client[F],
+      issuer: Option[String] = None,
+      audience: Option[String] = None,
+      cacheTtl: FiniteDuration = 5.minutes
+  ): F[TokenValidator[F]] =
+    JwksTokenValidator.create[F](jwksUri, httpClient, issuer, audience, cacheTtl)

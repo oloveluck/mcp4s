@@ -48,7 +48,7 @@ object SecureCalculatorServer extends IOApp.Simple:
     requiredScopes = Set.empty
   )
 
-  // Alternative: Use API key validation for simple cases:
+  // Alternative 1: Use API key validation for simple cases:
   // val authConfig: AuthConfig[IO] = AuthConfig[IO](
   //   metadata = ProtectedResourceMetadata(
   //     resource = "http://localhost:3000",
@@ -58,6 +58,32 @@ object SecureCalculatorServer extends IOApp.Simple:
   //   validator = TokenValidator.apiKey[IO](Set("secret-key-123", "another-key")),
   //   requiredScopes = Set.empty
   // )
+
+  // Alternative 2: Production JWKS validation (use with Auth0, Keycloak, etc.):
+  // Create inside `run` since it requires an HTTP client:
+  //
+  //   import org.http4s.ember.client.EmberClientBuilder
+  //   EmberClientBuilder.default[IO].build.use { httpClient =>
+  //     for
+  //       validator <- TokenValidator.jwks[IO](
+  //         jwksUri = "https://auth.example.com/.well-known/jwks.json",
+  //         httpClient = httpClient,
+  //         issuer = Some("https://auth.example.com"),
+  //         audience = Some("http://localhost:3000")
+  //       )
+  //       config = AuthConfig[IO](
+  //         metadata = ProtectedResourceMetadata(
+  //           resource = "http://localhost:3000",
+  //           authorizationServers = List("https://auth.example.com"),
+  //           scopesSupported = Some(List("mcp:read", "mcp:write"))
+  //         ),
+  //         validator = validator,
+  //         requiredScopes = Set("mcp:read")
+  //       )
+  //       httpConfig = HttpConfig[IO](auth = Some(config))
+  //       _ <- HttpTransport.serve[IO](server, httpConfig).useForever
+  //     yield ()
+  //   }
 
   val server: McpServer[IO] = McpServer
     .builder[IO]

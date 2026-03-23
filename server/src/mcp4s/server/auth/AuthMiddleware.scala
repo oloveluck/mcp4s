@@ -1,7 +1,7 @@
 package mcp4s.server.auth
 
 import cats.data.{Kleisli, OptionT}
-import cats.effect.Concurrent
+import cats.effect.{Clock, Concurrent}
 import cats.syntax.all.*
 import io.circe.syntax.*
 import org.http4s.*
@@ -51,14 +51,22 @@ object AuthMiddleware:
               OptionT.liftF(errorResponse[F](config, error))
 
             case Right(tokenInfo) =>
-              // Check required scopes
-              if config.requiredScopes.subsetOf(tokenInfo.scopes) || config.requiredScopes.isEmpty then
-                // Token valid and has required scopes - attach to request and continue
-                val enrichedReq = req.withAttribute(key, tokenInfo)
-                routes(enrichedReq)
-              else
-                // Insufficient scopes - return 403
-                OptionT.liftF(forbiddenResponse[F](config))
+              // Check token expiration
+              OptionT.liftF(Clock[F].realTime).flatMap { now =>
+                val nowSeconds = now.toSeconds
+                tokenInfo.expiration match
+                  case Some(exp) if exp < nowSeconds =>
+                    OptionT.liftF(errorResponse[F](config, AuthError.TokenExpired(exp)))
+                  case _ =>
+                    // Check required scopes
+                    if config.requiredScopes.subsetOf(tokenInfo.scopes) || config.requiredScopes.isEmpty then
+                      // Token valid and has required scopes - attach to request and continue
+                      val enrichedReq = req.withAttribute(key, tokenInfo)
+                      routes(enrichedReq)
+                    else
+                      // Insufficient scopes - return 403
+                      OptionT.liftF(forbiddenResponse[F](config))
+              }
           }
     }
 
