@@ -48,7 +48,9 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
     WebSocketTransport.serve[IO](server, WebSocketConfig(port = port"0"))
 
   def httpConnection(client: McpClient[IO], port: Int): Resource[IO, McpConnection[IO]] =
-    HttpClientTransport.connect[IO](client, HttpClientConfig(s"http://localhost:$port"))
+    EmberClientBuilder.default[IO].build.flatMap { httpClient =>
+      HttpClientTransport.connect[IO](client, HttpClientConfig(s"http://localhost:$port"), httpClient)
+    }
 
   def wsConnection(client: McpClient[IO], port: Int): Resource[IO, McpConnection[IO]] =
     WebSocketClientTransport.connect[IO](client, WebSocketClientConfig(s"ws://localhost:$port"))
@@ -120,7 +122,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
         for
           result <- conn.callTool("add", Json.obj("a" -> Json.fromDouble(5.0).get, "b" -> Json.fromDouble(3.0).get))
         yield
-          assertEquals(result.isError, false)
+          assertEquals(result.isError.getOrElse(false), false)
           result.content.head match
             case TextContent(text, _, _) => assertEquals(text, "8.0")
             case _ => fail("Expected text content")
@@ -166,7 +168,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
         }
         calls.parSequence.map { results =>
           assertEquals(results.length, 10)
-          assert(results.forall(!_.isError))
+          assert(results.forall(!_.isError.getOrElse(false)))
         }
       }
     }
@@ -303,7 +305,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           resilient <- conn.withTimeout(5.seconds)
           result <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
         yield
-          assertEquals(result.isError, false)
+          assertEquals(result.isError.getOrElse(false), false)
       }
     }
   }
@@ -330,7 +332,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
             resilient <- conn.withRetry(RetryPolicy.fixedDelay(maxRetries = 3, delay = 10.millis, retryOn = _ => true))
             result <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
           yield
-            assertEquals(result.isError, false)
+            assertEquals(result.isError.getOrElse(false), false)
         }
       }
     }
@@ -433,7 +435,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           // Next call should be allowed (half-open)
           result <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
         yield
-          assertEquals(result.isError, false)
+          assertEquals(result.isError.getOrElse(false), false)
       }
     }
   }
@@ -557,8 +559,8 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           conn.callTool("add", Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(2)))
         }
       yield
-        assertEquals(result1.isError, false)
-        assertEquals(result2.isError, false)
+        assertEquals(result1.isError.getOrElse(false), false)
+        assertEquals(result2.isError.getOrElse(false), false)
     }
   }
 
@@ -592,7 +594,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           wsResult <- wsConn.callTool("add", args)
         yield
           assertEquals(httpResult.content, wsResult.content)
-          assertEquals(httpResult.isError, wsResult.isError)
+          assertEquals(httpResult.isError.getOrElse(false), wsResult.isError.getOrElse(false))
       }
     }
   }
@@ -612,7 +614,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           // Try another request to ensure connection is still usable
           result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(3), "b" -> Json.fromInt(4)))
         yield
-          assertEquals(result.isError, false)
+          assertEquals(result.isError.getOrElse(false), false)
       }
     }
   }
@@ -625,7 +627,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
         }
         requests.parSequence.map { results =>
           assertEquals(results.length, 50)
-          assert(results.forall(!_.isError))
+          assert(results.forall(!_.isError.getOrElse(false)))
         }
       }
     }
@@ -716,7 +718,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
             // Server 2 still works
             result2 <- conn2.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
           yield
-            assertEquals(result2.isError, false)
+            assertEquals(result2.isError.getOrElse(false), false)
         }
       }
     }
@@ -735,7 +737,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
             resilient <- conn.withRetry(RetryPolicy.fixedDelay(maxRetries = 10, delay = 10.millis, retryOn = _ => true))
             result <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
           yield
-            assertEquals(result.isError, false)
+            assertEquals(result.isError.getOrElse(false), false)
         }
       }
     }
@@ -752,7 +754,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
             }
           yield
             assertEquals(results.length, 5)
-            assert(results.forall(!_.isError))
+            assert(results.forall(!_.isError.getOrElse(false)))
         }
       }
     }
@@ -769,7 +771,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
         }.map { results =>
           assertEquals(results.length, 100)
-          assert(results.forall(!_.isError))
+          assert(results.forall(!_.isError.getOrElse(false)))
         }
       }
     }
@@ -782,7 +784,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
         }.map { results =>
           assertEquals(results.length, 100)
-          assert(results.forall(!_.isError))
+          assert(results.forall(!_.isError.getOrElse(false)))
         }
       }
     }
@@ -859,7 +861,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           result <- conn.callToolIfSupported(ToolName("add"), Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
         yield
           assert(result.isDefined)
-          assertEquals(result.get.isError, false)
+          assertEquals(result.get.isError.getOrElse(false), false)
       }
     }
   }
@@ -916,7 +918,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           resilient <- conn.withResilience(config)
           result <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
         yield
-          assertEquals(result.isError, false)
+          assertEquals(result.isError.getOrElse(false), false)
       }
     }
   }
@@ -1042,7 +1044,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           assertEquals(resources.length, 2)
           assertEquals(prompts.length, 1)
           assertEquals(templates.length, 1)
-          assertEquals(toolResult.isError, false)
+          assertEquals(toolResult.isError.getOrElse(false), false)
           assertEquals(resourceContent.text, Some("Hello, World!"))
           assertEquals(promptResult.messages.length, 1)
       }
@@ -1063,7 +1065,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
         yield
           assertEquals(r1.length, r2.length)
           assertEquals(r2.length, r3.length)
-          assert(!r4.isError && !r5.isError && !r6.isError)
+          assert(!r4.isError.getOrElse(false) && !r5.isError.getOrElse(false) && !r6.isError.getOrElse(false))
       }
     }
   }
@@ -1096,7 +1098,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
         }.map { results =>
           assertEquals(results.length, 20)
-          assert(results.forall(!_.isError))
+          assert(results.forall(!_.isError.getOrElse(false)))
         }
       }
     }
