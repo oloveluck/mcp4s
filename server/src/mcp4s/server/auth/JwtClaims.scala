@@ -1,5 +1,6 @@
 package mcp4s.server.auth
 
+import cats.syntax.either.*
 import io.circe.*
 import mcp4s.protocol.{AuthError, TokenInfo}
 
