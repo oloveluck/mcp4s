@@ -82,7 +82,7 @@ class DispatcherSpec extends CatsEffectSuite:
   // === Helper for valid init params ===
 
   val validInitParams: Json = Json.obj(
-    "protocolVersion" -> Json.fromString("2025-03-26"),
+    "protocolVersion" -> Json.fromString("2025-11-25"),
     "capabilities" -> Json.obj(),
     "clientInfo" -> Json.obj("name" -> Json.fromString("test-client"), "version" -> Json.fromString("1.0"))
   )
@@ -96,7 +96,7 @@ class DispatcherSpec extends CatsEffectSuite:
     yield
       response match
         case JsonRpcResponse(_, result) =>
-          assertEquals(result.hcursor.get[String]("protocolVersion"), Right("2025-03-26"))
+          assertEquals(result.hcursor.get[String]("protocolVersion"), Right("2025-11-25"))
           assert(result.hcursor.downField("serverInfo").get[String]("name").contains("test-server"))
           assert(result.hcursor.downField("capabilities").downField("tools").succeeded)
         case _ => fail("Expected response")
@@ -114,7 +114,7 @@ class DispatcherSpec extends CatsEffectSuite:
       response match
         case JsonRpcResponse(_, result) =>
           // Server responds with its supported version, client decides if compatible
-          assertEquals(result.hcursor.get[String]("protocolVersion"), Right("2025-03-26"))
+          assertEquals(result.hcursor.get[String]("protocolVersion"), Right("2025-11-25"))
         case _ => fail("Expected successful response with server's protocol version")
   }
 
@@ -347,7 +347,7 @@ class DispatcherSpec extends CatsEffectSuite:
     for
       dispatcher <- createDispatcher
       _ <- sendRequest(dispatcher, McpMethod.Initialize, Json.obj(
-        "protocolVersion" -> Json.fromString("2025-03-26"),
+        "protocolVersion" -> Json.fromString("2025-11-25"),
         "capabilities" -> Json.obj(),
         "clientInfo" -> Json.obj("name" -> Json.fromString("test"), "version" -> Json.fromString("1.0"))
       ))

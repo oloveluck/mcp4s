@@ -24,7 +24,7 @@ final case class HttpClientConfig(
 
 /** Streamable HTTP transport for MCP clients.
   *
-  * Implements the MCP Streamable HTTP transport (spec 2025-03-26):
+  * Implements the MCP Streamable HTTP transport (spec 2025-11-25):
   *   - POST /{endpoint}: Send JSON-RPC requests
   */
 object HttpClientTransport:

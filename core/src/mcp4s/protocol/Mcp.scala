@@ -34,11 +34,11 @@ object PromptName:
     def value: String = name
 
 /** MCP Protocol version
-  * Spec ref: https://modelcontextprotocol.io/specification/2025-03-26/basic/lifecycle
+  * Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle
   */
 object McpVersion:
   /** Current MCP protocol version */
-  val Current: String = "2025-03-26"
+  val Current: String = "2025-11-25"
 
 // === Common Types ===
 

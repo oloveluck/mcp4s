@@ -41,7 +41,7 @@ object HttpConfig:
 
 /** Streamable HTTP transport for MCP servers.
   *
-  * Implements the MCP Streamable HTTP transport (spec 2025-03-26):
+  * Implements the MCP Streamable HTTP transport (spec 2025-11-25):
   *   - POST /{path}: Receives JSON-RPC requests, returns JSON-RPC responses
   *     - When client accepts SSE (text/event-stream): Returns SSE stream with
   *       notifications, server-initiated requests, and final response

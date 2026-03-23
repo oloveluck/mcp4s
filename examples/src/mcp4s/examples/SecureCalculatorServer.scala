@@ -30,7 +30,7 @@ import org.typelevel.otel4s.trace.Tracer
   * 4. With API key (when using apiKey validator):
   *    curl -H "Authorization: Bearer secret-key-123" \
   *         -H "Content-Type: application/json" \
-  *         -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
+  *         -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
   *         http://localhost:3000/mcp
   */
 object SecureCalculatorServer extends IOApp.Simple:

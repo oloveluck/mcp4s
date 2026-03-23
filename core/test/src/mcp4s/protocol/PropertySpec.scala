@@ -546,7 +546,7 @@ class PropertySpec extends ScalaCheckSuite:
   given Arbitrary[Implementation] = Arbitrary(genImplementation)
 
   val genInitializeParams: Gen[InitializeParams] = for {
-    protocolVersion <- Gen.oneOf("2024-11-05", "2025-03-26")
+    protocolVersion <- Gen.oneOf("2024-11-05", "2025-11-25")
     capabilities <- genClientCapabilities
     clientInfo <- genClientInfo
   } yield InitializeParams(protocolVersion, capabilities, clientInfo)
@@ -554,7 +554,7 @@ class PropertySpec extends ScalaCheckSuite:
   given Arbitrary[InitializeParams] = Arbitrary(genInitializeParams)
 
   val genInitializeResult: Gen[InitializeResult] = for {
-    protocolVersion <- Gen.oneOf("2024-11-05", "2025-03-26")
+    protocolVersion <- Gen.oneOf("2024-11-05", "2025-11-25")
     capabilities <- genServerCapabilities
     serverInfo <- genServerInfo
     instructions <- Gen.option(Gen.alphaNumStr)
@@ -648,8 +648,8 @@ class PropertySpec extends ScalaCheckSuite:
       reason <- Gen.alphaStr.filter(_.nonEmpty)
     } yield McpError.InvalidPromptArguments(name, reason),
     for {
-      requested <- Gen.oneOf("2024-11-05", "2025-03-26")
-      supported <- Gen.oneOf("2024-11-05", "2025-03-26")
+      requested <- Gen.oneOf("2024-11-05", "2025-11-25")
+      supported <- Gen.oneOf("2024-11-05", "2025-11-25")
     } yield McpError.ProtocolVersionMismatch(requested, supported),
     Gen.const(McpError.NotInitialized()),
     Gen.const(McpError.AlreadyInitialized()),
