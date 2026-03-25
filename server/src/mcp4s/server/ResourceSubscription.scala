@@ -4,7 +4,6 @@ import cats.effect.{Concurrent, Ref}
 import cats.effect.std.Queue
 import cats.syntax.all.*
 import fs2.Stream
-import mcp4s.protocol.*
 
 /** Manages resource subscriptions for MCP servers.
   *

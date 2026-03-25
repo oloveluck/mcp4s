@@ -3,7 +3,6 @@ package mcp4s.server
 import cats.Applicative
 import cats.data.OptionT
 import cats.effect.Concurrent
-import cats.syntax.all.*
 import fs2.Stream
 import io.circe.Json
 import mcp4s.protocol.*
