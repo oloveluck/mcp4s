@@ -14,7 +14,7 @@ import org.http4s.*
 import org.http4s.circe.*
 import org.http4s.dsl.Http4sDsl
 import org.http4s.ember.server.EmberServerBuilder
-import org.http4s.server.{Router, Server}
+import org.http4s.server.{Router, Server as Http4sServer}
 import org.http4s.server.middleware.CORS
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
@@ -58,7 +58,7 @@ object WebSocketTransport:
   def serve[F[_]: Async: Network](
       server: Server[F],
       config: WebSocketConfig = WebSocketConfig.default
-  )(using Tracer[F]): CatsResource[F, Server] =
+  )(using Tracer[F]): CatsResource[F, Http4sServer] =
     EmberServerBuilder
       .default[F]
       .withHost(config.host)
