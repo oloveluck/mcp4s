@@ -83,7 +83,7 @@ object SecureCalculatorServer extends IOApp.Simple:
   //     yield ()
   //   }
 
-  val server: McpServer[IO] = McpServer
+  val server: Server[IO] = Server
     .builder[IO]
     .withInfo(ServerInfo("secure-calculator-server", "1.0.0"))
     .tool[AddArgs]("add", "Add two numbers") { args =>

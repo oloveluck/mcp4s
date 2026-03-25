@@ -19,7 +19,7 @@ import scala.quoted.*
   *   @description("Second number to add") b: Double
   * ) derives ToolInput
   *
-  * // Use with McpServerBuilder:
+  * // Use with ServerBuilder:
   * .tool[AddArgs]("add", "Add two numbers") { args =>
   *   IO.pure(ToolResult.text(s"${args.a + args.b}"))
   * }

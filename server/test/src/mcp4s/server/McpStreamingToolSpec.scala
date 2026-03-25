@@ -8,14 +8,14 @@ import io.circe.syntax.*
 import mcp4s.protocol.*
 import munit.CatsEffectSuite
 
-class McpStreamingToolSpec extends CatsEffectSuite:
+class StreamingToolSpec extends CatsEffectSuite:
 
-  // === McpStreamingTool Tests ===
+  // === StreamingTool Tests ===
 
-  test("McpStreamingTool creates tool with streaming handler") {
+  test("StreamingTool creates tool with streaming handler") {
     case class CountArgs(count: Int) derives ToolInput
 
-    val streamingTool = McpStreamingTool[IO, CountArgs]("count", "Count to N") { args =>
+    val streamingTool = StreamingTool[IO, CountArgs]("count", "Count to N") { args =>
       Stream.range(1, args.count + 1).map(n => ToolResult.text(s"Count: $n"))
     }
 
@@ -35,8 +35,8 @@ class McpStreamingToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpStreamingTool.noArgs creates streaming tool without args") {
-    val streamingTool = McpStreamingTool.noArgs[IO]("tick", "Emit ticks") {
+  test("StreamingTool.noArgs creates streaming tool without args") {
+    val streamingTool = StreamingTool.noArgs[IO]("tick", "Emit ticks") {
       Stream.emits(List(
         ToolResult.text("tick 1"),
         ToolResult.text("tick 2"),
@@ -53,10 +53,10 @@ class McpStreamingToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpStreamingTool returns None for unknown tool") {
+  test("StreamingTool returns None for unknown tool") {
     case class Args(x: Int) derives ToolInput
 
-    val tool = McpStreamingTool[IO, Args]("known", "Known tool") { args =>
+    val tool = StreamingTool[IO, Args]("known", "Known tool") { args =>
       Stream.emit(ToolResult.text("ok"))
     }
 
@@ -64,10 +64,10 @@ class McpStreamingToolSpec extends CatsEffectSuite:
     assertEquals(result, None)
   }
 
-  test("McpStreamingTool handles errors in stream") {
+  test("StreamingTool handles errors in stream") {
     case class Args(fail: Boolean) derives ToolInput
 
-    val tool = McpStreamingTool[IO, Args]("maybe-fail", "Maybe fails") { args =>
+    val tool = StreamingTool[IO, Args]("maybe-fail", "Maybe fails") { args =>
       if args.fail then
         Stream.raiseError[IO](new RuntimeException("Intentional failure"))
       else
@@ -85,17 +85,17 @@ class McpStreamingToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === McpStreamingTools Composition Tests ===
+  // === StreamingTools Composition Tests ===
 
-  test("McpStreamingTools.combine merges tools") {
+  test("StreamingTools.combine merges tools") {
     case class Args1(x: Int) derives ToolInput
     case class Args2(y: String) derives ToolInput
 
-    val tool1 = McpStreamingTool[IO, Args1]("tool1", "First tool") { args =>
+    val tool1 = StreamingTool[IO, Args1]("tool1", "First tool") { args =>
       Stream.emit(ToolResult.text(s"Tool1: ${args.x}"))
     }
 
-    val tool2 = McpStreamingTool[IO, Args2]("tool2", "Second tool") { args =>
+    val tool2 = StreamingTool[IO, Args2]("tool2", "Second tool") { args =>
       Stream.emit(ToolResult.text(s"Tool2: ${args.y}"))
     }
 
@@ -113,8 +113,8 @@ class McpStreamingToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpStreamingTools.empty returns empty list") {
-    val empty = McpStreamingTools.empty[IO]
+  test("StreamingTools.empty returns empty list") {
+    val empty = StreamingTools.empty[IO]
 
     for
       tools <- empty.list
@@ -125,7 +125,7 @@ class McpStreamingToolSpec extends CatsEffectSuite:
 
   // === Conversion Tests ===
 
-  test("McpTools.asStreaming converts regular tools to streaming") {
+  test("Tools.asStreaming converts regular tools to streaming") {
     val regularTool = McpTool.singleNumberPure[IO]("double", "Double a number") { n =>
       s"${n * 2}"
     }
@@ -142,10 +142,10 @@ class McpStreamingToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpStreamingTool.fromNonStreaming wraps regular handler") {
+  test("StreamingTool.fromNonStreaming wraps regular handler") {
     case class EchoArgs(message: String) derives ToolInput
 
-    val tool = McpStreamingTool.fromNonStreaming[IO, EchoArgs]("echo", "Echo message") { args =>
+    val tool = StreamingTool.fromNonStreaming[IO, EchoArgs]("echo", "Echo message") { args =>
       IO.pure(ToolResult.text(args.message))
     }
 
@@ -158,10 +158,10 @@ class McpStreamingToolSpec extends CatsEffectSuite:
 
   // === Context-aware Streaming Tool Tests ===
 
-  test("McpStreamingTool.withContext passes context to handler") {
+  test("StreamingTool.withContext passes context to handler") {
     case class LogArgs(count: Int) derives ToolInput
 
-    val tool = McpStreamingTool.withContext[IO, LogArgs]("log", "Log with context") { (args, ctx) =>
+    val tool = StreamingTool.withContext[IO, LogArgs]("log", "Log with context") { (args, ctx) =>
       Stream.range(1, args.count + 1).evalMap { n =>
         ctx.log(LogLevel.Info, s"Processing $n").as(ToolResult.text(s"Done: $n"))
       }

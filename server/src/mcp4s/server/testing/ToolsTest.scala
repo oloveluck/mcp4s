@@ -5,9 +5,9 @@ import cats.syntax.all.*
 import io.circe.{Encoder, Json}
 import io.circe.syntax.*
 import mcp4s.protocol.*
-import mcp4s.server.McpTools
+import mcp4s.server.Tools
 
-/** Test utilities for McpTools.
+/** Test utilities for Tools.
   *
   * Provides a convenient way to test tools in isolation.
   *
@@ -24,9 +24,9 @@ import mcp4s.server.McpTools
   * }
   * }}}
   */
-object McpToolsTest:
+object ToolsTest:
 
-  extension [F[_]: Concurrent](tools: McpTools[F])
+  extension [F[_]: Concurrent](tools: Tools[F])
 
     /** Call a tool with typed arguments for testing.
       *

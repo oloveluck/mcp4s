@@ -4,7 +4,7 @@ import cats.effect.{Async, Resource}
 import io.circe.{Encoder, Json}
 import io.circe.syntax.*
 import mcp4s.protocol.*
-import mcp4s.server.McpServer
+import mcp4s.server.Server
 
 /** Test client for MCP servers.
   *
@@ -12,7 +12,7 @@ import mcp4s.server.McpServer
   *
   * {{{
   * test("add tool works") {
-  *   McpServerTest(myServer).use { client =>
+  *   ServerTest(myServer).use { client =>
   *     for
   *       result <- client.callTool("add", AddArgs(2, 3))
   *       _ = assertEquals(result.textContent, "5.0")
@@ -21,7 +21,7 @@ import mcp4s.server.McpServer
   * }
   * }}}
   */
-trait McpServerTest[F[_]]:
+trait ServerTest[F[_]]:
   /** Server info */
   def serverInfo: ServerInfo
 
@@ -59,20 +59,20 @@ trait McpServerTest[F[_]]:
   /** Get a prompt with string arguments */
   def getPromptMap(name: String, arguments: Map[String, String]): F[GetPromptResult]
 
-object McpServerTest:
+object ServerTest:
 
   /** Create a test client for an MCP server.
     *
     * The Resource ensures proper cleanup but for most servers no cleanup is needed.
     */
-  def apply[F[_]: Async](server: McpServer[F]): Resource[F, McpServerTest[F]] =
-    Resource.pure(new McpServerTestImpl(server))
+  def apply[F[_]: Async](server: Server[F]): Resource[F, ServerTest[F]] =
+    Resource.pure(new ServerTestImpl(server))
 
   /** Create a test client directly (no Resource wrapper needed for most cases) */
-  def sync[F[_]: Async](server: McpServer[F]): McpServerTest[F] =
-    new McpServerTestImpl(server)
+  def sync[F[_]: Async](server: Server[F]): ServerTest[F] =
+    new ServerTestImpl(server)
 
-  private class McpServerTestImpl[F[_]: Async](server: McpServer[F]) extends McpServerTest[F]:
+  private class ServerTestImpl[F[_]: Async](server: Server[F]) extends ServerTest[F]:
     def serverInfo: ServerInfo = server.info
     def serverCapabilities: ServerCapabilities = server.capabilities
 

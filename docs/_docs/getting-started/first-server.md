@@ -48,7 +48,7 @@ val prompts =
 ## Build and Run
 
 ```scala
-val server = McpServer.from[IO](
+val server = Server.from[IO](
   info = ServerInfo("calculator", "1.0.0"),
   tools = tools,
   resources = resources,
@@ -68,7 +68,7 @@ WebSocketTransport.serve[IO](server, WebSocketConfig(port = 3000))
 ## Builder Alternative
 
 ```scala
-val server = McpServer.builder[IO]
+val server = Server.builder[IO]
   .withInfo(ServerInfo("calculator", "1.0.0"))
   .tool[CalcArgs]("add", "Add") { args => IO.pure(ok(s"${args.a + args.b}")) }
   .resource("file:///readme", "README") { "Calculator v1.0" }

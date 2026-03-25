@@ -38,7 +38,7 @@ val prompts = helpPrompt |+| greetPrompt |+| tutorialPrompt
 ## With Builder
 
 ```scala
-McpServer.builder[IO]
+Server.builder[IO]
   .prompt("help", "Help")(user("How can I help?"))
   .prompt[GreetArgs]("greet", "Greet") { args =>
     IO.pure(messages(user(s"Hello, ${args.name}!")))

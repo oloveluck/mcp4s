@@ -28,7 +28,7 @@ Tool[IO, Args]("risky", "May fail") { args =>
 }
 
 // Middleware catches exceptions
-myTools.withMiddleware(McpMiddleware.catchErrors[IO])
+myTools.withMiddleware(Middleware.catchErrors[IO])
 ```
 
 ## Client-Side

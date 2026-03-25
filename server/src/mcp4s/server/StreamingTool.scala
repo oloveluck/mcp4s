@@ -17,14 +17,14 @@ import mcp4s.protocol.*
   *
   * Example:
   * {{{
-  * val streamingSearch = McpStreamingTool[IO, SearchArgs]("search", "Stream search results") { args =>
+  * val streamingSearch = StreamingTool[IO, SearchArgs]("search", "Stream search results") { args =>
   *   searchService.streamResults(args.query).map { result =>
   *     ToolResult.text(s"Found: ${result.title}")
   *   }
   * }
   * }}}
   */
-object McpStreamingTool:
+object StreamingTool:
 
   /** Create a streaming tool from a stream-returning handler.
     *
@@ -38,10 +38,10 @@ object McpStreamingTool:
     */
   def apply[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
       handler: A => Stream[F, ToolResult]
-  ): McpStreamingTools[F] =
+  ): StreamingTools[F] =
     val ti = summon[ToolInput[A]]
     val tool = Tool(name, Some(description), ti.schema)
-    McpStreamingTools.single(tool) { json =>
+    StreamingTools.single(tool) { json =>
       ti.decode(json) match
         case Right(a)  => handler(a)
         case Left(err) => Stream.raiseError(McpError.InvalidToolArguments(name, err))
@@ -54,10 +54,10 @@ object McpStreamingTool:
     */
   def withContext[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
       handler: (A, ToolContext[F]) => Stream[F, ToolResult]
-  ): McpStreamingTools[F] =
+  ): StreamingTools[F] =
     val ti = summon[ToolInput[A]]
     val tool = Tool(name, Some(description), ti.schema)
-    McpStreamingTools.singleWithContext(tool) { (json, ctx) =>
+    StreamingTools.singleWithContext(tool) { (json, ctx) =>
       ti.decode(json) match
         case Right(a)  => handler(a, ctx)
         case Left(err) => Stream.raiseError(McpError.InvalidToolArguments(name, err))
@@ -66,25 +66,25 @@ object McpStreamingTool:
   /** Create a streaming tool with no arguments. */
   def noArgs[F[_]: Concurrent](name: String, description: String)(
       handler: Stream[F, ToolResult]
-  ): McpStreamingTools[F] =
+  ): StreamingTools[F] =
     val tool = Tool(name, Some(description), JsonSchema.empty)
-    McpStreamingTools.single(tool)(_ => handler)
+    StreamingTools.single(tool)(_ => handler)
 
   /** Create a streaming tool from a regular tool handler that produces a single chunk.
     * This is useful for compatibility with existing tools.
     */
   def fromNonStreaming[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
       handler: A => F[ToolResult]
-  ): McpStreamingTools[F] =
+  ): StreamingTools[F] =
     apply[F, A](name, description) { args =>
       Stream.eval(handler(args))
     }
 
 /** Composable streaming tool routes for MCP servers.
   *
-  * Similar to McpTools but produces streams of results instead of single results.
+  * Similar to Tools but produces streams of results instead of single results.
   */
-trait McpStreamingTools[F[_]]:
+trait StreamingTools[F[_]]:
   /** List all streaming tools */
   def list: F[List[Tool]]
 
@@ -95,19 +95,19 @@ trait McpStreamingTools[F[_]]:
   def callStreamingWithContext(name: String, args: Json, ctx: ToolContext[F]): Option[Stream[F, ToolResult]] =
     callStreaming(name, args)
 
-object McpStreamingTools:
+object StreamingTools:
 
   /** Empty streaming tools */
-  def empty[F[_]: Applicative]: McpStreamingTools[F] =
-    new McpStreamingTools[F]:
+  def empty[F[_]: Applicative]: StreamingTools[F] =
+    new StreamingTools[F]:
       def list: F[List[Tool]] = Applicative[F].pure(Nil)
       def callStreaming(name: String, args: Json): Option[Stream[F, ToolResult]] = None
 
   /** Create streaming tool routes from a single tool */
   def single[F[_]: Concurrent](tool: Tool)(
       handler: Json => Stream[F, ToolResult]
-  ): McpStreamingTools[F] =
-    new McpStreamingTools[F]:
+  ): StreamingTools[F] =
+    new StreamingTools[F]:
       def list: F[List[Tool]] = Applicative[F].pure(List(tool))
       def callStreaming(name: String, args: Json): Option[Stream[F, ToolResult]] =
         if name == tool.name then Some(handler(args))
@@ -116,8 +116,8 @@ object McpStreamingTools:
   /** Create context-aware streaming tool routes from a single tool */
   def singleWithContext[F[_]: Concurrent](tool: Tool)(
       handler: (Json, ToolContext[F]) => Stream[F, ToolResult]
-  ): McpStreamingTools[F] =
-    new McpStreamingTools[F]:
+  ): StreamingTools[F] =
+    new StreamingTools[F]:
       def list: F[List[Tool]] = Applicative[F].pure(List(tool))
       def callStreaming(name: String, args: Json): Option[Stream[F, ToolResult]] =
         if name == tool.name then
@@ -129,9 +129,9 @@ object McpStreamingTools:
         if name == tool.name then Some(handler(args, ctx))
         else None
 
-  /** Combine two McpStreamingTools instances (first match wins) */
-  def combine[F[_]: Concurrent](x: McpStreamingTools[F], y: McpStreamingTools[F]): McpStreamingTools[F] =
-    new McpStreamingTools[F]:
+  /** Combine two StreamingTools instances (first match wins) */
+  def combine[F[_]: Concurrent](x: StreamingTools[F], y: StreamingTools[F]): StreamingTools[F] =
+    new StreamingTools[F]:
       def list: F[List[Tool]] =
         for
           xTools <- x.list
@@ -146,22 +146,22 @@ object McpStreamingTools:
         x.callStreamingWithContext(name, args, ctx).orElse(y.callStreamingWithContext(name, args, ctx))
 
   /** Semigroup instance for composition via |+| */
-  given [F[_]: Concurrent]: cats.Semigroup[McpStreamingTools[F]] with
-    def combine(x: McpStreamingTools[F], y: McpStreamingTools[F]): McpStreamingTools[F] =
-      McpStreamingTools.combine(x, y)
+  given [F[_]: Concurrent]: cats.Semigroup[StreamingTools[F]] with
+    def combine(x: StreamingTools[F], y: StreamingTools[F]): StreamingTools[F] =
+      StreamingTools.combine(x, y)
 
-  extension [F[_]: Concurrent](tools: McpStreamingTools[F])
-    def <+>(other: McpStreamingTools[F]): McpStreamingTools[F] =
+  extension [F[_]: Concurrent](tools: StreamingTools[F])
+    def <+>(other: StreamingTools[F]): StreamingTools[F] =
       combine(tools, other)
 
 /** Extension methods for converting regular tools to streaming tools */
-extension [F[_]: Concurrent](tools: McpTools[F])
+extension [F[_]: Concurrent](tools: Tools[F])
 
   /** Convert regular tools to streaming tools.
     * Each tool call produces a stream with a single result.
     */
-  def asStreaming: McpStreamingTools[F] =
-    new McpStreamingTools[F]:
+  def asStreaming: StreamingTools[F] =
+    new StreamingTools[F]:
       def list: F[List[Tool]] = tools.list
 
       def callStreaming(name: String, args: Json): Option[Stream[F, ToolResult]] =

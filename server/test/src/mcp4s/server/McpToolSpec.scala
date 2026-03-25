@@ -189,9 +189,9 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === Declarative McpServer.from Tests ===
+  // === Declarative Server.from Tests ===
 
-  test("McpServer.from creates server from composed parts") {
+  test("Server.from creates server from composed parts") {
     val add = McpTool.twoNumbers[IO]("add", "Add") { (a, b) =>
       IO.pure(ToolResult.text(s"${a + b}"))
     }
@@ -202,7 +202,7 @@ class McpToolSpec extends CatsEffectSuite:
       IO.pure(GetPromptResult(None, List(PromptMessage(Role.User, TextContent("Hi")))))
     }
 
-    val server = McpServer.from[IO](
+    val server = Server.from[IO](
       info = ServerInfo("test", "1.0.0"),
       tools = add,
       resources = readme,
@@ -225,7 +225,7 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpServer.fromTools composes multiple tools with |+|") {
+  test("Server.fromTools composes multiple tools with |+|") {
     val add = McpTool.twoNumbers[IO]("add", "Add") { (a, b) =>
       IO.pure(ToolResult.text(s"${a + b}"))
     }
@@ -234,7 +234,7 @@ class McpToolSpec extends CatsEffectSuite:
       IO.pure(ToolResult.text(s"${a * b}"))
     }
 
-    val server = McpServer.fromTools[IO](
+    val server = Server.fromTools[IO](
       info = ServerInfo("calc", "1.0.0"),
       tools = add |+| mul
     )
@@ -249,10 +249,10 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpServer.fromTools raises ToolNotFound for unknown tool") {
-    val server = McpServer.fromTools[IO](
+  test("Server.fromTools raises ToolNotFound for unknown tool") {
+    val server = Server.fromTools[IO](
       info = ServerInfo("test", "1.0.0"),
-      tools = McpTools.empty[IO]
+      tools = Tools.empty[IO]
     )
     for
       result <- server.callTool("nonexistent", Json.obj()).attempt
@@ -261,12 +261,12 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpServer.from raises ResourceNotFound for unknown resource") {
-    val server = McpServer.from[IO](
+  test("Server.from raises ResourceNotFound for unknown resource") {
+    val server = Server.from[IO](
       info = ServerInfo("test", "1.0.0"),
-      tools = McpTools.empty[IO],
-      resources = McpResources.empty[IO],
-      prompts = McpPrompts.empty[IO]
+      tools = Tools.empty[IO],
+      resources = Resources.empty[IO],
+      prompts = Prompts.empty[IO]
     )
     for
       result <- server.readResource("test://unknown").attempt
@@ -275,12 +275,12 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpServer.from raises PromptNotFound for unknown prompt") {
-    val server = McpServer.from[IO](
+  test("Server.from raises PromptNotFound for unknown prompt") {
+    val server = Server.from[IO](
       info = ServerInfo("test", "1.0.0"),
-      tools = McpTools.empty[IO],
-      resources = McpResources.empty[IO],
-      prompts = McpPrompts.empty[IO]
+      tools = Tools.empty[IO],
+      resources = Resources.empty[IO],
+      prompts = Prompts.empty[IO]
     )
     for
       result <- server.getPrompt("unknown", Map.empty).attempt
@@ -418,7 +418,7 @@ class McpToolSpec extends CatsEffectSuite:
 
   // === Context-Aware Tool Composition Tests ===
 
-  test("McpTool.withContext returns McpTools for composition") {
+  test("McpTool.withContext returns Tools for composition") {
     case class QueryArgs(query: String) derives ToolInput
 
     val regular = McpTool.twoNumbersPure[IO]("add", "Add") { (a, b) => s"${a + b}" }

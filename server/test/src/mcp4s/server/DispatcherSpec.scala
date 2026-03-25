@@ -35,7 +35,7 @@ class DispatcherSpec extends CatsEffectSuite:
     arguments = List(PromptArgument("name", Some("User name"), required = true))
   )
 
-  def testServer: McpServer[IO] = new McpServer[IO]:
+  def testServer: Server[IO] = new Server[IO]:
     val info: ServerInfo = ServerInfo("test-server", "1.0.0")
     val capabilities: ServerCapabilities = ServerCapabilities(
       tools = Some(ToolsCapability()),
@@ -364,7 +364,7 @@ class DispatcherSpec extends CatsEffectSuite:
   }
 
   test("Handler exception returns InternalError") {
-    val failingServer = new McpServer[IO]:
+    val failingServer = new Server[IO]:
       val info: ServerInfo = ServerInfo("failing-server", "1.0.0")
       val capabilities: ServerCapabilities = ServerCapabilities(tools = Some(ToolsCapability()))
 
@@ -397,7 +397,7 @@ class DispatcherSpec extends CatsEffectSuite:
   // === Progress Token Tests ===
 
   /** Server whose callToolWithContext sends progress notifications via the context */
-  def progressServer: McpServer[IO] = new McpServer[IO]:
+  def progressServer: Server[IO] = new Server[IO]:
     val info: ServerInfo = ServerInfo("progress-server", "1.0.0")
     val capabilities: ServerCapabilities = ServerCapabilities(tools = Some(ToolsCapability()))
 

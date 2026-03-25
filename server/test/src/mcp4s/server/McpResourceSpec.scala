@@ -44,7 +44,7 @@ class McpResourceSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpResources compose with |+|") {
+  test("Resources compose with |+|") {
     val readme = McpResource[IO]("file:///readme", "README")("Hello")
     val config = McpResource[IO]("file:///config", "Config")("{}")
 
@@ -60,7 +60,7 @@ class McpResourceSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpResources left takes precedence on URI conflict") {
+  test("Resources left takes precedence on URI conflict") {
     val v1 = McpResource[IO]("file:///readme", "v1")("version 1")
     val v2 = McpResource[IO]("file:///readme", "v2")("version 2")
 

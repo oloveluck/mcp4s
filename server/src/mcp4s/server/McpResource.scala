@@ -21,10 +21,10 @@ import mcp4s.protocol.*
   *   IO.pure(ResourceContent.text("file:///config", "{}"))
   * }
   *
-  * val allResources: McpResources[IO] = readme |+| config
+  * val allResources: Resources[IO] = readme |+| config
   * }}}
   */
-trait McpResources[F[_]]:
+trait Resources[F[_]]:
   /** List all resources */
   def list: F[List[Resource]]
 
@@ -37,17 +37,17 @@ trait McpResources[F[_]]:
   /** Stream of URIs that have changed. Empty for static resources. */
   def changes: Stream[F, String]
 
-object McpResources:
+object Resources:
 
-  def empty[F[_]: Applicative]: McpResources[F] =
-    new McpResources[F]:
+  def empty[F[_]: Applicative]: Resources[F] =
+    new Resources[F]:
       def list: F[List[Resource]] = Applicative[F].pure(Nil)
       def listTemplates: F[List[ResourceTemplate]] = Applicative[F].pure(Nil)
       def read(uri: String): OptionT[F, ResourceContent] = OptionT.none
       def changes: Stream[F, String] = Stream.empty
 
-  def combine[F[_]: Concurrent](x: McpResources[F], y: McpResources[F]): McpResources[F] =
-    new McpResources[F]:
+  def combine[F[_]: Concurrent](x: Resources[F], y: Resources[F]): Resources[F] =
+    new Resources[F]:
       def list: F[List[Resource]] =
         for
           xRes <- x.list
@@ -68,13 +68,13 @@ object McpResources:
       def changes: Stream[F, String] =
         x.changes.merge(y.changes)
 
-  /** Semigroup instance for McpResources composition via |+| */
-  given [F[_]: Concurrent]: Semigroup[McpResources[F]] with
-    def combine(x: McpResources[F], y: McpResources[F]): McpResources[F] =
-      McpResources.combine(x, y)
+  /** Semigroup instance for Resources composition via |+| */
+  given [F[_]: Concurrent]: Semigroup[Resources[F]] with
+    def combine(x: Resources[F], y: Resources[F]): Resources[F] =
+      Resources.combine(x, y)
 
-  extension [F[_]: Concurrent](resources: McpResources[F])
-    def <+>(other: McpResources[F]): McpResources[F] =
+  extension [F[_]: Concurrent](resources: Resources[F])
+    def <+>(other: Resources[F]): Resources[F] =
       combine(resources, other)
 
   /** Create a template resource that matches URI patterns.
@@ -84,7 +84,7 @@ object McpResources:
     *
     * Example:
     * {{{
-    * val users = McpResources.template[IO]("api://users/{id}", "User", "Get user by ID") { uri =>
+    * val users = Resources.template[IO]("api://users/{id}", "User", "Get user by ID") { uri =>
     *   val id = uri.split("/").last
     *   IO.pure(ResourceContent.text(uri, s"""{"id":"$id"}"""))
     * }
@@ -94,8 +94,8 @@ object McpResources:
       uriPattern: String,
       name: String,
       description: String = ""
-  )(handler: String => F[ResourceContent]): McpResources[F] =
-    new McpResources[F]:
+  )(handler: String => F[ResourceContent]): Resources[F] =
+    new Resources[F]:
       private val resourceTemplate = ResourceTemplate(
         uriTemplate = uriPattern,
         name = name,
@@ -121,20 +121,20 @@ object McpResources:
 object McpResource:
 
   /** Create a static text resource */
-  def apply[F[_]: Concurrent](uri: String, name: String)(content: => String): McpResources[F] =
+  def apply[F[_]: Concurrent](uri: String, name: String)(content: => String): Resources[F] =
     val resource = Resource(uri, name, mimeType = Some("text/plain"))
     single(resource)(_ => Concurrent[F].pure(ResourceContent.text(uri, content)))
 
   /** Create a resource with a handler */
   def handler[F[_]: Concurrent](uri: String, name: String, mimeType: String = "text/plain")(
       handler: String => F[ResourceContent]
-  ): McpResources[F] =
+  ): Resources[F] =
     val resource = Resource(uri, name, mimeType = Some(mimeType))
     single(resource)(handler)
 
   /** Create a resource from a Resource definition and handler */
-  def single[F[_]: Concurrent](resource: Resource)(handler: String => F[ResourceContent]): McpResources[F] =
-    new McpResources[F]:
+  def single[F[_]: Concurrent](resource: Resource)(handler: String => F[ResourceContent]): Resources[F] =
+    new Resources[F]:
       def list: F[List[Resource]] = Applicative[F].pure(List(resource))
       def listTemplates: F[List[ResourceTemplate]] = Applicative[F].pure(Nil)
       def read(uri: String): OptionT[F, ResourceContent] =
@@ -144,7 +144,7 @@ object McpResource:
 
   /** Create a subscribable resource from a change stream.
     *
-    * The returned `McpResources` carries a change stream that emits the URI
+    * The returned `Resources` carries a change stream that emits the URI
     * whenever the resource content changes. Use this for resources that need
     * to notify subscribers of updates.
     *
@@ -162,8 +162,8 @@ object McpResource:
       uri: String,
       name: String,
       changeStream: Stream[F, Unit]
-  )(readHandler: String => F[ResourceContent]): McpResources[F] =
-    new McpResources[F]:
+  )(readHandler: String => F[ResourceContent]): Resources[F] =
+    new Resources[F]:
       private val resource = Resource(uri, name, mimeType = Some("text/plain"))
       def list: F[List[Resource]] = Applicative[F].pure(List(resource))
       def listTemplates: F[List[ResourceTemplate]] = Applicative[F].pure(Nil)
@@ -190,7 +190,7 @@ object McpResource:
       name: String,
       pollInterval: scala.concurrent.duration.FiniteDuration,
       hasChanged: F[Boolean]
-  )(readHandler: String => F[ResourceContent]): McpResources[F] =
+  )(readHandler: String => F[ResourceContent]): Resources[F] =
     val changeStream = Stream
       .awakeEvery[F](pollInterval)
       .evalFilter(_ => hasChanged)

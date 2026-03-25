@@ -11,7 +11,7 @@ import mcp4s.protocol.*
   *
   * @example
   * {{{
-  * McpServer.builder[IO]
+  * Server.builder[IO]
   *   .toolWithContext[Args]("smart-calc", "Calculate with LLM help") { (args, ctx) =>
   *     for
   *       _ <- ctx.log(LogLevel.Info, "Starting calculation")

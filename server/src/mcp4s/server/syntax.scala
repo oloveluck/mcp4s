@@ -27,7 +27,7 @@ import mcp4s.server.transport.{HttpConfig, HttpTransport, StdioTransport}
   */
 object syntax:
 
-  extension [F[_]](server: McpServer[F])
+  extension [F[_]](server: Server[F])
 
     /** Run the server on stdio transport.
       *

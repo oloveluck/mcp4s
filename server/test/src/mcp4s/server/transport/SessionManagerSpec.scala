@@ -13,9 +13,9 @@ class SessionManagerSpec extends CatsEffectSuite:
   given Tracer[IO] = Tracer.noop[IO]
 
   // Test fixtures
-  val testServer: McpServer[IO] = McpServer.fromTools[IO](
+  val testServer: Server[IO] = Server.fromTools[IO](
     ServerInfo("test", "1.0.0"),
-    McpTools.empty[IO]
+    Tools.empty[IO]
   )
 
   test("SessionManager creates sessions with unique IDs") {

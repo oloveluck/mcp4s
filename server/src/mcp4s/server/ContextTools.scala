@@ -9,21 +9,21 @@ import mcp4s.protocol.*
 
 /** Composable context-aware tool routes for MCP servers.
   *
-  * Like McpTools but handlers receive a ToolContext for server-to-client operations
+  * Like Tools but handlers receive a ToolContext for server-to-client operations
   * (sampling, progress, logging).
   */
-trait McpContextTools[F[_]]:
+trait ContextTools[F[_]]:
   /** List all tools provided by these routes */
   def list: F[List[Tool]]
 
   /** Call a tool with context, returning None if not handled */
   def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult]
 
-object McpContextTools:
+object ContextTools:
 
   /** Create context-aware tool routes from a single tool */
-  def single[F[_]: Concurrent](tool: Tool)(handler: (Json, ToolContext[F]) => F[ToolResult]): McpContextTools[F] =
-    new McpContextTools[F]:
+  def single[F[_]: Concurrent](tool: Tool)(handler: (Json, ToolContext[F]) => F[ToolResult]): ContextTools[F] =
+    new ContextTools[F]:
       def list: F[List[Tool]] = Applicative[F].pure(List(tool))
 
       def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
@@ -31,14 +31,14 @@ object McpContextTools:
         else OptionT.none[F, ToolResult]
 
   /** Empty context-aware tool routes */
-  def empty[F[_]: Applicative]: McpContextTools[F] =
-    new McpContextTools[F]:
+  def empty[F[_]: Applicative]: ContextTools[F] =
+    new ContextTools[F]:
       def list: F[List[Tool]] = Applicative[F].pure(Nil)
       def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] = OptionT.none
 
-  /** Combine two McpContextTools instances */
-  def combine[F[_]: Concurrent](x: McpContextTools[F], y: McpContextTools[F]): McpContextTools[F] =
-    new McpContextTools[F]:
+  /** Combine two ContextTools instances */
+  def combine[F[_]: Concurrent](x: ContextTools[F], y: ContextTools[F]): ContextTools[F] =
+    new ContextTools[F]:
       def list: F[List[Tool]] =
         for
           xTools <- x.list
@@ -49,6 +49,6 @@ object McpContextTools:
       def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
         x.call(name, args, ctx).orElse(y.call(name, args, ctx))
 
-  extension [F[_]: Concurrent](tools: McpContextTools[F])
-    def <+>(other: McpContextTools[F]): McpContextTools[F] =
+  extension [F[_]: Concurrent](tools: ContextTools[F])
+    def <+>(other: ContextTools[F]): ContextTools[F] =
       combine(tools, other)

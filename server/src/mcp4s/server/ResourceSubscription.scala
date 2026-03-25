@@ -75,21 +75,21 @@ trait ResourceSubscriptionManager[F[_]]:
     */
   def notifications: Stream[F, (String, String)]
 
-  /** Connect to a McpResources change stream.
+  /** Connect to a Resources change stream.
     *
     * Returns a stream that monitors resource changes and notifies subscribers.
     * This stream should be run concurrently with the server.
     *
     * Example:
     * {{{
-    * val resources: McpResources[IO] = ...
+    * val resources: Resources[IO] = ...
     * for
     *   manager <- ResourceSubscriptionManager[IO]
     *   _ <- manager.connect(resources).compile.drain.start
     * yield ()
     * }}}
     */
-  def connect(resources: McpResources[F]): Stream[F, Unit]
+  def connect(resources: Resources[F]): Stream[F, Unit]
 
 object ResourceSubscriptionManager:
 
@@ -150,5 +150,5 @@ object ResourceSubscriptionManager:
     def notifications: Stream[F, (String, String)] =
       Stream.fromQueueUnterminated(notificationQueue)
 
-    def connect(resources: McpResources[F]): Stream[F, Unit] =
+    def connect(resources: Resources[F]): Stream[F, Unit] =
       resources.changes.evalMap(notifyChanged)

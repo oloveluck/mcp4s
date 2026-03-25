@@ -9,7 +9,7 @@ import mcp4s.protocol.*
 
 /** Composable tool routes for MCP servers.
   *
-  * McpTools provides http4s-style partial function routing for tools, enabling:
+  * Tools provides http4s-style partial function routing for tools, enabling:
   *   - Pattern matching on tool names and arguments
   *   - Composition via `<+>` (first match wins)
   *   - Easy modular organization of tools
@@ -20,7 +20,7 @@ import mcp4s.protocol.*
   *
   * Example:
   * {{{
-  * val mathTools = McpTools.of[IO](
+  * val mathTools = Tools.of[IO](
   *   Tool("add", Some("Add numbers"), addSchema),
   *   Tool("subtract", Some("Subtract numbers"), subtractSchema)
   * ) {
@@ -28,14 +28,14 @@ import mcp4s.protocol.*
   *   case ("subtract", args) => handleSubtract(args)
   * }
   *
-  * val stringTools = McpTools.of[IO](Tool("concat", Some("Concatenate"), schema)) {
+  * val stringTools = Tools.of[IO](Tool("concat", Some("Concatenate"), schema)) {
   *   case ("concat", args) => handleConcat(args)
   * }
   *
   * val allTools = mathTools <+> stringTools
   * }}}
   */
-trait McpTools[F[_]]:
+trait Tools[F[_]]:
   /** List all tools provided by these routes */
   def list: F[List[Tool]]
 
@@ -51,13 +51,13 @@ trait McpTools[F[_]]:
   def callWithContext(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
     call(name, args) // Default: ignore context
 
-object McpTools:
+object Tools:
 
   /** Create tool routes from a list of tools and a partial function handler */
   def of[F[_]: Concurrent](tools: Tool*)(
       pf: PartialFunction[(String, Json), F[ToolResult]]
-  ): McpTools[F] =
-    new McpTools[F]:
+  ): Tools[F] =
+    new Tools[F]:
       private val toolList = tools.toList
       private val toolNames = toolList.map(_.name).toSet
 
@@ -69,7 +69,7 @@ object McpTools:
         else OptionT.none[F, ToolResult]
 
   /** Create tool routes from a single tool */
-  def single[F[_]: Concurrent](tool: Tool)(handler: Json => F[ToolResult]): McpTools[F] =
+  def single[F[_]: Concurrent](tool: Tool)(handler: Json => F[ToolResult]): Tools[F] =
     of(tool) { case (name, args) if name == tool.name => handler(args) }
 
   /** Create context-aware tool routes from a single tool.
@@ -79,8 +79,8 @@ object McpTools:
     */
   def singleWithContext[F[_]: Concurrent](tool: Tool)(
       handler: (Json, ToolContext[F]) => F[ToolResult]
-  ): McpTools[F] =
-    new McpTools[F]:
+  ): Tools[F] =
+    new Tools[F]:
       def list: F[List[Tool]] = Applicative[F].pure(List(tool))
 
       def call(name: String, args: Json): OptionT[F, ToolResult] =
@@ -95,14 +95,14 @@ object McpTools:
         else OptionT.none[F, ToolResult]
 
   /** Empty tool routes */
-  def empty[F[_]: Applicative]: McpTools[F] =
-    new McpTools[F]:
+  def empty[F[_]: Applicative]: Tools[F] =
+    new Tools[F]:
       def list: F[List[Tool]] = Applicative[F].pure(Nil)
       def call(name: String, args: Json): OptionT[F, ToolResult] = OptionT.none
 
-  /** Combine two McpTools instances (first match wins) */
-  def combine[F[_]: Concurrent](x: McpTools[F], y: McpTools[F]): McpTools[F] =
-    new McpTools[F]:
+  /** Combine two Tools instances (first match wins) */
+  def combine[F[_]: Concurrent](x: Tools[F], y: Tools[F]): Tools[F] =
+    new Tools[F]:
       def list: F[List[Tool]] =
         for
           xTools <- x.list
@@ -116,12 +116,12 @@ object McpTools:
       override def callWithContext(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
         x.callWithContext(name, args, ctx).orElse(y.callWithContext(name, args, ctx))
 
-  /** Semigroup instance for McpTools composition via |+| */
-  given [F[_]: Concurrent]: Semigroup[McpTools[F]] with
-    def combine(x: McpTools[F], y: McpTools[F]): McpTools[F] =
-      McpTools.combine(x, y)
+  /** Semigroup instance for Tools composition via |+| */
+  given [F[_]: Concurrent]: Semigroup[Tools[F]] with
+    def combine(x: Tools[F], y: Tools[F]): Tools[F] =
+      Tools.combine(x, y)
 
-  extension [F[_]: Concurrent](tools: McpTools[F])
-    /** Combine with another McpTools, this one takes precedence */
-    def <+>(other: McpTools[F]): McpTools[F] =
+  extension [F[_]: Concurrent](tools: Tools[F])
+    /** Combine with another Tools, this one takes precedence */
+    def <+>(other: Tools[F]): Tools[F] =
       combine(tools, other)

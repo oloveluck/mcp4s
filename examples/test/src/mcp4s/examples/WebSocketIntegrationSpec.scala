@@ -43,7 +43,7 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
     arguments = List(PromptArgument("name", Some("Name to greet"), required = true))
   )
 
-  def createTestServer: McpServer[IO] = McpServer.builder[IO]
+  def createTestServer: Server[IO] = Server.builder[IO]
     .withInfo(ServerInfo("ws-test-server", "1.0.0"))
     .withTool(testTool, args => {
       val cursor = args.hcursor

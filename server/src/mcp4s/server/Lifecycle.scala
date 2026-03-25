@@ -37,8 +37,8 @@ object McpLifecycle:
   /** Create an empty lifecycle (no-op) */
   def empty[F[_]: Applicative]: McpLifecycle[F] = new McpLifecycle[F] {}
 
-/** Extension methods for McpServer to support lifecycle management */
-extension [F[_]: Concurrent](server: McpServer[F])
+/** Extension methods for Server to support lifecycle management */
+extension [F[_]: Concurrent](server: Server[F])
 
   /** Wrap the server in a Resource that manages lifecycle.
     *
@@ -48,11 +48,11 @@ extension [F[_]: Concurrent](server: McpServer[F])
     * This is useful when tools or resources need managed connections
     * (database pools, HTTP clients, etc.) that should be cleaned up on shutdown.
     */
-  def asResource: CatsResource[F, McpServer[F]] =
+  def asResource: CatsResource[F, Server[F]] =
     CatsResource.pure(server)
 
-/** Extension methods for McpServer with lifecycle-managed tools */
-object McpServerLifecycle:
+/** Extension methods for Server with lifecycle-managed tools */
+object ServerLifecycle:
 
   /** Create a server with lifecycle-managed tools.
     *
@@ -67,21 +67,21 @@ object McpServerLifecycle:
     */
   def withLifecycle[F[_]: Concurrent](
       info: ServerInfo,
-      tools: CatsResource[F, McpTools[F]],
-      resources: McpResources[F],
-      prompts: McpPrompts[F]
-  ): CatsResource[F, McpServer[F]] =
+      tools: CatsResource[F, Tools[F]],
+      resources: Resources[F],
+      prompts: Prompts[F]
+  ): CatsResource[F, Server[F]] =
     tools.map { managedTools =>
-      McpServer.from[F](info, managedTools, resources, prompts)
+      Server.from[F](info, managedTools, resources, prompts)
     }
 
   /** Create a server with lifecycle-managed tools and empty resources/prompts. */
   def withLifecycleToolsOnly[F[_]: Concurrent](
       info: ServerInfo,
-      tools: CatsResource[F, McpTools[F]]
-  ): CatsResource[F, McpServer[F]] =
+      tools: CatsResource[F, Tools[F]]
+  ): CatsResource[F, Server[F]] =
     tools.map { managedTools =>
-      McpServer.from[F](info, managedTools, McpResources.empty[F], McpPrompts.empty[F])
+      Server.from[F](info, managedTools, Resources.empty[F], Prompts.empty[F])
     }
 
 /** Namespace for lifecycle-aware tool creation */
@@ -94,7 +94,7 @@ object McpLifecycleTool:
     *
     * Example:
     * {{{
-    * val dbTools: Resource[IO, McpTools[IO]] = McpLifecycleTool[IO, QueryArgs, HikariDataSource](
+    * val dbTools: Resource[IO, Tools[IO]] = McpLifecycleTool[IO, QueryArgs, HikariDataSource](
     *   "query",
     *   "Run SQL query",
     *   acquire = HikariCP.resource(config)
@@ -116,7 +116,7 @@ object McpLifecycleTool:
       name: String,
       description: String,
       acquire: CatsResource[F, R]
-  )(handler: (A, R) => F[ToolResult]): CatsResource[F, McpTools[F]] =
+  )(handler: (A, R) => F[ToolResult]): CatsResource[F, Tools[F]] =
     acquire.map { resource =>
       McpTool[F, A](name, description) { args =>
         handler(args, resource)
@@ -127,7 +127,7 @@ object McpLifecycleTool:
     *
     * Example:
     * {{{
-    * val statusTool: Resource[IO, McpTools[IO]] = McpLifecycleTool.noArgs[IO, HttpClient](
+    * val statusTool: Resource[IO, Tools[IO]] = McpLifecycleTool.noArgs[IO, HttpClient](
     *   "health",
     *   "Check service health",
     *   acquire = HttpClient.resource
@@ -140,7 +140,7 @@ object McpLifecycleTool:
       name: String,
       description: String,
       acquire: CatsResource[F, R]
-  )(handler: R => F[ToolResult]): CatsResource[F, McpTools[F]] =
+  )(handler: R => F[ToolResult]): CatsResource[F, Tools[F]] =
     acquire.map { resource =>
       McpTool.noArgs[F](name, description) {
         handler(resource)
@@ -156,7 +156,7 @@ object McpLifecycleTool:
       name: String,
       description: String,
       acquire: CatsResource[F, R]
-  )(handler: (A, R, ToolContext[F]) => F[ToolResult]): CatsResource[F, McpTools[F]] =
+  )(handler: (A, R, ToolContext[F]) => F[ToolResult]): CatsResource[F, Tools[F]] =
     acquire.map { resource =>
       McpTool.withContext[F, A](name, description) { (args, ctx) =>
         handler(args, resource, ctx)
@@ -169,7 +169,7 @@ object McpLifecycleTool:
     *
     * Example:
     * {{{
-    * val allTools: Resource[IO, McpTools[IO]] = McpLifecycleTool.combine(
+    * val allTools: Resource[IO, Tools[IO]] = McpLifecycleTool.combine(
     *   dbQueryTool,
     *   httpClientTool,
     *   cacheClientTool
@@ -177,24 +177,24 @@ object McpLifecycleTool:
     * }}}
     */
   def combine[F[_]: Concurrent](
-      tools: CatsResource[F, McpTools[F]]*
-  ): CatsResource[F, McpTools[F]] =
+      tools: CatsResource[F, Tools[F]]*
+  ): CatsResource[F, Tools[F]] =
     tools.toList.sequence.map { toolsList =>
-      toolsList.foldLeft(McpTools.empty[F])(_ |+| _)
+      toolsList.foldLeft(Tools.empty[F])(_ |+| _)
     }
 
   /** Combine a lifecycle tool with a static tool.
     *
     * Example:
     * {{{
-    * val combined: Resource[IO, McpTools[IO]] = McpLifecycleTool.combineWith(
+    * val combined: Resource[IO, Tools[IO]] = McpLifecycleTool.combineWith(
     *   lifecycleTool,
     *   staticTool1 |+| staticTool2
     * )
     * }}}
     */
   def combineWith[F[_]: Concurrent](
-      lifecycle: CatsResource[F, McpTools[F]],
-      static: McpTools[F]
-  ): CatsResource[F, McpTools[F]] =
+      lifecycle: CatsResource[F, Tools[F]],
+      static: Tools[F]
+  ): CatsResource[F, Tools[F]] =
     lifecycle.map(_ |+| static)

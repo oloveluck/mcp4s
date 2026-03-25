@@ -32,7 +32,7 @@ import mcp4s.protocol.*
   *     assistant("Hi there!")
   *   )
   *
-  * val server = McpServer.from[IO](
+  * val server = Server.from[IO](
   *   ServerInfo("my-server", "1.0.0"),
   *   textTools,
   *   resources,
@@ -106,7 +106,7 @@ object mcp:
       * }
       * }}}
       */
-    def text[F[_]: Concurrent](name: String, desc: String)(f: => String): McpTools[F] =
+    def text[F[_]: Concurrent](name: String, desc: String)(f: => String): Tools[F] =
       McpTool.pureTextNoArgs[F](name, desc)(f)
 
     /** Create a tool with a pure string handler with typed arguments.
@@ -119,7 +119,7 @@ object mcp:
       * }
       * }}}
       */
-    def text[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(f: A => String): McpTools[F] =
+    def text[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(f: A => String): Tools[F] =
       McpTool.pureText[F, A](name, desc)(f)
 
     /** Create a tool with an effectful handler (no arguments).
@@ -131,7 +131,7 @@ object mcp:
       * }
       * }}}
       */
-    def apply[F[_]: Concurrent](name: String, desc: String)(f: => F[ToolResult]): McpTools[F] =
+    def apply[F[_]: Concurrent](name: String, desc: String)(f: => F[ToolResult]): Tools[F] =
       McpTool.noArgs[F](name, desc)(f)
 
     /** Create a tool with an effectful handler with typed arguments.
@@ -146,7 +146,7 @@ object mcp:
       */
     def apply[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(
         f: A => F[ToolResult]
-    ): McpTools[F] =
+    ): Tools[F] =
       McpTool[F, A](name, desc)(f)
 
     /** Create a context-aware tool with no typed arguments.
@@ -165,7 +165,7 @@ object mcp:
       */
     def withContext[F[_]: Concurrent](name: String, desc: String)(
         f: ToolContext[F] => F[ToolResult]
-    ): McpTools[F] =
+    ): Tools[F] =
       McpTool.withContextNoArgs[F](name, desc)(f)
 
     /** Create a context-aware tool with typed arguments.
@@ -183,7 +183,7 @@ object mcp:
       */
     def withContext[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(
         f: (A, ToolContext[F]) => F[ToolResult]
-    ): McpTools[F] =
+    ): Tools[F] =
       McpTool.withContext[F, A](name, desc)(f)
 
   // === Resource Constructors ===
@@ -200,7 +200,7 @@ object mcp:
       * }
       * }}}
       */
-    def text[F[_]: Concurrent](uri: String, name: String)(content: => String): McpResources[F] =
+    def text[F[_]: Concurrent](uri: String, name: String)(content: => String): Resources[F] =
       McpResource[F](uri, name)(content)
 
     /** Create a resource with an effectful handler.
@@ -214,7 +214,7 @@ object mcp:
       */
     def apply[F[_]: Concurrent](uri: String, name: String)(
         f: => F[ResourceContent]
-    ): McpResources[F] =
+    ): Resources[F] =
       McpResource.handler[F](uri, name)(_ => f)
 
     /** Create a template resource that matches URI patterns.
@@ -229,8 +229,8 @@ object mcp:
       */
     def template[F[_]: Concurrent](pattern: String, name: String, description: String = "")(
         handler: String => F[ResourceContent]
-    ): McpResources[F] =
-      McpResources.template[F](pattern, name, description)(handler)
+    ): Resources[F] =
+      Resources.template[F](pattern, name, description)(handler)
 
     /** Create a subscribable resource that emits change notifications.
       *
@@ -244,7 +244,7 @@ object mcp:
       */
     def subscribable[F[_]: Concurrent](uri: String, name: String, changeStream: fs2.Stream[F, Unit])(
         handler: String => F[ResourceContent]
-    ): McpResources[F] =
+    ): Resources[F] =
       McpResource.subscribable[F](uri, name, changeStream)(handler)
 
     /** Create a subscribable resource that polls for changes.
@@ -262,7 +262,7 @@ object mcp:
         name: String,
         pollInterval: scala.concurrent.duration.FiniteDuration,
         hasChanged: F[Boolean]
-    )(handler: String => F[ResourceContent]): McpResources[F] =
+    )(handler: String => F[ResourceContent]): Resources[F] =
       McpResource.polling[F](uri, name, pollInterval, hasChanged)(handler)
 
   // === Prompt Constructors ===
@@ -282,7 +282,7 @@ object mcp:
       */
     def apply[F[_]: Concurrent](name: String, desc: String)(
         msgs: PromptMessage*
-    ): McpPrompts[F] =
+    ): Prompts[F] =
       McpPrompt.noArgs[F](name, desc)(
         Concurrent[F].pure(GetPromptResult(None, msgs.toList))
       )
@@ -299,7 +299,7 @@ object mcp:
       */
     def withDesc[F[_]: Concurrent](name: String, desc: String, promptDesc: String)(
         msgs: PromptMessage*
-    ): McpPrompts[F] =
+    ): Prompts[F] =
       McpPrompt.noArgs[F](name, desc)(
         Concurrent[F].pure(GetPromptResult(Some(promptDesc), msgs.toList))
       )
@@ -316,7 +316,7 @@ object mcp:
       */
     def apply[F[_]: Concurrent, A: PromptInput](name: String, desc: String)(
         f: A => F[GetPromptResult]
-    ): McpPrompts[F] =
+    ): Prompts[F] =
       McpPrompt[F, A](name, desc)(f)
 
   // === Pure Lifting Extension ===

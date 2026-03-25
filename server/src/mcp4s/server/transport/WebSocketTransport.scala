@@ -56,7 +56,7 @@ object WebSocketTransport:
     * @param tracer OpenTelemetry tracer for distributed tracing
     */
   def serve[F[_]: Async: Network](
-      server: McpServer[F],
+      server: Server[F],
       config: WebSocketConfig = WebSocketConfig.default
   )(using Tracer[F]): CatsResource[F, Server] =
     EmberServerBuilder
@@ -67,7 +67,7 @@ object WebSocketTransport:
       .build
 
   private def createApp[F[_]: Async](
-      server: McpServer[F],
+      server: Server[F],
       wsb: WebSocketBuilder2[F],
       config: WebSocketConfig,
       tracer: Tracer[F]
@@ -77,7 +77,7 @@ object WebSocketTransport:
     Router("/" -> corsRoutes).orNotFound
 
   private def createRoutes[F[_]: Async](
-      server: McpServer[F],
+      server: Server[F],
       wsb: WebSocketBuilder2[F],
       config: WebSocketConfig,
       tracer: Tracer[F]
@@ -94,7 +94,7 @@ object WebSocketTransport:
     }
 
   private def createWebSocket[F[_]: Async](
-      server: McpServer[F],
+      server: Server[F],
       wsb: WebSocketBuilder2[F],
       tracer: Tracer[F]
   ): F[Response[F]] =
@@ -295,7 +295,7 @@ private class WebSocketSession[F[_]: Async](
       Async[F].unit
 
 private object WebSocketSession:
-  def apply[F[_]: Async](server: McpServer[F], tracer: Tracer[F]): F[WebSocketSession[F]] =
+  def apply[F[_]: Async](server: Server[F], tracer: Tracer[F]): F[WebSocketSession[F]] =
     given Tracer[F] = tracer
     for
       dispatcherRef <- Ref.of[F, Option[Dispatcher[F]]](None)

@@ -17,22 +17,22 @@ case class CalcArgs(a: Double, b: Double) derives ToolInput
   */
 object SimpleServer extends IOApp.Simple:
 
-  val tools: McpTools[IO] =
+  val tools: Tools[IO] =
     mcp.Tool[IO, CalcArgs]("add", "Add two numbers") { args =>
       ok(s"Result: ${args.a + args.b}").pure[IO]
     }
 
-  val resources: McpResources[IO] =
+  val resources: Resources[IO] =
     mcp.Resource.text[IO]("test://readme", "Test readme") {
       "This is a simple test server for conformance testing."
     }
 
-  val prompts: McpPrompts[IO] =
+  val prompts: Prompts[IO] =
     mcp.Prompt.withDesc[IO]("test-prompt", "A test prompt", "A simple test prompt")(
       user("Hello from test prompt")
     )
 
-  val server: McpServer[IO] = McpServer.from[IO](
+  val server: Server[IO] = Server.from[IO](
     info = ServerInfo("simple-server", "1.0.0"),
     tools = tools,
     resources = resources,

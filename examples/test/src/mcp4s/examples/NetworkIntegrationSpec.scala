@@ -37,14 +37,14 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
 
   // === Test Server Setup ===
 
-  def simpleServer: McpServer[IO] = TestServers.simple[IO]
+  def simpleServer: Server[IO] = TestServers.simple[IO]
 
   def simpleClient: McpClient[IO] = DeterministicClients.simple[IO]
 
-  def httpServerResource(server: McpServer[IO]): Resource[IO, org.http4s.server.Server] =
+  def httpServerResource(server: Server[IO]): Resource[IO, org.http4s.server.Server] =
     HttpTransport.serve[IO](server, HttpConfig(port = port"0"))
 
-  def wsServerResource(server: McpServer[IO]): Resource[IO, org.http4s.server.Server] =
+  def wsServerResource(server: Server[IO]): Resource[IO, org.http4s.server.Server] =
     WebSocketTransport.serve[IO](server, WebSocketConfig(port = port"0"))
 
   def httpConnection(client: McpClient[IO], port: Int): Resource[IO, McpConnection[IO]] =
@@ -652,7 +652,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   // ============================================================================
 
   test("MultiServer: client connects to two independent servers simultaneously") {
-    val server1 = McpServer.builder[IO]
+    val server1 = Server.builder[IO]
       .withInfo(ServerInfo("server-1", "1.0.0"))
       .withTool(
         Tool(
@@ -664,7 +664,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
       )
       .build
 
-    val server2 = McpServer.builder[IO]
+    val server2 = Server.builder[IO]
       .withInfo(ServerInfo("server-2", "1.0.0"))
       .withTool(
         Tool(

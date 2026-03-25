@@ -102,7 +102,7 @@ object HttpTransport:
     * @param tracer Optional OpenTelemetry tracer for distributed tracing (defaults to noop)
     */
   def serve[F[_]: Async: Network](
-      server: McpServer[F],
+      server: Server[F],
       config: HttpConfig[F] = HttpConfig.default[F]
   )(using Tracer[F]): CatsResource[F, Server] =
     for

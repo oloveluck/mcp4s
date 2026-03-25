@@ -59,7 +59,7 @@ object CalculatorServer extends IOApp.Simple:
     validator = TokenValidator.allowAll[IO]
   )
 
-  val mathTools: McpTools[IO] =
+  val mathTools: Tools[IO] =
     mcp.Tool[IO, AddArgs]("add", "Add two numbers") { args =>
       ok(s"Result: ${args.a + args.b}").pure[IO]
     } |+|
@@ -90,7 +90,7 @@ object CalculatorServer extends IOApp.Simple:
         }
     }
 
-  val resources: McpResources[IO] =
+  val resources: Resources[IO] =
     mcp.Resource.text[IO]("calc://help", "Calculator Help") {
       """Calculator MCP Server
         |
@@ -98,14 +98,14 @@ object CalculatorServer extends IOApp.Simple:
         |Each tool takes 'a' and 'b' as numbers.""".stripMargin
     }
 
-  val prompts: McpPrompts[IO] =
+  val prompts: Prompts[IO] =
     mcp.Prompt[IO, CalculatePromptArgs]("calculate", "Perform a calculation") { args =>
       messages(s"Calculate ${args.a} ${args.operation} ${args.b}")(
         user(s"Please calculate: ${args.a} ${args.operation} ${args.b}")
       ).pure[IO]
     }
 
-  val server: McpServer[IO] = McpServer
+  val server: Server[IO] = Server
     .builder[IO]
     .withInfo(ServerInfo("calculator-server", "1.0.0"))
     .withTools(mathTools)

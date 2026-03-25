@@ -7,7 +7,7 @@ import io.circe.syntax.*
 import mcp4s.protocol.*
 import munit.CatsEffectSuite
 
-class McpServerCompositionSpec extends CatsEffectSuite:
+class ServerCompositionSpec extends CatsEffectSuite:
 
   // === Test Fixtures ===
 
@@ -53,7 +53,7 @@ class McpServerCompositionSpec extends CatsEffectSuite:
     arguments = List(PromptArgument("name", Some("User name"), required = true))
   )
 
-  def serverWithAdd: McpServer[IO] = McpServer.builder[IO]
+  def serverWithAdd: Server[IO] = Server.builder[IO]
     .withInfo(ServerInfo("add-server", "1.0.0"))
     .withTool(addTool, args =>
       val a = args.hcursor.get[Int]("a").getOrElse(0)
@@ -62,7 +62,7 @@ class McpServerCompositionSpec extends CatsEffectSuite:
     )
     .build
 
-  def serverWithSubtract: McpServer[IO] = McpServer.builder[IO]
+  def serverWithSubtract: Server[IO] = Server.builder[IO]
     .withInfo(ServerInfo("subtract-server", "1.0.0"))
     .withTool(subtractTool, args =>
       val a = args.hcursor.get[Int]("a").getOrElse(0)
@@ -71,17 +71,17 @@ class McpServerCompositionSpec extends CatsEffectSuite:
     )
     .build
 
-  def serverWithResource: McpServer[IO] = McpServer.builder[IO]
+  def serverWithResource: Server[IO] = Server.builder[IO]
     .withInfo(ServerInfo("resource-server", "1.0.0"))
     .withResource(fileResource, _ => IO.pure(ResourceContent.text("file:///test.txt", "file content")))
     .build
 
-  def serverWithConfigResource: McpServer[IO] = McpServer.builder[IO]
+  def serverWithConfigResource: Server[IO] = Server.builder[IO]
     .withInfo(ServerInfo("config-server", "1.0.0"))
     .withResource(configResource, _ => IO.pure(ResourceContent.text("file:///config.json", "{}")))
     .build
 
-  def serverWithGreetingPrompt: McpServer[IO] = McpServer.builder[IO]
+  def serverWithGreetingPrompt: Server[IO] = Server.builder[IO]
     .withInfo(ServerInfo("greeting-server", "1.0.0"))
     .withPrompt(greetingPrompt, args =>
       IO.pure(GetPromptResult(
@@ -91,7 +91,7 @@ class McpServerCompositionSpec extends CatsEffectSuite:
     )
     .build
 
-  def serverWithFarewellPrompt: McpServer[IO] = McpServer.builder[IO]
+  def serverWithFarewellPrompt: Server[IO] = Server.builder[IO]
     .withInfo(ServerInfo("farewell-server", "1.0.0"))
     .withPrompt(farewellPrompt, args =>
       IO.pure(GetPromptResult(
@@ -101,7 +101,7 @@ class McpServerCompositionSpec extends CatsEffectSuite:
     )
     .build
 
-  def emptyServer: McpServer[IO] = McpServer.builder[IO]
+  def emptyServer: Server[IO] = Server.builder[IO]
     .withInfo(ServerInfo("empty-server", "1.0.0"))
     .build
 
@@ -130,12 +130,12 @@ class McpServerCompositionSpec extends CatsEffectSuite:
 
   test("combine prefers left server's tool on name conflict") {
     // Create two servers with same tool name but different handlers
-    val serverV1 = McpServer.builder[IO]
+    val serverV1 = Server.builder[IO]
       .withInfo(ServerInfo("v1", "1.0.0"))
       .withTool(addTool, _ => IO.pure(ToolResult.text("v1")))
       .build
 
-    val serverV2 = McpServer.builder[IO]
+    val serverV2 = Server.builder[IO]
       .withInfo(ServerInfo("v2", "1.0.0"))
       .withTool(addTool, _ => IO.pure(ToolResult.text("v2")))
       .build
@@ -175,12 +175,12 @@ class McpServerCompositionSpec extends CatsEffectSuite:
   }
 
   test("combine prefers left server's resource on URI conflict") {
-    val serverA = McpServer.builder[IO]
+    val serverA = Server.builder[IO]
       .withInfo(ServerInfo("a", "1.0.0"))
       .withResource(fileResource, _ => IO.pure(ResourceContent.text("file:///test.txt", "content A")))
       .build
 
-    val serverB = McpServer.builder[IO]
+    val serverB = Server.builder[IO]
       .withInfo(ServerInfo("b", "1.0.0"))
       .withResource(fileResource, _ => IO.pure(ResourceContent.text("file:///test.txt", "content B")))
       .build
@@ -211,14 +211,14 @@ class McpServerCompositionSpec extends CatsEffectSuite:
   }
 
   test("combine prefers left server's prompt on name conflict") {
-    val serverA = McpServer.builder[IO]
+    val serverA = Server.builder[IO]
       .withInfo(ServerInfo("a", "1.0.0"))
       .withPrompt(greetingPrompt, _ =>
         IO.pure(GetPromptResult(Some("A"), List(PromptMessage(Role.User, TextContent("A")))))
       )
       .build
 
-    val serverB = McpServer.builder[IO]
+    val serverB = Server.builder[IO]
       .withInfo(ServerInfo("b", "1.0.0"))
       .withPrompt(greetingPrompt, _ =>
         IO.pure(GetPromptResult(Some("B"), List(PromptMessage(Role.User, TextContent("B")))))

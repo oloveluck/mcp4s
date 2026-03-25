@@ -7,12 +7,12 @@ import io.circe.syntax.*
 import mcp4s.protocol.*
 import munit.CatsEffectSuite
 
-class McpMiddlewareSpec extends CatsEffectSuite:
+class MiddlewareSpec extends CatsEffectSuite:
 
   test("logging middleware logs tool calls") {
     for
       logs <- Ref.of[IO, List[String]](Nil)
-      middleware = McpMiddleware.logging[IO](msg => logs.update(_ :+ msg))
+      middleware = Middleware.logging[IO](msg => logs.update(_ :+ msg))
 
       tools = McpTool.twoNumbersPure[IO]("add", "Add") { (a, b) => s"${a + b}" }
         .withMiddleware(middleware)
@@ -29,7 +29,7 @@ class McpMiddlewareSpec extends CatsEffectSuite:
   test("logging middleware logs errors") {
     for
       logs <- Ref.of[IO, List[String]](Nil)
-      middleware = McpMiddleware.logging[IO](msg => logs.update(_ :+ msg))
+      middleware = Middleware.logging[IO](msg => logs.update(_ :+ msg))
 
       tools = McpTool.noArgs[IO]("fail", "Fails") {
         IO.raiseError(new RuntimeException("boom"))
@@ -47,7 +47,7 @@ class McpMiddlewareSpec extends CatsEffectSuite:
   test("timed middleware measures duration") {
     for
       durations <- Ref.of[IO, List[(String, Long)]](Nil)
-      middleware = McpMiddleware.timed[IO] { (name, duration) =>
+      middleware = Middleware.timed[IO] { (name, duration) =>
         durations.update(_ :+ (name, duration.toMillis))
       }
 
@@ -68,7 +68,7 @@ class McpMiddlewareSpec extends CatsEffectSuite:
   test("catchErrors middleware converts exceptions to error results") {
     val tools = McpTool.noArgs[IO]("fail", "Fails") {
       IO.raiseError(new RuntimeException("something went wrong"))
-    }.withMiddleware(McpMiddleware.catchErrors[IO])
+    }.withMiddleware(Middleware.catchErrors[IO])
 
     for
       result <- tools.call("fail", Json.obj()).value
@@ -80,7 +80,7 @@ class McpMiddlewareSpec extends CatsEffectSuite:
 
   test("catchErrorsPartial middleware handles specific exceptions") {
     // Use standard library exceptions that can be matched at runtime
-    val middleware = McpMiddleware.catchErrorsPartial[IO] {
+    val middleware = Middleware.catchErrorsPartial[IO] {
       case e: IllegalArgumentException => s"Invalid: ${e.getMessage}"
     }
 
@@ -104,7 +104,7 @@ class McpMiddlewareSpec extends CatsEffectSuite:
   }
 
   test("validate middleware rejects invalid calls") {
-    val middleware = McpMiddleware.validate[IO] { (name, args) =>
+    val middleware = Middleware.validate[IO] { (name, args) =>
       val hasA = args.hcursor.get[Double]("a").isRight
       IO.pure(if hasA then None else Some("Missing required parameter 'a'"))
     }
@@ -130,15 +130,15 @@ class McpMiddlewareSpec extends CatsEffectSuite:
     for
       order <- Ref.of[IO, List[String]](Nil)
 
-      first = new McpMiddleware[IO]:
+      first = new Middleware[IO]:
         def apply(name: String, args: Json)(next: => IO[ToolResult]): IO[ToolResult] =
           order.update(_ :+ "first-before") *> next <* order.update(_ :+ "first-after")
 
-      second = new McpMiddleware[IO]:
+      second = new Middleware[IO]:
         def apply(name: String, args: Json)(next: => IO[ToolResult]): IO[ToolResult] =
           order.update(_ :+ "second-before") *> next <* order.update(_ :+ "second-after")
 
-      combined = McpMiddleware.combine(first, second)
+      combined = Middleware.combine(first, second)
 
       tools = McpTool.pureTextNoArgs[IO]("test", "Test")("result")
         .withMiddleware(combined)
@@ -154,7 +154,7 @@ class McpMiddlewareSpec extends CatsEffectSuite:
   test("middleware does not affect non-existent tools") {
     for
       called <- Ref.of[IO, Boolean](false)
-      middleware = new McpMiddleware[IO]:
+      middleware = new Middleware[IO]:
         def apply(name: String, args: Json)(next: => IO[ToolResult]): IO[ToolResult] =
           called.set(true) *> next
 

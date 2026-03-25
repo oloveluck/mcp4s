@@ -16,17 +16,17 @@ MCP4S is built on http4s and Cats Effect because AI infrastructure must be predi
 ```
 mcp4s/
 ├── core/     # Protocol types, codecs
-├── server/   # McpServer, tools, resources, prompts, transports
+├── server/   # Server, tools, resources, prompts, transports
 └── client/   # McpClient, McpConnection, resilience, transports
 ```
 
 ## Server Flow
 
 ```
-McpServer[F]
-├── McpTools[F]      ─┐
-├── McpResources[F]   ├─→ Dispatcher ─→ Transport (HTTP/WS/Stdio)
-└── McpPrompts[F]    ─┘
+Server[F]
+├── Tools[F]      ─┐
+├── Resources[F]   ├─→ Dispatcher ─→ Transport (HTTP/WS/Stdio)
+└── Prompts[F]    ─┘
 ```
 
 ## Client Flow
