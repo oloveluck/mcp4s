@@ -18,9 +18,19 @@ Add to your `build.mill`:
 
 ```scala
 def ivyDeps = Agg(
-  ivy"io.github.mcp4s::mcp4s-core::0.1.2",
-  ivy"io.github.mcp4s::mcp4s-server::0.1.2",  // for servers
-  ivy"io.github.mcp4s::mcp4s-client::0.1.2"   // for clients
+  ivy"io.github.mcp4s::mcp4s-core::0.1.4",
+  ivy"io.github.mcp4s::mcp4s-server::0.1.4",  // for servers
+  ivy"io.github.mcp4s::mcp4s-client::0.1.4"   // for clients
+)
+```
+
+Or in sbt:
+
+```scala
+libraryDependencies ++= Seq(
+  "io.github.mcp4s" %% "mcp4s-core" % "0.1.4",
+  "io.github.mcp4s" %% "mcp4s-server" % "0.1.4", // for servers
+  "io.github.mcp4s" %% "mcp4s-client" % "0.1.4"  // for clients
 )
 ```
 
