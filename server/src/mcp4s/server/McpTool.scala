@@ -8,7 +8,7 @@ import mcp4s.protocol.*
 /** First-class tool values that compose via `|+|`.
   *
   * Tools are standalone typed values, not builder method calls.
-  * Compose them with Semigroup / `<+>` and pass to `McpServer`.
+  * Compose them with Semigroup / `<+>` and pass to `Server`.
   *
   * {{{
   * // Simple tools use convenience constructors
@@ -22,7 +22,7 @@ import mcp4s.protocol.*
   *   IO.pure(ToolResult.text(s"Searching: ${args.query}"))
   * }
   *
-  * val allTools: McpTools[IO] = add |+| search
+  * val allTools: Tools[IO] = add |+| search
   * }}}
   */
 object McpTool:
@@ -30,10 +30,10 @@ object McpTool:
   /** Create a tool from derived ToolInput */
   def apply[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
       handler: A => F[ToolResult]
-  ): McpTools[F] =
+  ): Tools[F] =
     val ti = summon[ToolInput[A]]
     val tool = Tool(name, Some(description), ti.schema)
-    McpTools.single(tool) { json =>
+    Tools.single(tool) { json =>
       ti.decode(json) match
         case Right(a)  => handler(a)
         case Left(err) => Concurrent[F].raiseError(McpError.InvalidToolArguments(name, err))
@@ -42,10 +42,10 @@ object McpTool:
   /** Create a tool with typed output */
   def typed[F[_]: Concurrent, A: ToolInput, B](name: String, description: String)(
       handler: A => F[B]
-  )(using to: ToolOutput[B]): McpTools[F] =
+  )(using to: ToolOutput[B]): Tools[F] =
     val ti = summon[ToolInput[A]]
     val tool = Tool(name, Some(description), ti.schema, outputSchema = Some(to.schema))
-    McpTools.single(tool) { json =>
+    Tools.single(tool) { json =>
       ti.decode(json) match
         case Right(a) =>
           Concurrent[F].map(handler(a))(to.encode)
@@ -62,10 +62,10 @@ object McpTool:
     */
   def withContext[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
       handler: (A, ToolContext[F]) => F[ToolResult]
-  ): McpTools[F] =
+  ): Tools[F] =
     val ti = summon[ToolInput[A]]
     val tool = Tool(name, Some(description), ti.schema)
-    McpTools.singleWithContext(tool) { (json, ctx) =>
+    Tools.singleWithContext(tool) { (json, ctx) =>
       ti.decode(json) match
         case Right(a)  => handler(a, ctx)
         case Left(err) => Concurrent[F].raiseError(McpError.InvalidToolArguments(name, err))
@@ -80,19 +80,19 @@ object McpTool:
     */
   def withContextNoArgs[F[_]: Concurrent](name: String, description: String)(
       handler: ToolContext[F] => F[ToolResult]
-  ): McpTools[F] =
+  ): Tools[F] =
     val tool = Tool(name, Some(description), JsonSchema.empty)
-    McpTools.singleWithContext(tool) { (_, ctx) => handler(ctx) }
+    Tools.singleWithContext(tool) { (_, ctx) => handler(ctx) }
 
   /** Create a tool with annotations */
   def annotated[F[_]: Concurrent, A: ToolInput](
       name: String,
       description: String,
       annotations: ToolAnnotations
-  )(handler: A => F[ToolResult]): McpTools[F] =
+  )(handler: A => F[ToolResult]): Tools[F] =
     val ti = summon[ToolInput[A]]
     val tool = Tool(name, Some(description), ti.schema, annotations = Some(annotations))
-    McpTools.single(tool) { json =>
+    Tools.single(tool) { json =>
       ti.decode(json) match
         case Right(a)  => handler(a)
         case Left(err) => Concurrent[F].raiseError(McpError.InvalidToolArguments(name, err))
@@ -101,9 +101,9 @@ object McpTool:
   /** Create a no-argument tool */
   def noArgs[F[_]: Concurrent](name: String, description: String)(
       handler: F[ToolResult]
-  ): McpTools[F] =
+  ): Tools[F] =
     val tool = Tool(name, Some(description), JsonSchema.empty)
-    McpTools.single(tool)(_ => handler)
+    Tools.single(tool)(_ => handler)
 
   // === Convenience Constructors ===
 
@@ -121,11 +121,11 @@ object McpTool:
       description: String,
       param: String = "input",
       paramDesc: String = ""
-  )(handler: String => F[ToolResult]): McpTools[F] =
+  )(handler: String => F[ToolResult]): Tools[F] =
     val prop = JsonSchemaProperty.make("string", if paramDesc.isEmpty then None else Some(paramDesc))
     val schema = JsonSchema("object", Some(Map(param -> prop)), Some(List(param)))
     val tool = Tool(name, Some(description), schema)
-    McpTools.single(tool) { json =>
+    Tools.single(tool) { json =>
       json.hcursor.get[String](param) match
         case Right(value) => handler(value)
         case Left(err)    => Concurrent[F].raiseError(McpError.InvalidToolArguments(name, err.getMessage))
@@ -145,11 +145,11 @@ object McpTool:
       description: String,
       param: String = "value",
       paramDesc: String = ""
-  )(handler: Double => F[ToolResult]): McpTools[F] =
+  )(handler: Double => F[ToolResult]): Tools[F] =
     val prop = JsonSchemaProperty.make("number", if paramDesc.isEmpty then None else Some(paramDesc))
     val schema = JsonSchema("object", Some(Map(param -> prop)), Some(List(param)))
     val tool = Tool(name, Some(description), schema)
-    McpTools.single(tool) { json =>
+    Tools.single(tool) { json =>
       json.hcursor.get[Double](param) match
         case Right(value) => handler(value)
         case Left(err)    => Concurrent[F].raiseError(McpError.InvalidToolArguments(name, err.getMessage))
@@ -169,11 +169,11 @@ object McpTool:
       description: String,
       param: String = "flag",
       paramDesc: String = ""
-  )(handler: Boolean => F[ToolResult]): McpTools[F] =
+  )(handler: Boolean => F[ToolResult]): Tools[F] =
     val prop = JsonSchemaProperty.make("boolean", if paramDesc.isEmpty then None else Some(paramDesc))
     val schema = JsonSchema("object", Some(Map(param -> prop)), Some(List(param)))
     val tool = Tool(name, Some(description), schema)
-    McpTools.single(tool) { json =>
+    Tools.single(tool) { json =>
       json.hcursor.get[Boolean](param) match
         case Right(value) => handler(value)
         case Left(err)    => Concurrent[F].raiseError(McpError.InvalidToolArguments(name, err.getMessage))
@@ -195,12 +195,12 @@ object McpTool:
       param2: String = "b",
       desc1: String = "",
       desc2: String = ""
-  )(handler: (Double, Double) => F[ToolResult]): McpTools[F] =
+  )(handler: (Double, Double) => F[ToolResult]): Tools[F] =
     val prop1 = JsonSchemaProperty.make("number", if desc1.isEmpty then None else Some(desc1))
     val prop2 = JsonSchemaProperty.make("number", if desc2.isEmpty then None else Some(desc2))
     val schema = JsonSchema("object", Some(Map(param1 -> prop1, param2 -> prop2)), Some(List(param1, param2)))
     val tool = Tool(name, Some(description), schema)
-    McpTools.single(tool) { json =>
+    Tools.single(tool) { json =>
       val cursor = json.hcursor
       (cursor.get[Double](param1), cursor.get[Double](param2)) match
         case (Right(a), Right(b)) => handler(a, b)
@@ -221,7 +221,7 @@ object McpTool:
     */
   def pureText[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
       handler: A => String
-  ): McpTools[F] =
+  ): Tools[F] =
     apply[F, A](name, description)(a => Concurrent[F].pure(ToolResult.text(handler(a))))
 
   /** Create a no-argument tool with a pure string result.
@@ -235,7 +235,7 @@ object McpTool:
     */
   def pureTextNoArgs[F[_]: Concurrent](name: String, description: String)(
       result: => String
-  ): McpTools[F] =
+  ): Tools[F] =
     noArgs[F](name, description)(Concurrent[F].pure(ToolResult.text(result)))
 
   /** Create a tool with a single string param and pure string result.
@@ -252,7 +252,7 @@ object McpTool:
       description: String,
       param: String = "input",
       paramDesc: String = ""
-  )(handler: String => String): McpTools[F] =
+  )(handler: String => String): Tools[F] =
     singleString[F](name, description, param, paramDesc)(s => Concurrent[F].pure(ToolResult.text(handler(s))))
 
   /** Create a tool with a single number param and pure string result.
@@ -269,7 +269,7 @@ object McpTool:
       description: String,
       param: String = "value",
       paramDesc: String = ""
-  )(handler: Double => String): McpTools[F] =
+  )(handler: Double => String): Tools[F] =
     singleNumber[F](name, description, param, paramDesc)(n => Concurrent[F].pure(ToolResult.text(handler(n))))
 
   /** Create a tool with two number params and pure string result.
@@ -288,7 +288,7 @@ object McpTool:
       param2: String = "b",
       desc1: String = "",
       desc2: String = ""
-  )(handler: (Double, Double) => String): McpTools[F] =
+  )(handler: (Double, Double) => String): Tools[F] =
     twoNumbers[F](name, description, param1, param2, desc1, desc2) { (a, b) =>
       Concurrent[F].pure(ToolResult.text(handler(a, b)))
     }
@@ -310,7 +310,7 @@ object McpTool:
     */
   def attempt[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
       handler: A => F[String]
-  ): McpTools[F] =
+  ): Tools[F] =
     apply[F, A](name, description) { args =>
       handler(args)
         .map(ToolResult.text)
@@ -320,7 +320,7 @@ object McpTool:
   /** Create a no-argument tool that automatically converts exceptions to error results. */
   def attemptNoArgs[F[_]: Concurrent](name: String, description: String)(
       handler: F[String]
-  ): McpTools[F] =
+  ): Tools[F] =
     noArgs[F](name, description) {
       handler
         .map(ToolResult.text)
@@ -340,7 +340,7 @@ object McpTool:
     */
   def attemptWith[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
       handler: A => F[String]
-  )(formatError: Throwable => String): McpTools[F] =
+  )(formatError: Throwable => String): Tools[F] =
     apply[F, A](name, description) { args =>
       handler(args)
         .map(ToolResult.text)

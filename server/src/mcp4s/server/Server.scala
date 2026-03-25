@@ -11,7 +11,7 @@ import mcp4s.protocol.*
   * Implementors provide handlers for tools, resources, and prompts. The server handles protocol
   * lifecycle, capability negotiation, and request routing.
   */
-trait McpServer[F[_]]:
+trait Server[F[_]]:
 
   /** Server information returned during initialization */
   def info: ServerInfo
@@ -52,11 +52,11 @@ trait McpServer[F[_]]:
   /** Get a prompt with the given arguments */
   def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult]
 
-object McpServer:
+object Server:
 
   /** Create a new builder for constructing an MCP server */
-  def builder[F[_]: Concurrent]: McpServerBuilder[F] =
-    McpServerBuilder.empty[F]
+  def builder[F[_]: Concurrent]: ServerBuilder[F] =
+    ServerBuilder.empty[F]
 
   /** Create a server declaratively from composed parts.
     *
@@ -67,7 +67,7 @@ object McpServer:
     * val readme = McpResource[IO]("file:///readme", "README")("Hello")
     * val greet = McpPrompt.noArgs[IO]("greet", "Greet")(IO.pure(GetPromptResult(...)))
     *
-    * val server = McpServer.from[IO](
+    * val server = Server.from[IO](
     *   info      = ServerInfo("calc", "1.0.0"),
     *   tools     = add,
     *   resources = readme,
@@ -77,41 +77,41 @@ object McpServer:
     */
   def from[F[_]: Concurrent](
       info: ServerInfo,
-      tools: McpTools[F],
-      resources: McpResources[F],
-      prompts: McpPrompts[F]
-  ): McpServer[F] =
-    DeclarativeMcpServer(info, tools, resources, prompts)
+      tools: Tools[F],
+      resources: Resources[F],
+      prompts: Prompts[F]
+  ): Server[F] =
+    DeclarativeServer(info, tools, resources, prompts)
 
   /** Create a server with only tool routes */
   def fromTools[F[_]: Concurrent](
       info: ServerInfo,
-      tools: McpTools[F]
-  ): McpServer[F] =
-    DeclarativeMcpServer(info, tools, McpResources.empty[F], McpPrompts.empty[F])
+      tools: Tools[F]
+  ): Server[F] =
+    DeclarativeServer(info, tools, Resources.empty[F], Prompts.empty[F])
 
   /** Semigroup instance for composing MCP servers.
     *
     * When combining servers, the left server takes precedence for conflicts (same tool name, resource
     * URI, or prompt name). Capabilities are merged with OR logic.
     */
-  given [F[_]: Concurrent]: Semigroup[McpServer[F]] with
-    def combine(x: McpServer[F], y: McpServer[F]): McpServer[F] =
-      ComposedMcpServer(x, y)
+  given [F[_]: Concurrent]: Semigroup[Server[F]] with
+    def combine(x: Server[F], y: Server[F]): Server[F] =
+      ComposedServer(x, y)
 
-  extension [F[_]: Concurrent](server: McpServer[F])
+  extension [F[_]: Concurrent](server: Server[F])
 
     /** Combine with another server. This server's handlers take precedence on conflicts. */
-    def combine(other: McpServer[F]): McpServer[F] =
-      ComposedMcpServer(server, other)
+    def combine(other: Server[F]): Server[F] =
+      ComposedServer(server, other)
 
     /** Alias for combine using http4s-style operator. */
-    def <+>(other: McpServer[F]): McpServer[F] =
+    def <+>(other: Server[F]): Server[F] =
       combine(other)
 
     /** Create a new server with different info. */
-    def withInfo(newInfo: ServerInfo): McpServer[F] =
-      new McpServer[F]:
+    def withInfo(newInfo: ServerInfo): Server[F] =
+      new Server[F]:
         val info: ServerInfo = newInfo
         val capabilities: ServerCapabilities = server.capabilities
         def listTools: F[List[Tool]] = server.listTools
@@ -127,10 +127,10 @@ object McpServer:
   *
   * The left server takes precedence for conflicts. Capabilities are merged.
   */
-private final class ComposedMcpServer[F[_]: Concurrent](
-    left: McpServer[F],
-    right: McpServer[F]
-) extends McpServer[F]:
+private final class ComposedServer[F[_]: Concurrent](
+    left: Server[F],
+    right: Server[F]
+) extends Server[F]:
 
   val info: ServerInfo = left.info
 
@@ -197,13 +197,13 @@ private final class ComposedMcpServer[F[_]: Concurrent](
       case (None, Some(rj))     => Some(rj)
       case (None, None)         => None
 
-/** MCP server assembled declaratively from composed McpTools, McpResources, McpPrompts. */
-private final class DeclarativeMcpServer[F[_]: Concurrent](
+/** MCP server assembled declaratively from composed Tools, Resources, Prompts. */
+private final class DeclarativeServer[F[_]: Concurrent](
     val info: ServerInfo,
-    private val tools: McpTools[F],
-    private val resources: McpResources[F],
-    private val prompts: McpPrompts[F]
-) extends McpServer[F]:
+    private val tools: Tools[F],
+    private val resources: Resources[F],
+    private val prompts: Prompts[F]
+) extends Server[F]:
 
   val capabilities: ServerCapabilities =
     // Capabilities are determined lazily based on what's registered.

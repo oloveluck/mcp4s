@@ -127,7 +127,7 @@ object DemoServer extends IOApp.Simple:
 
   // === Tools using new DSL ===
 
-  val tools: McpTools[IO] =
+  val tools: Tools[IO] =
     // Regular tool using new DSL
     mcp.Tool[IO, DemoAddArgs]("add", "Add two numbers") { args =>
       ok(s"${args.a + args.b}").pure[IO]
@@ -148,7 +148,7 @@ object DemoServer extends IOApp.Simple:
       yield ok(text)
     }
 
-  def createServer: McpServer[IO] = McpServer.fromTools[IO](
+  def createServer: Server[IO] = Server.fromTools[IO](
     info = ServerInfo(
       "sampling-demo-server",
       "1.0.0",

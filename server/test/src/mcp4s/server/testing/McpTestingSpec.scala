@@ -6,14 +6,14 @@ import io.circe.{Encoder, Json}
 import io.circe.syntax.*
 import mcp4s.protocol.*
 import mcp4s.server.*
-import mcp4s.server.testing.McpToolsTest.*
+import mcp4s.server.testing.ToolsTest.*
 import munit.CatsEffectSuite
 
 class McpTestingSpec extends CatsEffectSuite:
 
-  // === McpToolsTest Extension Tests ===
+  // === ToolsTest Extension Tests ===
 
-  val calcTools: McpTools[IO] =
+  val calcTools: Tools[IO] =
     McpTool.twoNumbersPure[IO]("add", "Add") { (a, b) => s"${a + b}" } |+|
     McpTool.twoNumbersPure[IO]("subtract", "Subtract") { (a, b) => s"${a - b}" }
 
@@ -117,9 +117,9 @@ class McpTestingSpec extends CatsEffectSuite:
     assertEquals(args.empty, Json.obj())
   }
 
-  // === McpServerTest Tests ===
+  // === ServerTest Tests ===
 
-  val testServer: McpServer[IO] = McpServer.from[IO](
+  val testServer: Server[IO] = Server.from[IO](
     info = ServerInfo("test-server", "1.0.0"),
     tools = calcTools,
     resources = McpResource[IO]("test://readme", "README")("Hello world"),
@@ -128,15 +128,15 @@ class McpTestingSpec extends CatsEffectSuite:
     }
   )
 
-  test("McpServerTest.sync creates test client") {
-    val client = McpServerTest.sync(testServer)
+  test("ServerTest.sync creates test client") {
+    val client = ServerTest.sync(testServer)
 
     assertEquals(client.serverInfo.name, "test-server")
     assertEquals(client.serverInfo.version, "1.0.0")
   }
 
-  test("McpServerTest lists tools") {
-    McpServerTest(testServer).use { client =>
+  test("ServerTest lists tools") {
+    ServerTest(testServer).use { client =>
       for
         tools <- client.listTools
         _ = assertEquals(tools.map(_.name).toSet, Set("add", "subtract"))
@@ -144,10 +144,10 @@ class McpTestingSpec extends CatsEffectSuite:
     }
   }
 
-  test("McpServerTest calls tools with typed args") {
+  test("ServerTest calls tools with typed args") {
     case class CalcArgs(a: Double, b: Double) derives ToolInput, Encoder.AsObject
 
-    McpServerTest(testServer).use { client =>
+    ServerTest(testServer).use { client =>
       for
         result <- client.callTool("add", CalcArgs(10, 5))
         _ = assertEquals(result.textContent, "15.0")
@@ -155,8 +155,8 @@ class McpTestingSpec extends CatsEffectSuite:
     }
   }
 
-  test("McpServerTest calls tools with Json args") {
-    McpServerTest(testServer).use { client =>
+  test("ServerTest calls tools with Json args") {
+    ServerTest(testServer).use { client =>
       for
         result <- client.callToolJson("subtract", Json.obj("a" -> 10.asJson, "b" -> 3.asJson))
         _ = assertEquals(result.textContent, "7.0")
@@ -164,8 +164,8 @@ class McpTestingSpec extends CatsEffectSuite:
     }
   }
 
-  test("McpServerTest lists resources") {
-    McpServerTest(testServer).use { client =>
+  test("ServerTest lists resources") {
+    ServerTest(testServer).use { client =>
       for
         resources <- client.listResources
         _ = assertEquals(resources.map(_.uri), List("test://readme"))
@@ -173,8 +173,8 @@ class McpTestingSpec extends CatsEffectSuite:
     }
   }
 
-  test("McpServerTest reads resources") {
-    McpServerTest(testServer).use { client =>
+  test("ServerTest reads resources") {
+    ServerTest(testServer).use { client =>
       for
         content <- client.readResource("test://readme")
         _ = assertEquals(content.text, Some("Hello world"))
@@ -182,8 +182,8 @@ class McpTestingSpec extends CatsEffectSuite:
     }
   }
 
-  test("McpServerTest lists prompts") {
-    McpServerTest(testServer).use { client =>
+  test("ServerTest lists prompts") {
+    ServerTest(testServer).use { client =>
       for
         prompts <- client.listPrompts
         _ = assertEquals(prompts.map(_.name), List("greet"))
@@ -191,8 +191,8 @@ class McpTestingSpec extends CatsEffectSuite:
     }
   }
 
-  test("McpServerTest gets prompts") {
-    McpServerTest(testServer).use { client =>
+  test("ServerTest gets prompts") {
+    ServerTest(testServer).use { client =>
       for
         result <- client.getPromptMap("greet", Map.empty)
         _ = assertEquals(result.messages.length, 1)

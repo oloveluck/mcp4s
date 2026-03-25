@@ -14,11 +14,10 @@ import org.http4s.*
 import org.http4s.circe.*
 import org.http4s.dsl.Http4sDsl
 import org.http4s.ember.server.EmberServerBuilder
-import org.http4s.server.{Router, Server}
+import org.http4s.server.{Router, Server as Http4sServer}
 import org.http4s.server.middleware.CORS
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
-import org.typelevel.otel4s.Attribute
 import org.typelevel.otel4s.trace.Tracer
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
@@ -57,9 +56,9 @@ object WebSocketTransport:
     * @param tracer OpenTelemetry tracer for distributed tracing
     */
   def serve[F[_]: Async: Network](
-      server: McpServer[F],
+      server: Server[F],
       config: WebSocketConfig = WebSocketConfig.default
-  )(using Tracer[F]): CatsResource[F, Server] =
+  )(using Tracer[F]): CatsResource[F, Http4sServer] =
     EmberServerBuilder
       .default[F]
       .withHost(config.host)
@@ -68,7 +67,7 @@ object WebSocketTransport:
       .build
 
   private def createApp[F[_]: Async](
-      server: McpServer[F],
+      server: Server[F],
       wsb: WebSocketBuilder2[F],
       config: WebSocketConfig,
       tracer: Tracer[F]
@@ -78,7 +77,7 @@ object WebSocketTransport:
     Router("/" -> corsRoutes).orNotFound
 
   private def createRoutes[F[_]: Async](
-      server: McpServer[F],
+      server: Server[F],
       wsb: WebSocketBuilder2[F],
       config: WebSocketConfig,
       tracer: Tracer[F]
@@ -95,7 +94,7 @@ object WebSocketTransport:
     }
 
   private def createWebSocket[F[_]: Async](
-      server: McpServer[F],
+      server: Server[F],
       wsb: WebSocketBuilder2[F],
       tracer: Tracer[F]
   ): F[Response[F]] =
@@ -296,7 +295,7 @@ private class WebSocketSession[F[_]: Async](
       Async[F].unit
 
 private object WebSocketSession:
-  def apply[F[_]: Async](server: McpServer[F], tracer: Tracer[F]): F[WebSocketSession[F]] =
+  def apply[F[_]: Async](server: Server[F], tracer: Tracer[F]): F[WebSocketSession[F]] =
     given Tracer[F] = tracer
     for
       dispatcherRef <- Ref.of[F, Option[Dispatcher[F]]](None)

@@ -4,7 +4,7 @@ import cats.effect.{Async, Resource}
 import cats.effect.std.Console
 import com.comcast.ip4s.Port
 import fs2.io.net.Network
-import org.http4s.server.Server
+import org.http4s.server.{Server as Http4sServer}
 import org.typelevel.otel4s.trace.Tracer
 import mcp4s.server.transport.{HttpConfig, HttpTransport, StdioTransport}
 
@@ -27,7 +27,7 @@ import mcp4s.server.transport.{HttpConfig, HttpTransport, StdioTransport}
   */
 object syntax:
 
-  extension [F[_]](server: McpServer[F])
+  extension [F[_]](server: Server[F])
 
     /** Run the server on stdio transport.
       *
@@ -58,7 +58,7 @@ object syntax:
       * server.serveHttp.useForever
       * }}}
       */
-    def serveHttp(using Async[F], Network[F], Tracer[F]): Resource[F, Server] =
+    def serveHttp(using Async[F], Network[F], Tracer[F]): Resource[F, Http4sServer] =
       HttpTransport.serve[F](server)
 
     /** Serve the server over HTTP on a specific port.
@@ -67,7 +67,7 @@ object syntax:
       * server.serveHttp(port"8080").useForever
       * }}}
       */
-    def serveHttp(port: Port)(using Async[F], Network[F], Tracer[F]): Resource[F, Server] =
+    def serveHttp(port: Port)(using Async[F], Network[F], Tracer[F]): Resource[F, Http4sServer] =
       HttpTransport.serve[F](server, HttpConfig[F](port = port))
 
     /** Serve the server over HTTP with custom configuration.
@@ -77,18 +77,18 @@ object syntax:
       *   .useForever
       * }}}
       */
-    def serveHttpWith(config: HttpConfig[F])(using Async[F], Network[F], Tracer[F]): Resource[F, Server] =
+    def serveHttpWith(config: HttpConfig[F])(using Async[F], Network[F], Tracer[F]): Resource[F, Http4sServer] =
       HttpTransport.serve[F](server, config)
 
     /** Serve the server over HTTP with noop tracing.
       *
       * Convenience method that provides a noop Tracer automatically.
       */
-    def serveHttpNoTrace(using Async[F], Network[F]): Resource[F, Server] =
+    def serveHttpNoTrace(using Async[F], Network[F]): Resource[F, Http4sServer] =
       given Tracer[F] = Tracer.noop[F]
       HttpTransport.serve[F](server)
 
     /** Serve the server over HTTP on a specific port with noop tracing. */
-    def serveHttpNoTrace(port: Port)(using Async[F], Network[F]): Resource[F, Server] =
+    def serveHttpNoTrace(port: Port)(using Async[F], Network[F]): Resource[F, Http4sServer] =
       given Tracer[F] = Tracer.noop[F]
       HttpTransport.serve[F](server, HttpConfig[F](port = port))

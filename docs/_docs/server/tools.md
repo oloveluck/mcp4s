@@ -72,7 +72,7 @@ val tools = addTool |+| multiplyTool |+| divideTool
 
 ```scala
 val tools = myTools.withMiddleware(
-  McpMiddleware.logging[IO](println),
-  McpMiddleware.catchErrors[IO]
+  Middleware.logging[IO](println),
+  Middleware.catchErrors[IO]
 )
 ```

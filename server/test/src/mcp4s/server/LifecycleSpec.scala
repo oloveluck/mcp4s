@@ -157,9 +157,9 @@ class LifecycleSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === McpServerLifecycle Tests ===
+  // === ServerLifecycle Tests ===
 
-  test("McpServerLifecycle.withLifecycleToolsOnly creates server with managed tools") {
+  test("ServerLifecycle.withLifecycleToolsOnly creates server with managed tools") {
     for
       acquiredRef <- Ref.of[IO, Boolean](false)
       releasedRef <- Ref.of[IO, Boolean](false)
@@ -170,7 +170,7 @@ class LifecycleSpec extends CatsEffectSuite:
         )
       )(_ => releasedRef.set(true))
 
-      serverResource = McpServerLifecycle.withLifecycleToolsOnly[IO](
+      serverResource = ServerLifecycle.withLifecycleToolsOnly[IO](
         ServerInfo("test", "1.0.0"),
         toolResource
       )
@@ -223,10 +223,10 @@ class LifecycleSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === McpServer Extension Tests ===
+  // === Server Extension Tests ===
 
-  test("McpServer can be wrapped in pure resource") {
-    val server = McpServer.fromTools[IO](
+  test("Server can be wrapped in pure resource") {
+    val server = Server.fromTools[IO](
       ServerInfo("test", "1.0.0"),
       McpTool.pureTextNoArgs[IO]("test", "Test")("result")
     )

@@ -30,7 +30,7 @@ object Dispatcher:
     * @param server The MCP server to dispatch requests to
     * @param tracer Optional OpenTelemetry tracer for distributed tracing (defaults to noop)
     */
-  def apply[F[_]: Concurrent](server: McpServer[F])(using Tracer[F]): F[Dispatcher[F]] =
+  def apply[F[_]: Concurrent](server: Server[F])(using Tracer[F]): F[Dispatcher[F]] =
     for
       stateRef <- Ref.of[F, State](State.Uninitialized)
       inFlightRef <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
@@ -43,7 +43,7 @@ object Dispatcher:
     * @param tracer Optional OpenTelemetry tracer for distributed tracing
     */
   def withContext[F[_]: Concurrent](
-      server: McpServer[F],
+      server: Server[F],
       contextFactory: (RequestId, Option[RequestId]) => ToolContext[F]
   )(using Tracer[F]): F[Dispatcher[F]] =
     for
@@ -57,7 +57,7 @@ object Dispatcher:
     case ShuttingDown
 
   private class DispatcherImpl[F[_]: Concurrent](
-      server: McpServer[F],
+      server: Server[F],
       stateRef: Ref[F, State],
       inFlightRequests: Ref[F, Map[RequestId, Deferred[F, Unit]]],
       contextFactory: Option[(RequestId, Option[RequestId]) => ToolContext[F]],

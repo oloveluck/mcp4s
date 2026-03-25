@@ -36,7 +36,7 @@ val resources = readme |+| config |+| userTemplate
 ## With Builder
 
 ```scala
-McpServer.builder[IO]
+Server.builder[IO]
   .resource("file:///readme", "README") { "Hello" }
   .withResource("file:///status", "Status") { _ =>
     getStatus().map(s => ResourceContent.text("file:///status", s))

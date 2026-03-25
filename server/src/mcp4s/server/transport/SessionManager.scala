@@ -4,7 +4,7 @@ import cats.effect.{Async, Ref, Resource as CatsResource}
 import cats.effect.std.Supervisor
 import cats.syntax.all.*
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.server.McpServer
+import mcp4s.server.Server
 
 import scala.concurrent.duration.*
 
@@ -56,7 +56,7 @@ object SessionManager:
     * @param tracer OpenTelemetry tracer for distributed tracing
     */
   def apply[F[_]: Async](
-      server: McpServer[F],
+      server: Server[F],
       config: SessionConfig = SessionConfig.default
   )(using Tracer[F]): F[SessionManager[F]] =
     Ref.of[F, Map[String, HttpSession[F]]](Map.empty).map { sessionsRef =>
@@ -73,7 +73,7 @@ object SessionManager:
     * @param tracer OpenTelemetry tracer for distributed tracing
     */
   def withCleanup[F[_]: Async](
-      server: McpServer[F],
+      server: Server[F],
       config: SessionConfig = SessionConfig.default
   )(using Tracer[F]): CatsResource[F, SessionManager[F]] =
     for
@@ -89,7 +89,7 @@ object SessionManager:
     (Async[F].sleep(interval) *> manager.pruneExpired).foreverM
 
   private class SessionManagerImpl[F[_]: Async](
-      server: McpServer[F],
+      server: Server[F],
       config: SessionConfig,
       sessionsRef: Ref[F, Map[String, HttpSession[F]]]
   )(using Tracer[F]) extends SessionManager[F]:

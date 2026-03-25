@@ -346,7 +346,7 @@ class McpDslSpec extends CatsEffectSuite:
       Tool.text[IO]("echo", "Echo") { "echo" } |+|
       Tool[IO]("ping", "Ping") { IO.pure(ok("pong")) }
 
-    val server = McpServer.builder[IO]
+    val server = Server.builder[IO]
       .withInfo(ServerInfo("test", "1.0.0"))
       .withTools(tools)
       .build
@@ -368,7 +368,7 @@ class McpDslSpec extends CatsEffectSuite:
         IO.pure(text(uri, s"User: ${uri.split("/").last}"))
       }
 
-    val server = McpServer.builder[IO]
+    val server = Server.builder[IO]
       .withInfo(ServerInfo("test", "1.0.0"))
       .withResources(resources)
       .build
@@ -390,7 +390,7 @@ class McpDslSpec extends CatsEffectSuite:
       Prompt[IO]("greet", "Greet")(user("Hello!")) |+|
       Prompt.withDesc[IO]("help", "Help", "Get help")(user("How can I help?"))
 
-    val server = McpServer.builder[IO]
+    val server = Server.builder[IO]
       .withInfo(ServerInfo("test", "1.0.0"))
       .withPrompts(prompts)
       .build
@@ -405,12 +405,12 @@ class McpDslSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpServer.from works with DSL-created values") {
+  test("Server.from works with DSL-created values") {
     val tools = Tool.text[IO]("echo", "Echo") { "echo" }
     val resources = Resource.text[IO]("test://readme", "README") { "Hello" }
     val prompts = Prompt[IO]("greet", "Greet")(user("Hello!"))
 
-    val server = McpServer.from[IO](
+    val server = Server.from[IO](
       info = ServerInfo("test", "1.0.0"),
       tools = tools,
       resources = resources,

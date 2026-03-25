@@ -40,7 +40,7 @@ object ConformanceServer extends IOApp.Simple:
       @description("URI of the resource to embed") resourceUri: String
   ) derives PromptInput
 
-  val simpleTools: McpTools[IO] =
+  val simpleTools: Tools[IO] =
     mcp.Tool[IO]("test_simple_text", "Tests simple text content response") {
       ok("This is a simple text response for testing.").pure[IO]
     } |+|
@@ -77,7 +77,7 @@ object ConformanceServer extends IOApp.Simple:
       ok("Reconnection test completed successfully. If you received this, the client properly reconnected after stream closure.").pure[IO]
     }
 
-  val contextTools: McpTools[IO] =
+  val contextTools: Tools[IO] =
     mcp.Tool.withContext[IO]("test_tool_with_logging", "Tests tool that emits log messages during execution") { ctx =>
       for
         _ <- ctx.log(LogLevel.Info, "Starting tool execution")
@@ -185,9 +185,9 @@ object ConformanceServer extends IOApp.Simple:
         .handleError(err => ok(s"Elicitation error: ${err.getMessage}"))
     }
 
-  val allTools: McpTools[IO] = simpleTools |+| contextTools
+  val allTools: Tools[IO] = simpleTools |+| contextTools
 
-  val staticResources: McpResources[IO] =
+  val staticResources: Resources[IO] =
     mcp.Resource.text[IO]("test://static-text", "Static Text Resource") {
       "This is the content of the static text resource."
     } |+|
@@ -195,21 +195,21 @@ object ConformanceServer extends IOApp.Simple:
       "Watched resource content"
     }
 
-  val binaryResource: McpResources[IO] =
+  val binaryResource: Resources[IO] =
     mcp.Resource[IO]("test://static-binary", "Static Binary Resource") {
       IO.pure(ResourceContent.blob("test://static-binary", TestImageBase64, Some("image/png")))
     }
 
-  val templateResource: McpResources[IO] =
+  val templateResource: Resources[IO] =
     mcp.Resource.template[IO]("test://template/{id}/data", "Resource Template", "A resource template with parameter substitution") { uri =>
       val parts = uri.split("/")
       val id = if parts.length >= 4 then parts(3) else "unknown"
       IO.pure(text(uri, s"""{"id":"$id","templateTest":true,"data":"Data for ID: $id"}"""))
     }
 
-  val allResources: McpResources[IO] = staticResources |+| binaryResource |+| templateResource
+  val allResources: Resources[IO] = staticResources |+| binaryResource |+| templateResource
 
-  val simplePrompts: McpPrompts[IO] =
+  val simplePrompts: Prompts[IO] =
     mcp.Prompt.withDesc[IO]("test_simple_prompt", "A simple prompt without arguments", "Simple test prompt")(
       user("This is a simple prompt for testing.")
     ) |+|
@@ -218,7 +218,7 @@ object ConformanceServer extends IOApp.Simple:
       user("Please analyze the image above.")
     )
 
-  val argPrompts: McpPrompts[IO] =
+  val argPrompts: Prompts[IO] =
     mcp.Prompt[IO, PromptWithArgsInput]("test_prompt_with_arguments", "A prompt with required arguments") { args =>
       messages("Prompt with arguments")(
         user(s"Prompt with arguments: arg1='${args.arg1}', arg2='${args.arg2}'")
@@ -237,9 +237,9 @@ object ConformanceServer extends IOApp.Simple:
       ).pure[IO]
     }
 
-  val allPrompts: McpPrompts[IO] = simplePrompts |+| argPrompts
+  val allPrompts: Prompts[IO] = simplePrompts |+| argPrompts
 
-  val server: McpServer[IO] = McpServer
+  val server: Server[IO] = Server
     .builder[IO]
     .withInfo(ServerInfo("mcp-conformance-test-server", "1.0.0"))
     .withTools(allTools)

@@ -18,9 +18,19 @@ Add to your `build.mill`:
 
 ```scala
 def ivyDeps = Agg(
-  ivy"io.github.mcp4s::mcp4s-core::0.1.2",
-  ivy"io.github.mcp4s::mcp4s-server::0.1.2",  // for servers
-  ivy"io.github.mcp4s::mcp4s-client::0.1.2"   // for clients
+  ivy"io.github.mcp4s::mcp4s-core::0.1.4",
+  ivy"io.github.mcp4s::mcp4s-server::0.1.4",  // for servers
+  ivy"io.github.mcp4s::mcp4s-client::0.1.4"   // for clients
+)
+```
+
+Or in sbt:
+
+```scala
+libraryDependencies ++= Seq(
+  "io.github.mcp4s" %% "mcp4s-core" % "0.1.4",
+  "io.github.mcp4s" %% "mcp4s-server" % "0.1.4", // for servers
+  "io.github.mcp4s" %% "mcp4s-client" % "0.1.4"  // for clients
 )
 ```
 
@@ -36,7 +46,7 @@ import mcp4s.server.transport.*
 
 object MyServer extends IOApp.Simple:
 
-  val server: McpServer[IO] = McpServer.builder[IO]
+  val server: Server[IO] = Server.builder[IO]
     .withInfo(ServerInfo("my-server", "1.0.0"))
     .withTool(
       Tool(
@@ -78,7 +88,7 @@ val resources = Resource.text[IO]("info", "info://app", "Application info") {
 // Combine multiple tools/resources with |+|
 val allTools = tools |+| moreTools
 
-val server = McpServer.from[IO](
+val server = Server.from[IO](
   info = ServerInfo("my-server", "1.0.0"),
   tools = allTools,
   resources = resources
@@ -183,11 +193,11 @@ Add cross-cutting concerns like logging, metrics, and error handling to tools:
 ```scala
 import mcp4s.server.*
 
-val logging = McpMiddleware.logging[IO](msg => IO.println(msg))
-val timed = McpMiddleware.timed[IO] { (name, duration) =>
+val logging = Middleware.logging[IO](msg => IO.println(msg))
+val timed = Middleware.timed[IO] { (name, duration) =>
   IO.println(s"Tool $name took ${duration.toMillis}ms")
 }
-val catchErrors = McpMiddleware.catchErrors[IO]  // Convert exceptions to error results
+val catchErrors = Middleware.catchErrors[IO]  // Convert exceptions to error results
 
 val tools = (add |+| subtract).withMiddleware(logging, timed, catchErrors)
 ```
@@ -252,7 +262,7 @@ class MyServerSpec extends CatsEffectSuite:
   }
 
   test("server integration") {
-    McpServerTest(server).use { client =>
+    ServerTest(server).use { client =>
       for
         tools <- client.listTools
         result <- client.callTool("add", AddArgs(1, 2))

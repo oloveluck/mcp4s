@@ -17,16 +17,16 @@ import scala.concurrent.duration.FiniteDuration
   *   - Validation
   *
   * {{{
-  * val logging = McpMiddleware.logging[IO](msg => IO.println(msg))
-  * val timed = McpMiddleware.timed[IO](d => IO.println(s"Took ${d.toMillis}ms"))
+  * val logging = Middleware.logging[IO](msg => IO.println(msg))
+  * val timed = Middleware.timed[IO](d => IO.println(s"Took ${d.toMillis}ms"))
   *
-  * val server = McpServer.fromTools[IO](
+  * val server = Server.fromTools[IO](
   *   info = ServerInfo("calc", "1.0.0"),
   *   tools = (myTools |+| moreTools).withMiddleware(logging, timed)
   * )
   * }}}
   */
-trait McpMiddleware[F[_]]:
+trait Middleware[F[_]]:
 
   /** Wrap a tool call with middleware logic.
     *
@@ -37,14 +37,14 @@ trait McpMiddleware[F[_]]:
     */
   def apply(name: String, args: Json)(next: => F[ToolResult]): F[ToolResult]
 
-object McpMiddleware:
+object Middleware:
 
   /** Create a logging middleware.
     *
     * Logs tool calls before and after execution.
     */
-  def logging[F[_]: Concurrent](log: String => F[Unit]): McpMiddleware[F] =
-    new McpMiddleware[F]:
+  def logging[F[_]: Concurrent](log: String => F[Unit]): Middleware[F] =
+    new Middleware[F]:
       def apply(name: String, args: Json)(next: => F[ToolResult]): F[ToolResult] =
         for
           _ <- log(s"[MCP] Calling tool: $name")
@@ -65,8 +65,8 @@ object McpMiddleware:
     */
   def timed[F[_]: Concurrent: Clock](
       onComplete: (String, FiniteDuration) => F[Unit]
-  ): McpMiddleware[F] =
-    new McpMiddleware[F]:
+  ): Middleware[F] =
+    new Middleware[F]:
       def apply(name: String, args: Json)(next: => F[ToolResult]): F[ToolResult] =
         for
           start <- Clock[F].monotonic
@@ -80,8 +80,8 @@ object McpMiddleware:
     *
     * Converts exceptions to ToolResult.error instead of failing.
     */
-  def catchErrors[F[_]: Concurrent]: McpMiddleware[F] =
-    new McpMiddleware[F]:
+  def catchErrors[F[_]: Concurrent]: Middleware[F] =
+    new Middleware[F]:
       def apply(name: String, args: Json)(next: => F[ToolResult]): F[ToolResult] =
         next.handleError { e =>
           ToolResult.error(s"Tool '$name' failed: ${e.getMessage}")
@@ -93,8 +93,8 @@ object McpMiddleware:
     */
   def catchErrorsPartial[F[_]: Concurrent](
       handler: PartialFunction[Throwable, String]
-  ): McpMiddleware[F] =
-    new McpMiddleware[F]:
+  ): Middleware[F] =
+    new Middleware[F]:
       def apply(name: String, args: Json)(next: => F[ToolResult]): F[ToolResult] =
         next.handleErrorWith { e =>
           if handler.isDefinedAt(e) then
@@ -109,8 +109,8 @@ object McpMiddleware:
     */
   def validate[F[_]: Concurrent](
       validator: (String, Json) => F[Option[String]]
-  ): McpMiddleware[F] =
-    new McpMiddleware[F]:
+  ): Middleware[F] =
+    new Middleware[F]:
       def apply(name: String, args: Json)(next: => F[ToolResult]): F[ToolResult] =
         validator(name, args).flatMap {
           case Some(error) => Concurrent[F].pure(ToolResult.error(error))
@@ -121,30 +121,30 @@ object McpMiddleware:
     *
     * Middlewares are applied in order: first middleware is outermost.
     */
-  def combine[F[_]](middlewares: McpMiddleware[F]*): McpMiddleware[F] =
+  def combine[F[_]](middlewares: Middleware[F]*): Middleware[F] =
     middlewares.reduceLeft { (outer, inner) =>
-      new McpMiddleware[F]:
+      new Middleware[F]:
         def apply(name: String, args: Json)(next: => F[ToolResult]): F[ToolResult] =
           outer(name, args)(inner(name, args)(next))
     }
 
   /** Identity middleware that does nothing */
-  def identity[F[_]]: McpMiddleware[F] =
-    new McpMiddleware[F]:
+  def identity[F[_]]: Middleware[F] =
+    new Middleware[F]:
       def apply(name: String, args: Json)(next: => F[ToolResult]): F[ToolResult] = next
 
 /** Extension methods for applying middleware to tools */
-extension [F[_]: Concurrent](tools: McpTools[F])
+extension [F[_]: Concurrent](tools: Tools[F])
 
   /** Apply middleware to all tool calls.
     *
     * {{{
     * val myTools = add |+| subtract
-    * val withLogging = myTools.withMiddleware(McpMiddleware.logging[IO](println))
+    * val withLogging = myTools.withMiddleware(Middleware.logging[IO](println))
     * }}}
     */
-  def withMiddleware(middleware: McpMiddleware[F]): McpTools[F] =
-    new McpTools[F]:
+  def withMiddleware(middleware: Middleware[F]): Tools[F] =
+    new Tools[F]:
       def list: F[List[Tool]] = tools.list
 
       def call(name: String, args: Json): cats.data.OptionT[F, ToolResult] =
@@ -186,5 +186,5 @@ extension [F[_]: Concurrent](tools: McpTools[F])
     *
     * Middlewares are applied in order: first is outermost.
     */
-  def withMiddleware(first: McpMiddleware[F], rest: McpMiddleware[F]*): McpTools[F] =
-    tools.withMiddleware(McpMiddleware.combine(first +: rest*))
+  def withMiddleware(first: Middleware[F], rest: Middleware[F]*): Tools[F] =
+    tools.withMiddleware(Middleware.combine(first +: rest*))

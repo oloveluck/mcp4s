@@ -23,7 +23,7 @@ import mcp4s.protocol.ToolInput
 case class AddArgs(a: Double, b: Double) derives ToolInput
 
 object MyServer extends IOApp.Simple:
-  val server = McpServer.builder[IO]
+  val server = Server.builder[IO]
     .withInfo(ServerInfo("calculator", "1.0.0"))
     .tool[AddArgs]("add", "Add two numbers") { args =>
       IO.pure(ok(s"${args.a + args.b}"))

@@ -5,6 +5,8 @@ import cats.syntax.semigroup.*
 import mcp4s.protocol.*
 import munit.CatsEffectSuite
 
+import scala.concurrent.duration.*
+
 class McpResourceSpec extends CatsEffectSuite:
 
   test("McpResource creates static text resource") {
@@ -42,7 +44,7 @@ class McpResourceSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpResources compose with |+|") {
+  test("Resources compose with |+|") {
     val readme = McpResource[IO]("file:///readme", "README")("Hello")
     val config = McpResource[IO]("file:///config", "Config")("{}")
 
@@ -58,7 +60,7 @@ class McpResourceSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpResources left takes precedence on URI conflict") {
+  test("Resources left takes precedence on URI conflict") {
     val v1 = McpResource[IO]("file:///readme", "v1")("version 1")
     val v2 = McpResource[IO]("file:///readme", "v2")("version 2")
 
@@ -70,5 +72,14 @@ class McpResourceSpec extends CatsEffectSuite:
       _ = assertEquals(resources.head.name, "v1")
       content <- combined.read("file:///readme").value
       _ = assertEquals(content.flatMap(_.text), Some("version 1"))
+    yield ()
+  }
+
+  test("static resources have empty changes stream") {
+    val readme = McpResource[IO]("file:///readme", "README")("Hello")
+
+    for
+      changes <- readme.changes.compile.toList.timeout(100.millis).attempt
+      _ = assertEquals(changes, Right(Nil))
     yield ()
   }

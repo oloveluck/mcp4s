@@ -6,7 +6,7 @@ For Claude Desktop integration.
 
 ```scala
 object MyServer extends IOApp.Simple:
-  val server = McpServer.builder[IO]
+  val server = Server.builder[IO]
     .withInfo(ServerInfo("my-server", "1.0.0"))
     .tool[Args]("search", "Search files") { args => ... }
     .build

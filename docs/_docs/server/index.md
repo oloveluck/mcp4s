@@ -8,7 +8,7 @@ import mcp4s.server.*
 import mcp4s.server.mcp.*
 
 // Declarative
-val server = McpServer.from[IO](
+val server = Server.from[IO](
   info = ServerInfo("my-server", "1.0.0"),
   tools = myTools,
   resources = myResources,
@@ -16,7 +16,7 @@ val server = McpServer.from[IO](
 )
 
 // Builder
-val server = McpServer.builder[IO]
+val server = Server.builder[IO]
   .withInfo(ServerInfo("my-server", "1.0.0"))
   .tool("ping", "Ping") { IO.pure(ok("pong")) }
   .resource("file:///readme", "README") { "Hello" }

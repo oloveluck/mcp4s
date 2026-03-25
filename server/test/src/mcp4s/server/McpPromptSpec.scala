@@ -80,7 +80,7 @@ class McpPromptSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpPrompts compose with |+|") {
+  test("Prompts compose with |+|") {
     val greet = McpPrompt.noArgs[IO]("greet", "Greet") {
       IO.pure(GetPromptResult(None, List(PromptMessage(Role.User, TextContent("Hi")))))
     }

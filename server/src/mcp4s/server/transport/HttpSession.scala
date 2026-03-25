@@ -172,7 +172,7 @@ object HttpSession:
     * @param tracer OpenTelemetry tracer for distributed tracing
     */
   def create[F[_]: Async](
-      server: McpServer[F],
+      server: Server[F],
       config: SessionConfig = SessionConfig.default
   )(using tracer: Tracer[F]): F[HttpSession[F]] =
     for

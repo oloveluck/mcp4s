@@ -16,7 +16,7 @@ import scala.deriving.Mirror
   *   @description("Greeting style") style: Option[String]
   * ) derives PromptInput
   *
-  * // Use with McpServerBuilder:
+  * // Use with ServerBuilder:
   * .prompt[GreetArgs]("greet", "Greet someone") { args =>
   *   IO.pure(GetPromptResult(...))
   * }

@@ -34,7 +34,7 @@ object StdioTransport:
     * @param server The MCP server to run
     * @param tracer Optional OpenTelemetry tracer for distributed tracing (defaults to noop)
     */
-  def run[F[_]: Async: Console](server: McpServer[F])(using Tracer[F]): F[Unit] =
+  def run[F[_]: Async: Console](server: Server[F])(using Tracer[F]): F[Unit] =
     mcp4s.server.Dispatcher[F](server).flatMap { dispatcher =>
       val input: Stream[F, String] =
         stdin[F](DefaultBufferSize)

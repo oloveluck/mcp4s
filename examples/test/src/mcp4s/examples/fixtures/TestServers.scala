@@ -24,8 +24,8 @@ object TestServers:
     * @param base The server to wrap
     * @param delay Delay to add before each tool call completes
     */
-  def delaying[F[_]: Temporal](base: McpServer[F], delay: FiniteDuration): McpServer[F] =
-    new McpServer[F]:
+  def delaying[F[_]: Temporal](base: Server[F], delay: FiniteDuration): Server[F] =
+    new Server[F]:
       val info: ServerInfo = base.info
       val capabilities: ServerCapabilities = base.capabilities
 
@@ -49,12 +49,12 @@ object TestServers:
     * @param errorMessage Error message for failures
     */
   def failingAfter[F[_]: Async](
-      base: McpServer[F],
+      base: Server[F],
       failAfter: Int,
       errorMessage: String = "Simulated failure"
-  ): F[(McpServer[F], F[Int])] =
+  ): F[(Server[F], F[Int])] =
     Ref.of[F, Int](0).map { counterRef =>
-      val server = new McpServer[F]:
+      val server = new Server[F]:
         val info: ServerInfo = base.info
         val capabilities: ServerCapabilities = base.capabilities
 
@@ -83,7 +83,7 @@ object TestServers:
     * @param base The server to wrap
     * @return Server and effect to get current call counts
     */
-  def counting[F[_]: Async](base: McpServer[F]): F[(McpServer[F], F[CallCounts])] =
+  def counting[F[_]: Async](base: Server[F]): F[(Server[F], F[CallCounts])] =
     for
       toolCallCount <- Ref.of[F, Int](0)
       listToolsCount <- Ref.of[F, Int](0)
@@ -92,7 +92,7 @@ object TestServers:
       promptGetCount <- Ref.of[F, Int](0)
       listPromptsCount <- Ref.of[F, Int](0)
     yield
-      val server = new McpServer[F]:
+      val server = new Server[F]:
         val info: ServerInfo = base.info
         val capabilities: ServerCapabilities = base.capabilities
 
@@ -135,12 +135,12 @@ object TestServers:
     * @param seed Optional random seed for reproducibility
     */
   def chaotic[F[_]: Async](
-      base: McpServer[F],
+      base: Server[F],
       failureRate: Double,
       seed: Option[Long] = None
-  ): F[McpServer[F]] =
+  ): F[Server[F]] =
     val random = seed.fold(new scala.util.Random())(new scala.util.Random(_))
-    Async[F].pure(new McpServer[F]:
+    Async[F].pure(new Server[F]:
       val info: ServerInfo = base.info
       val capabilities: ServerCapabilities = base.capabilities
 
@@ -170,12 +170,12 @@ object TestServers:
     * @param maxDelay Maximum delay
     */
   def jittered[F[_]: Async: Temporal](
-      base: McpServer[F],
+      base: Server[F],
       minDelay: FiniteDuration,
       maxDelay: FiniteDuration
-  ): F[McpServer[F]] =
+  ): F[Server[F]] =
     val random = new scala.util.Random()
-    Async[F].pure(new McpServer[F]:
+    Async[F].pure(new Server[F]:
       val info: ServerInfo = base.info
       val capabilities: ServerCapabilities = base.capabilities
 
@@ -211,7 +211,7 @@ object TestServers:
     * Prompts:
     * - greeting(name): A greeting prompt
     */
-  def simple[F[_]: Async: Temporal]: McpServer[F] =
+  def simple[F[_]: Async: Temporal]: Server[F] =
     val addTool = Tool(
       name = "add",
       description = Some("Add two numbers"),
@@ -269,7 +269,7 @@ object TestServers:
       arguments = List(PromptArgument("name", Some("Name to greet"), required = true))
     )
 
-    new McpServer[F]:
+    new Server[F]:
       val info: ServerInfo = ServerInfo("test-server", "1.0.0")
       val capabilities: ServerCapabilities = ServerCapabilities(
         tools = Some(ToolsCapability()),
@@ -344,9 +344,9 @@ object TestServers:
             Async[F].raiseError(McpError.PromptNotFound(other))
 
   /** Create a server that supports tasks for async operations. */
-  def taskEnabled[F[_]: Async: Temporal]: McpServer[F] =
+  def taskEnabled[F[_]: Async: Temporal]: Server[F] =
     val base = simple[F]
-    new McpServer[F]:
+    new Server[F]:
       val info: ServerInfo = base.info.copy(
         name = "task-test-server",
         description = Some("Server with task support")

@@ -13,7 +13,7 @@ import org.http4s.circe.*
 import org.http4s.dsl.Http4sDsl
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.headers.{Allow, `Content-Type`}
-import org.http4s.server.{Router, Server}
+import org.http4s.server.{Router, Server as Http4sServer}
 import org.http4s.server.middleware.CORS
 import org.typelevel.ci.CIString
 import org.typelevel.otel4s.Attribute
@@ -102,9 +102,9 @@ object HttpTransport:
     * @param tracer Optional OpenTelemetry tracer for distributed tracing (defaults to noop)
     */
   def serve[F[_]: Async: Network](
-      server: McpServer[F],
+      server: Server[F],
       config: HttpConfig[F] = HttpConfig.default[F]
-  )(using Tracer[F]): CatsResource[F, Server] =
+  )(using Tracer[F]): CatsResource[F, Http4sServer] =
     for
       tokenKey <- CatsResource.eval(AuthMiddleware.tokenInfoKey[F])
       given Key[TokenInfo] = tokenKey
