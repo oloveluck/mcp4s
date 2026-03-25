@@ -9,6 +9,7 @@ import munit.CatsEffectSuite
 class McpToolAttemptSpec extends CatsEffectSuite:
 
   case class FetchArgs(url: String) derives ToolInput
+  case class DbError(code: Int, msg: String) extends Exception(msg)
 
   test("McpTool.attempt converts success to text result") {
     val fetch = McpTool.attempt[IO, FetchArgs]("fetch", "Fetch URL") { args =>
@@ -65,8 +66,6 @@ class McpToolAttemptSpec extends CatsEffectSuite:
   }
 
   test("McpTool.attemptWith uses custom error formatter") {
-    case class DbError(code: Int, msg: String) extends Exception(msg)
-
     val query = McpTool.attemptWith[IO, FetchArgs]("query", "Run query") { args =>
       IO.raiseError(DbError(1045, "Access denied"))
     } { e =>
