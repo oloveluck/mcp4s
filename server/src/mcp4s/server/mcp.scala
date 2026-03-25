@@ -2,6 +2,7 @@ package mcp4s.server
 
 import cats.Applicative
 import cats.effect.Concurrent
+import fs2.Stream
 import mcp4s.protocol.*
 
 /** Unified DSL for MCP server construction.
@@ -185,6 +186,38 @@ object mcp:
         f: (A, ToolContext[F]) => F[ToolResult]
     ): Tools[F] =
       McpTool.withContext[F, A](name, desc)(f)
+
+    /** Create a streaming tool with typed arguments.
+      *
+      * Streaming tools emit multiple results over time via `callStreaming`.
+      * They also work with regular `call` (returns the last result).
+      *
+      * Example:
+      * {{{
+      * case class SearchArgs(query: String) derives ToolInput
+      * val search = Tool.streaming[IO, SearchArgs]("search", "Stream results") { args =>
+      *   searchService.results(args.query).map(r => ok(r.toString))
+      * }
+      * }}}
+      */
+    def streaming[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(
+        f: A => Stream[F, ToolResult]
+    ): Tools[F] =
+      StreamingTool[F, A](name, desc)(f)
+
+    /** Create a streaming tool with no arguments.
+      *
+      * Example:
+      * {{{
+      * val ticks = Tool.streaming[IO]("tick", "Emit ticks") {
+      *   Stream.emits(List(ok("tick 1"), ok("tick 2")))
+      * }
+      * }}}
+      */
+    def streaming[F[_]: Concurrent](name: String, desc: String)(
+        f: Stream[F, ToolResult]
+    ): Tools[F] =
+      StreamingTool.noArgs[F](name, desc)(f)
 
   // === Resource Constructors ===
 

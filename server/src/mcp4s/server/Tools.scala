@@ -4,6 +4,7 @@ import cats.{Applicative, Semigroup}
 import cats.data.OptionT
 import cats.effect.Concurrent
 import cats.syntax.all.*
+import fs2.Stream
 import io.circe.Json
 import mcp4s.protocol.*
 
@@ -50,6 +51,21 @@ trait Tools[F[_]]:
     */
   def callWithContext(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
     call(name, args) // Default: ignore context
+
+  /** Call a tool returning a stream of results. None if not handled.
+    *
+    * For non-streaming tools, this returns None by default.
+    * Streaming tools override this to emit multiple results over time.
+    */
+  def callStreaming(name: String, args: Json): Option[Stream[F, ToolResult]] = None
+
+  /** Call a streaming tool with context. None if not handled.
+    *
+    * For non-streaming tools, this returns None by default.
+    * Streaming tools override this to emit multiple results over time.
+    */
+  def callStreamingWithContext(name: String, args: Json, ctx: ToolContext[F]): Option[Stream[F, ToolResult]] =
+    callStreaming(name, args)
 
 object Tools:
 
@@ -115,6 +131,12 @@ object Tools:
 
       override def callWithContext(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
         x.callWithContext(name, args, ctx).orElse(y.callWithContext(name, args, ctx))
+
+      override def callStreaming(name: String, args: Json): Option[Stream[F, ToolResult]] =
+        x.callStreaming(name, args).orElse(y.callStreaming(name, args))
+
+      override def callStreamingWithContext(name: String, args: Json, ctx: ToolContext[F]): Option[Stream[F, ToolResult]] =
+        x.callStreamingWithContext(name, args, ctx).orElse(y.callStreamingWithContext(name, args, ctx))
 
   /** Semigroup instance for Tools composition via |+| */
   given [F[_]: Concurrent]: Semigroup[Tools[F]] with

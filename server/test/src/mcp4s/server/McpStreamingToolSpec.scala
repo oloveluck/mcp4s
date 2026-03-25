@@ -85,9 +85,44 @@ class StreamingToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === StreamingTools Composition Tests ===
+  // === Streaming + Regular Tools Composition ===
 
-  test("StreamingTools.combine merges tools") {
+  test("streaming and regular tools compose with |+|") {
+    case class Args1(x: Int) derives ToolInput
+    case class Args2(y: String) derives ToolInput
+
+    val streamingTool = StreamingTool[IO, Args1]("stream-tool", "Streaming tool") { args =>
+      Stream.range(1, args.x + 1).map(n => ToolResult.text(s"chunk $n"))
+    }
+
+    val regularTool = McpTool[IO, Args2]("regular-tool", "Regular tool") { args =>
+      IO.pure(ToolResult.text(s"result: ${args.y}"))
+    }
+
+    val combined = streamingTool |+| regularTool
+
+    for
+      tools <- combined.list
+      _ = assertEquals(tools.map(_.name).toSet, Set("stream-tool", "regular-tool"))
+
+      // Streaming tool returns stream
+      streamResults <- combined.callStreaming("stream-tool", Json.obj("x" -> 3.asJson)).get.compile.toList
+      _ = assertEquals(streamResults.map(_.textContent), List("chunk 1", "chunk 2", "chunk 3"))
+
+      // Regular tool has no streaming capability
+      _ = assertEquals(combined.callStreaming("regular-tool", Json.obj("y" -> "hello".asJson)), None)
+
+      // Regular tool works via call
+      regularResult <- combined.call("regular-tool", Json.obj("y" -> "hello".asJson)).value
+      _ = assertEquals(regularResult.map(_.textContent), Some("result: hello"))
+
+      // Streaming tool also works via call (returns last result)
+      callResult <- combined.call("stream-tool", Json.obj("x" -> 2.asJson)).value
+      _ = assertEquals(callResult.map(_.textContent), Some("chunk 2"))
+    yield ()
+  }
+
+  test("two streaming tools compose with |+|") {
     case class Args1(x: Int) derives ToolInput
     case class Args2(y: String) derives ToolInput
 
@@ -99,7 +134,7 @@ class StreamingToolSpec extends CatsEffectSuite:
       Stream.emit(ToolResult.text(s"Tool2: ${args.y}"))
     }
 
-    val combined = tool1 <+> tool2
+    val combined = tool1 |+| tool2
 
     for
       tools <- combined.list
@@ -113,33 +148,12 @@ class StreamingToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("StreamingTools.empty returns empty list") {
-    val empty = StreamingTools.empty[IO]
-
-    for
-      tools <- empty.list
-      _ = assertEquals(tools, Nil)
-      _ = assertEquals(empty.callStreaming("any", Json.obj()), None)
-    yield ()
-  }
-
-  // === Conversion Tests ===
-
-  test("Tools.asStreaming converts regular tools to streaming") {
-    val regularTool = McpTool.singleNumberPure[IO]("double", "Double a number") { n =>
+  test("non-streaming tools return None for callStreaming") {
+    val tool = McpTool.singleNumberPure[IO]("double", "Double a number") { n =>
       s"${n * 2}"
     }
 
-    val streamingTool = regularTool.asStreaming
-
-    for
-      tools <- streamingTool.list
-      _ = assertEquals(tools.head.name, "double")
-
-      results <- streamingTool.callStreaming("double", Json.obj("value" -> 5.asJson)).get.compile.toList
-      _ = assertEquals(results.size, 1)
-      _ = assertEquals(results.head.textContent, "10.0")
-    yield ()
+    assertEquals(tool.callStreaming("double", Json.obj("value" -> 5.asJson)), None)
   }
 
   test("StreamingTool.fromNonStreaming wraps regular handler") {
