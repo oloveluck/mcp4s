@@ -18,7 +18,6 @@ import org.http4s.server.{Router, Server}
 import org.http4s.server.middleware.CORS
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
-import org.typelevel.otel4s.Attribute
 import org.typelevel.otel4s.trace.Tracer
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given

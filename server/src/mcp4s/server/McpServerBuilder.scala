@@ -5,8 +5,6 @@ import cats.effect.Concurrent
 import cats.syntax.all.*
 import io.circe.Json
 import mcp4s.protocol.*
-import mcp4s.protocol.ToolInput
-import mcp4s.protocol.PromptInput
 
 /** Builder for constructing MCP servers with a fluent DSL.
   *
