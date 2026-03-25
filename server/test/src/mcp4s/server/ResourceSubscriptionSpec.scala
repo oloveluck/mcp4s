@@ -1,6 +1,7 @@
 package mcp4s.server
 
 import cats.effect.IO
+import cats.syntax.semigroup.*
 import fs2.concurrent.SignallingRef
 import mcp4s.protocol.*
 import munit.CatsEffectSuite
@@ -117,51 +118,46 @@ class ResourceSubscriptionSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === McpSubscribableResource Tests ===
+  // === Subscribable Resource Tests ===
 
-  test("McpSubscribableResource creates resource and subscribable pair") {
+  test("McpResource.subscribable creates resource with change stream") {
     for
       signal <- SignallingRef[IO, Boolean](false)
-      pair = McpSubscribableResource[IO](
+
+      resources = McpResource.subscribable[IO](
         "file:///config.json",
         "Config",
-        "",
         signal.discrete.filter(identity).as(())
       ) { _ =>
         IO.pure(ResourceContent.text("file:///config.json", """{"key": "value"}"""))
       }
-      (resources, subscribable) = pair
 
-      // Test resource
+      // Test resource listing
       resourceList <- resources.list
       _ = assertEquals(resourceList.size, 1)
       _ = assertEquals(resourceList.head.uri, "file:///config.json")
 
-      // Test subscribable
-      _ = assertEquals(subscribable.uri, "file:///config.json")
+      // Test read
+      content <- resources.read("file:///config.json").value
+      _ = assertEquals(content.flatMap(_.text), Some("""{"key": "value"}"""))
     yield ()
   }
 
-  test("ResourceSubscriptionOps.connectSubscription notifies manager on change") {
+  test("manager.connect notifies subscribers on resource change") {
     for
       manager <- ResourceSubscriptionManager[IO]
       changeSignal <- SignallingRef[IO, Boolean](false)
 
-      pair = McpSubscribableResource[IO](
+      resources = McpResource.subscribable[IO](
         "file:///watched.txt",
         "Watched",
-        "",
         changeSignal.discrete.filter(identity).as(())
       ) { _ => IO.pure(ResourceContent.text("file:///watched.txt", "content")) }
-      (_, subscribable) = pair
 
       _ <- manager.subscribe("session-1", "file:///watched.txt")
 
       // Start monitoring in background
-      monitorFiber <- ResourceSubscriptionOps
-        .connectSubscription(subscribable, manager)
-        .compile.drain
-        .start
+      monitorFiber <- manager.connect(resources).compile.drain.start
 
       // Trigger change
       _ <- changeSignal.set(true)
@@ -172,6 +168,52 @@ class ResourceSubscriptionSpec extends CatsEffectSuite:
       _ = assertEquals(notif, List(("session-1", "file:///watched.txt")))
 
       _ <- monitorFiber.cancel
+    yield ()
+  }
+
+  test("static resources have empty changes stream") {
+    val resource = McpResource[IO]("file:///static", "Static")("content")
+
+    for
+      result <- resource.changes.compile.toList.timeout(100.millis).attempt
+      // Stream is empty, so compile.toList completes immediately with Nil
+      _ = assertEquals(result, Right(Nil))
+    yield ()
+  }
+
+  test("composed resources merge change streams") {
+    for
+      signal1 <- SignallingRef[IO, Boolean](false)
+      signal2 <- SignallingRef[IO, Boolean](false)
+
+      res1 = McpResource.subscribable[IO](
+        "file:///a.txt", "A",
+        signal1.discrete.filter(identity).as(())
+      ) { _ => IO.pure(ResourceContent.text("file:///a.txt", "a")) }
+
+      res2 = McpResource.subscribable[IO](
+        "file:///b.txt", "B",
+        signal2.discrete.filter(identity).as(())
+      ) { _ => IO.pure(ResourceContent.text("file:///b.txt", "b")) }
+
+      combined = res1 |+| res2
+
+      // Collect changes in background
+      changesRef <- cats.effect.Ref.of[IO, List[String]](Nil)
+      collectFiber <- combined.changes
+        .evalMap(uri => changesRef.update(_ :+ uri))
+        .compile.drain.start
+
+      // Trigger both
+      _ <- signal1.set(true)
+      _ <- signal2.set(true)
+      _ <- IO.sleep(100.millis)
+
+      changes <- changesRef.get
+      _ = assert(changes.contains("file:///a.txt"))
+      _ = assert(changes.contains("file:///b.txt"))
+
+      _ <- collectFiber.cancel
     yield ()
   }
 

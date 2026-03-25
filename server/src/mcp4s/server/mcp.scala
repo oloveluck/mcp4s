@@ -232,6 +232,39 @@ object mcp:
     ): McpResources[F] =
       McpResources.template[F](pattern, name, description)(handler)
 
+    /** Create a subscribable resource that emits change notifications.
+      *
+      * Example:
+      * {{{
+      * val config = Resource.subscribable[IO](
+      *   "file:///config", "Config",
+      *   fileWatcher.events.void
+      * ) { _ => loadConfig().map(mcp.text("file:///config", _)) }
+      * }}}
+      */
+    def subscribable[F[_]: Concurrent](uri: String, name: String, changeStream: fs2.Stream[F, Unit])(
+        handler: String => F[ResourceContent]
+    ): McpResources[F] =
+      McpResource.subscribable[F](uri, name, changeStream)(handler)
+
+    /** Create a subscribable resource that polls for changes.
+      *
+      * Example:
+      * {{{
+      * val metrics = Resource.polling[IO](
+      *   "metrics://cpu", "CPU",
+      *   5.seconds, checkChanged
+      * ) { _ => getMetrics.map(mcp.text("metrics://cpu", _)) }
+      * }}}
+      */
+    def polling[F[_]: cats.effect.Temporal](
+        uri: String,
+        name: String,
+        pollInterval: scala.concurrent.duration.FiniteDuration,
+        hasChanged: F[Boolean]
+    )(handler: String => F[ResourceContent]): McpResources[F] =
+      McpResource.polling[F](uri, name, pollInterval, hasChanged)(handler)
+
   // === Prompt Constructors ===
 
   /** Namespaced prompt constructors */

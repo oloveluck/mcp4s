@@ -75,6 +75,22 @@ trait ResourceSubscriptionManager[F[_]]:
     */
   def notifications: Stream[F, (String, String)]
 
+  /** Connect to a McpResources change stream.
+    *
+    * Returns a stream that monitors resource changes and notifies subscribers.
+    * This stream should be run concurrently with the server.
+    *
+    * Example:
+    * {{{
+    * val resources: McpResources[IO] = ...
+    * for
+    *   manager <- ResourceSubscriptionManager[IO]
+    *   _ <- manager.connect(resources).compile.drain.start
+    * yield ()
+    * }}}
+    */
+  def connect(resources: McpResources[F]): Stream[F, Unit]
+
 object ResourceSubscriptionManager:
 
   /** Create a new subscription manager. */
@@ -134,94 +150,5 @@ object ResourceSubscriptionManager:
     def notifications: Stream[F, (String, String)] =
       Stream.fromQueueUnterminated(notificationQueue)
 
-/** A subscribable resource that emits change notifications.
-  *
-  * Use this trait to create resources that notify subscribers when their content changes.
-  *
-  * Example:
-  * {{{
-  * val watchedFile = McpSubscribableResource.fromStream[IO](
-  *   uri = "file:///config.json",
-  *   name = "Configuration",
-  *   onChange = fileWatcher.events.filter(_ == "config.json").void
-  * ) { _ =>
-  *   IO(ResourceContent.text("file:///config.json", readFile("/config.json")))
-  * }
-  * }}}
-  */
-trait McpSubscribableResource[F[_]]:
-  /** The URI of this resource */
-  def uri: String
-
-  /** Stream that emits () when the resource changes */
-  def onChange: Stream[F, Unit]
-
-/** Factory for creating subscribable resources */
-object McpSubscribableResource:
-
-  /** Create a subscribable resource from a change stream.
-    *
-    * @param resourceUri The resource URI
-    * @param name The resource name
-    * @param description Optional description
-    * @param changeStream Stream that emits when the resource content changes
-    * @param handler Handler to read the resource content
-    */
-  def apply[F[_]: Concurrent](
-      resourceUri: String,
-      name: String,
-      description: String = "",
-      changeStream: Stream[F, Unit]
-  )(handler: String => F[ResourceContent]): (McpResources[F], McpSubscribableResource[F]) =
-    val resources = McpResource.handler[F](resourceUri, name) { _ => handler(resourceUri) }
-    val subscribable = new McpSubscribableResource[F]:
-      def uri: String = resourceUri
-      def onChange: Stream[F, Unit] = changeStream
-
-    (resources, subscribable)
-
-  /** Create a subscribable resource that polls for changes.
-    *
-    * The resource will be checked periodically and notifications sent if changed.
-    *
-    * @param uri The resource URI
-    * @param name The resource name
-    * @param pollInterval How often to check for changes
-    * @param hasChanged Function that returns true if the resource has changed since last check
-    * @param handler Handler to read the resource content
-    */
-  def polling[F[_]: cats.effect.Temporal](
-      resourceUri: String,
-      name: String,
-      pollInterval: scala.concurrent.duration.FiniteDuration,
-      hasChanged: F[Boolean]
-  )(handler: String => F[ResourceContent]): (McpResources[F], McpSubscribableResource[F]) =
-    val changeStream = Stream
-      .awakeEvery[F](pollInterval)
-      .evalFilter(_ => hasChanged)
-      .void
-
-    apply(resourceUri, name, "", changeStream)(handler)
-
-/** Extension to combine subscribable resources with subscription manager */
-object ResourceSubscriptionOps:
-
-  /** Connect a subscribable resource to a subscription manager.
-    *
-    * Returns a stream that monitors the resource and notifies subscribers when it changes.
-    * This stream should be run concurrently with the server.
-    */
-  def connectSubscription[F[_]: Concurrent](
-      resource: McpSubscribableResource[F],
-      manager: ResourceSubscriptionManager[F]
-  ): Stream[F, Unit] =
-    resource.onChange.evalMap { _ =>
-      manager.notifyChanged(resource.uri)
-    }
-
-  /** Connect multiple subscribable resources to a subscription manager. */
-  def connectSubscriptions[F[_]: Concurrent](
-      resources: List[McpSubscribableResource[F]],
-      manager: ResourceSubscriptionManager[F]
-  ): Stream[F, Unit] =
-    Stream.emits(resources).map(r => connectSubscription(r, manager)).parJoinUnbounded
+    def connect(resources: McpResources[F]): Stream[F, Unit] =
+      resources.changes.evalMap(notifyChanged)
