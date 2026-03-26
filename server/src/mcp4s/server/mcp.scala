@@ -203,7 +203,7 @@ object mcp:
     def streaming[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(
         f: A => Stream[F, ToolResult]
     ): Tools[F] =
-      StreamingTool[F, A](name, desc)(f)
+      McpTool.streaming[F, A](name, desc)(f)
 
     /** Create a streaming tool with no arguments.
       *
@@ -217,7 +217,7 @@ object mcp:
     def streaming[F[_]: Concurrent](name: String, desc: String)(
         f: Stream[F, ToolResult]
     ): Tools[F] =
-      StreamingTool.noArgs[F](name, desc)(f)
+      McpTool.streamingNoArgs[F](name, desc)(f)
 
   // === Resource Constructors ===
 

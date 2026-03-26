@@ -1,7 +1,10 @@
 package mcp4s.server
 
+import cats.Applicative
+import cats.data.OptionT
 import cats.effect.Concurrent
 import cats.syntax.all.*
+import fs2.Stream
 import io.circe.Json
 import mcp4s.protocol.*
 
@@ -346,3 +349,92 @@ object McpTool:
         .map(ToolResult.text)
         .handleError(e => ToolResult.error(formatError(e)))
     }
+
+  // === Streaming Constructors ===
+
+  /** Create a streaming tool from a stream-returning handler.
+    *
+    * The handler returns a Stream that emits ToolResult chunks.
+    * Each chunk is sent to the client as a separate SSE event.
+    * The final chunk signals completion.
+    */
+  def streaming[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
+      handler: A => Stream[F, ToolResult]
+  ): Tools[F] =
+    val ti = summon[ToolInput[A]]
+    val tool = Tool(name, Some(description), ti.schema)
+    singleStreaming(tool) { json =>
+      ti.decode(json) match
+        case Right(a)  => handler(a)
+        case Left(err) => Stream.raiseError(McpError.InvalidToolArguments(name, err))
+    }
+
+  /** Create a streaming tool with context support. */
+  def streamingWithContext[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
+      handler: (A, ToolContext[F]) => Stream[F, ToolResult]
+  ): Tools[F] =
+    val ti = summon[ToolInput[A]]
+    val tool = Tool(name, Some(description), ti.schema)
+    singleStreamingWithContext(tool) { (json, ctx) =>
+      ti.decode(json) match
+        case Right(a)  => handler(a, ctx)
+        case Left(err) => Stream.raiseError(McpError.InvalidToolArguments(name, err))
+    }
+
+  /** Create a streaming tool with no arguments. */
+  def streamingNoArgs[F[_]: Concurrent](name: String, description: String)(
+      handler: Stream[F, ToolResult]
+  ): Tools[F] =
+    val tool = Tool(name, Some(description), JsonSchema.empty)
+    singleStreaming(tool)(_ => handler)
+
+  /** Create a streaming tool from a regular tool handler that produces a single chunk. */
+  def fromNonStreaming[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
+      handler: A => F[ToolResult]
+  ): Tools[F] =
+    streaming[F, A](name, description) { args =>
+      Stream.eval(handler(args))
+    }
+
+  /** Create streaming tool routes from a single tool */
+  private def singleStreaming[F[_]: Concurrent](tool: Tool)(
+      handler: Json => Stream[F, ToolResult]
+  ): Tools[F] =
+    new Tools[F]:
+      def list: F[List[Tool]] = Applicative[F].pure(List(tool))
+
+      def call(name: String, args: Json): OptionT[F, ToolResult] =
+        if name == tool.name then
+          OptionT.liftF(handler(args).compile.lastOrError)
+        else OptionT.none[F, ToolResult]
+
+      override def callStreaming(name: String, args: Json): Option[Stream[F, ToolResult]] =
+        if name == tool.name then Some(handler(args))
+        else None
+
+  /** Create context-aware streaming tool routes from a single tool */
+  private def singleStreamingWithContext[F[_]: Concurrent](tool: Tool)(
+      handler: (Json, ToolContext[F]) => Stream[F, ToolResult]
+  ): Tools[F] =
+    new Tools[F]:
+      def list: F[List[Tool]] = Applicative[F].pure(List(tool))
+
+      def call(name: String, args: Json): OptionT[F, ToolResult] =
+        if name == tool.name then
+          val ctx = ToolContext.minimal[F](SamplingRequester.unsupported[F], RequestId.NullId)
+          OptionT.liftF(handler(args, ctx).compile.lastOrError)
+        else OptionT.none[F, ToolResult]
+
+      override def callWithContext(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
+        if name == tool.name then OptionT.liftF(handler(args, ctx).compile.lastOrError)
+        else OptionT.none[F, ToolResult]
+
+      override def callStreaming(name: String, args: Json): Option[Stream[F, ToolResult]] =
+        if name == tool.name then
+          val ctx = ToolContext.minimal[F](SamplingRequester.unsupported[F], RequestId.NullId)
+          Some(handler(args, ctx))
+        else None
+
+      override def callStreamingWithContext(name: String, args: Json, ctx: ToolContext[F]): Option[Stream[F, ToolResult]] =
+        if name == tool.name then Some(handler(args, ctx))
+        else None

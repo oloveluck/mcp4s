@@ -182,7 +182,7 @@ class McpClientDslSpec extends CatsEffectSuite:
 
   test("sampling handlers compose with |+|") {
     // First handler only handles requests with "special" in the message
-    val special = new McpSamplings[IO]:
+    val special = new Samplings[IO]:
       import cats.data.OptionT
       def handle(params: CreateMessageParams): OptionT[IO, CreateMessageResult] =
         val hasSpecial = params.messages.exists { msg =>

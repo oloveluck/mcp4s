@@ -190,7 +190,7 @@ object DemoClient extends IOApp.Simple:
 /** Demo client using the new composable DSL */
 object DemoClientDsl extends IOApp.Simple:
 
-  // Composable sampling handler using DSL - returns McpSamplings[IO]
+  // Composable sampling handler using DSL - returns Samplings[IO]
   val sampling = clientMcp.Sampling[IO] { params =>
     val prompt = params.messages.lastOption.map { msg =>
       msg.content match
@@ -202,7 +202,7 @@ object DemoClientDsl extends IOApp.Simple:
     IO.pure(message(response, "mock-llm-v1"))
   }
 
-  // Composable elicitation handler using DSL - returns McpElicitations[IO]
+  // Composable elicitation handler using DSL - returns Elicitations[IO]
   val elicitation = clientMcp.Elicitation.withComplete[IO](
     handler = {
       case ElicitFormParams(msg, schema, _) =>

@@ -11,6 +11,7 @@ MCP4S provides a type-safe, functional implementation of MCP for Scala 3 using c
 - **core** - Protocol types, JSON-RPC messages, and codec definitions
 - **server** - MCP server implementation with Streamable HTTP and stdio transports
 - **client** - MCP client for connecting to MCP servers
+- **agent** - Autonomous agent loop connecting LLMs to MCP tools
 
 ## Installation
 
@@ -20,7 +21,8 @@ Add to your `build.mill`:
 def ivyDeps = Agg(
   ivy"io.github.mcp4s::mcp4s-core::0.1.4",
   ivy"io.github.mcp4s::mcp4s-server::0.1.4",  // for servers
-  ivy"io.github.mcp4s::mcp4s-client::0.1.4"   // for clients
+  ivy"io.github.mcp4s::mcp4s-client::0.1.4",  // for clients
+  ivy"io.github.mcp4s::mcp4s-agent::0.1.4"    // for agents
 )
 ```
 
@@ -30,7 +32,8 @@ Or in sbt:
 libraryDependencies ++= Seq(
   "io.github.mcp4s" %% "mcp4s-core" % "0.1.4",
   "io.github.mcp4s" %% "mcp4s-server" % "0.1.4", // for servers
-  "io.github.mcp4s" %% "mcp4s-client" % "0.1.4"  // for clients
+  "io.github.mcp4s" %% "mcp4s-client" % "0.1.4", // for clients
+  "io.github.mcp4s" %% "mcp4s-agent" % "0.1.4"   // for agents
 )
 ```
 
@@ -270,6 +273,98 @@ class MyServerSpec extends CatsEffectSuite:
       yield ()
     }
   }
+```
+
+## Agent Module
+
+The agent module provides an autonomous tool-calling loop that connects any LLM to MCP tools. It extends `McpClient`, so an agent is itself a first-class MCP client capable of handling server-initiated requests (sampling, elicitation, roots).
+
+### Builder API
+
+```scala
+import cats.effect.IO
+import mcp4s.agent.*
+
+val agent: IO[Agent[IO]] = Agent.builder[IO](llmClient, mcpConnection)
+  .withConfig(LlmConfig.default.withModel("gpt-4").withMaxTurns(20))
+  .withDefaultSampling
+  .withChainOfThought(ChainOfThoughtConfig(thinkBeforeEveryTurn = true))
+  .withReflection(ReflectionConfig(reflectEveryNTurns = 3))
+  .withContextWindow(TokenBudget(8000, 1000), _ => ContextPolicy.keepSystemAndRecent)
+  .build
+```
+
+### LlmClient Interface
+
+Implement the `LlmClient[F]` trait to adapt your LLM provider:
+
+```scala
+trait LlmClient[F[_]]:
+  def complete(request: LlmRequest): F[LlmResponse]
+  def stream(request: LlmRequest)(using Concurrent[F]): fs2.Stream[F, LlmResponseChunk]
+```
+
+`complete` returns a full response. `stream` returns incremental chunks and has a default implementation that wraps `complete`. Responses carry optional `stopReason` and `usage` metadata:
+
+```scala
+val response = LlmResponse.Text("Hello!", stopReason = Some("endTurn"), usage = Some(Usage(promptTokens = Some(100))))
+```
+
+### Hooks
+
+Hooks inject behavior before and after each tool-calling turn:
+
+- **Chain-of-thought** (`withChainOfThought`) - forces explicit LLM reasoning before tool calls
+- **Reflection** (`withReflection`) - periodic self-reflection after every N turns
+- **Context management** (`withContextWindow`) - compresses messages when they exceed a token budget
+
+Hooks compose via `Semigroup` (the `|+|` operator), so multiple hooks can be combined freely.
+
+### Running the Agent
+
+```scala
+agent.run("What is 2 + 3?")
+  .evalTap {
+    case AgentEvent.ToolCalled(call)    => IO.println(s"Calling ${call.name}")
+    case AgentEvent.Finished(content)   => IO.println(s"Done: $content")
+    case _                              => IO.unit
+  }
+  .compile
+  .drain
+```
+
+### Agent as Server
+
+An agent can also **be** an MCP server, exposing tools/resources/prompts that other agents or clients can call. Server-side tools registered via `withAgentTools` receive an `AgentContext` with access to the agent's LLM, configuration, and shared conversation state.
+
+```scala
+import mcp4s.agent.*
+import mcp4s.server.mcp.*
+
+val agent = Agent.builder[IO](llmClient, mcpConnection)
+  // Expose the agent loop as a callable tool
+  .asTool("ask", "Ask the agent a question")
+  // Plain server-side tools (no agent context)
+  .withServerTools(Tool.text[IO]("status", "Get status") { "running" })
+  // Tools with access to the agent's internals
+  .withAgentTools { ctx =>
+    Tool[IO]("chat", "Chat with the agent") {
+      ctx.llmClient.complete(LlmRequest(List(Message.User("hello")), Nil, ctx.config))
+        .map { case LlmResponse.Text(text, _, _) => ok(text) }
+    }
+  }
+  .build
+
+// Create an MCP Server from the agent
+val server: IO[Server[IO]] = agent.flatMap(_.toServer)
+```
+
+### Agent Examples
+
+```bash
+mill examples.runMain mcp4s.examples.AgentQuickStart
+mill examples.runMain mcp4s.examples.AgentHooksDemo
+mill examples.runMain mcp4s.examples.AgentAsServer
 ```
 
 ## Building
