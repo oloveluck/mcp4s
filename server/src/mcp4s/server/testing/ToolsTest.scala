@@ -12,13 +12,15 @@ import mcp4s.server.Tools
   * Provides a convenient way to test tools in isolation.
   *
   * {{{
-  * val tools = McpTool.twoNumbers[IO]("add", "Add") { (a, b) =>
-  *   IO.pure(ToolResult.text(s"${a + b}"))
+  * import mcp4s.server.mcp.*
+  * case class AddArgs(a: Double, b: Double) derives ToolInput
+  * val tools = Tool[IO, AddArgs]("add", "Add") { args =>
+  *   IO.pure(ToolResult.text(s"${args.a + args.b}"))
   * }
   *
   * test("add tool calculates correctly") {
   *   for
-  *     result <- tools.testCall("add", ("a" -> 2.0, "b" -> 3.0))
+  *     result <- tools.testCall("add", AddArgs(2.0, 3.0))
   *     _ = assertEquals(result.textContent, "5.0")
   *   yield ()
   * }

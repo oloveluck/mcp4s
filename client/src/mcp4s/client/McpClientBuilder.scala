@@ -32,32 +32,24 @@ import mcp4s.protocol.*
   * }}}
   */
 final class McpClientBuilder[F[_]: Concurrent] private (
-    private val clientInfo: ClientInfo,
-    private val roots: List[Root],
-    private val samplingHandler: Option[CreateMessageParams => F[CreateMessageResult]],
-    private val elicitationHandler: Option[ElicitParams => F[ElicitResult]],
-    private val elicitationCompleteHandler: Option[ElicitationCompleteParams => F[Unit]],
-    private val rootsListChanged: Boolean,
-    private val mcpSampling: Option[McpSamplings[F]],
-    private val mcpElicitation: Option[McpElicitations[F]],
-    private val mcpRoots: Option[McpRoots[F]]
+    private val state: McpClientBuilder.State[F]
 ):
 
   /** Set the client info */
   def withInfo(info: ClientInfo): McpClientBuilder[F] =
-    new McpClientBuilder(info, roots, samplingHandler, elicitationHandler, elicitationCompleteHandler, rootsListChanged, mcpSampling, mcpElicitation, mcpRoots)
+    new McpClientBuilder(state.copy(clientInfo = info))
 
   /** Set roots that can be exposed to servers */
   def withRoots(newRoots: List[Root]): McpClientBuilder[F] =
-    new McpClientBuilder(clientInfo, newRoots, samplingHandler, elicitationHandler, elicitationCompleteHandler, true, mcpSampling, mcpElicitation, mcpRoots)
+    new McpClientBuilder(state.copy(roots = newRoots, rootsListChanged = true))
 
   /** Set composed roots provider */
-  def withRoots(roots: McpRoots[F]): McpClientBuilder[F] =
-    new McpClientBuilder(clientInfo, this.roots, samplingHandler, elicitationHandler, elicitationCompleteHandler, true, mcpSampling, mcpElicitation, Some(roots))
+  def withRoots(roots: Roots[F]): McpClientBuilder[F] =
+    new McpClientBuilder(state.copy(rootsListChanged = true, mcpRoots = Some(roots)))
 
   /** Add a single root */
   def withRoot(root: Root): McpClientBuilder[F] =
-    withRoots(roots :+ root)
+    withRoots(state.roots :+ root)
 
   /** Add a root by URI and optional name */
   def withRoot(uri: String, name: Option[String] = None): McpClientBuilder[F] =
@@ -65,52 +57,52 @@ final class McpClientBuilder[F[_]: Concurrent] private (
 
   /** Register sampling handler for server-initiated LLM requests */
   def withSamplingHandler(handler: CreateMessageParams => F[CreateMessageResult]): McpClientBuilder[F] =
-    new McpClientBuilder(clientInfo, roots, Some(handler), elicitationHandler, elicitationCompleteHandler, rootsListChanged, mcpSampling, mcpElicitation, mcpRoots)
+    new McpClientBuilder(state.copy(samplingHandler = Some(handler)))
 
   /** Register composed sampling handler */
-  def withSampling(sampling: McpSamplings[F]): McpClientBuilder[F] =
-    new McpClientBuilder(clientInfo, roots, samplingHandler, elicitationHandler, elicitationCompleteHandler, rootsListChanged, Some(sampling), mcpElicitation, mcpRoots)
+  def withSampling(sampling: Samplings[F]): McpClientBuilder[F] =
+    new McpClientBuilder(state.copy(sampling = Some(sampling)))
 
   /** Register elicitation handler for server-initiated user input */
   def withElicitationHandler(handler: ElicitParams => F[ElicitResult]): McpClientBuilder[F] =
-    new McpClientBuilder(clientInfo, roots, samplingHandler, Some(handler), elicitationCompleteHandler, rootsListChanged, mcpSampling, mcpElicitation, mcpRoots)
+    new McpClientBuilder(state.copy(elicitationHandler = Some(handler)))
 
   /** Register composed elicitation handler */
-  def withElicitation(elicitation: McpElicitations[F]): McpClientBuilder[F] =
-    new McpClientBuilder(clientInfo, roots, samplingHandler, elicitationHandler, elicitationCompleteHandler, rootsListChanged, mcpSampling, Some(elicitation), mcpRoots)
+  def withElicitation(elicitation: Elicitations[F]): McpClientBuilder[F] =
+    new McpClientBuilder(state.copy(elicitation = Some(elicitation)))
 
   /** Register handler for URL mode elicitation completion notifications */
   def withElicitationCompleteHandler(handler: ElicitationCompleteParams => F[Unit]): McpClientBuilder[F] =
-    new McpClientBuilder(clientInfo, roots, samplingHandler, elicitationHandler, Some(handler), rootsListChanged, mcpSampling, mcpElicitation, mcpRoots)
+    new McpClientBuilder(state.copy(elicitationCompleteHandler = Some(handler)))
 
   /** Build the client with computed capabilities */
   def build: McpClient[F] =
     // Merge raw handlers with composed handlers (composed handlers take precedence)
-    val effectiveSampling = mcpSampling.orElse(samplingHandler.map(McpSamplings.apply[F]))
-    val effectiveElicitation = mcpElicitation.orElse(
-      elicitationHandler.map { handler =>
-        elicitationCompleteHandler match
-          case Some(complete) => McpElicitations.withComplete[F](handler, complete)
-          case None           => McpElicitations[F](handler)
+    val effectiveSampling = state.sampling.orElse(state.samplingHandler.map(Samplings.apply[F]))
+    val effectiveElicitation = state.elicitation.orElse(
+      state.elicitationHandler.map { handler =>
+        state.elicitationCompleteHandler match
+          case Some(complete) => Elicitations.withComplete[F](handler, complete)
+          case None           => Elicitations[F](handler)
       }
     )
 
-    val hasRoots = roots.nonEmpty || mcpRoots.isDefined
+    val hasRoots = state.roots.nonEmpty || state.mcpRoots.isDefined
     val caps = ClientCapabilities(
-      roots = if hasRoots then Some(RootsCapability(Some(rootsListChanged))) else None,
+      roots = if hasRoots then Some(RootsCapability(Some(state.rootsListChanged))) else None,
       sampling = effectiveSampling.map(_ => SamplingCapability()),
       elicitation = effectiveElicitation.map(_ => ElicitationCapability())
     )
-    new ComposedMcpClient[F](clientInfo, caps, roots, mcpRoots, effectiveSampling, effectiveElicitation)
+    new ComposedMcpClient[F](state.clientInfo, caps, state.roots, state.mcpRoots, effectiveSampling, effectiveElicitation)
 
 /** Client implementation using composed handlers */
 private[client] final class ComposedMcpClient[F[_]: Concurrent](
     val info: ClientInfo,
     val capabilities: ClientCapabilities,
     private val staticRoots: List[Root],
-    private val mcpRoots: Option[McpRoots[F]],
-    private val samplingHandler: Option[McpSamplings[F]],
-    private val elicitationHandler: Option[McpElicitations[F]]
+    private val mcpRoots: Option[Roots[F]],
+    private val samplingHandler: Option[Samplings[F]],
+    private val elicitationHandler: Option[Elicitations[F]]
 ) extends McpClient[F]:
 
   def listRoots: F[ListRootsResult] =
@@ -150,15 +142,17 @@ private[client] final class ComposedMcpClient[F[_]: Concurrent](
       case None          => Concurrent[F].unit
 
 object McpClientBuilder:
+  private case class State[F[_]](
+      clientInfo: ClientInfo = ClientInfo("mcp4s-client", "0.1.0"),
+      roots: List[Root] = Nil,
+      samplingHandler: Option[CreateMessageParams => F[CreateMessageResult]] = None,
+      elicitationHandler: Option[ElicitParams => F[ElicitResult]] = None,
+      elicitationCompleteHandler: Option[ElicitationCompleteParams => F[Unit]] = None,
+      rootsListChanged: Boolean = false,
+      sampling: Option[Samplings[F]] = None,
+      elicitation: Option[Elicitations[F]] = None,
+      mcpRoots: Option[Roots[F]] = None
+  )
+
   def empty[F[_]: Concurrent]: McpClientBuilder[F] =
-    new McpClientBuilder[F](
-      ClientInfo("mcp4s-client", "0.1.0"),
-      Nil,
-      None,
-      None,
-      None,
-      false,
-      None,
-      None,
-      None
-    )
+    new McpClientBuilder[F](State[F]())

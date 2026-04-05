@@ -6,7 +6,6 @@ import mcp4s.protocol.*
 import mcp4s.server.*
 import mcp4s.server.mcp
 import mcp4s.server.mcp.{ok, error, user, messages, pure}
-import mcp4s.server.auth.*
 import mcp4s.server.transport.*
 import org.typelevel.otel4s.trace.Tracer
 
@@ -49,15 +48,6 @@ case class CalculatePromptArgs(
   *   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
   */
 object CalculatorServer extends IOApp.Simple:
-
-  val authConfig: AuthConfig[IO] = AuthConfig[IO](
-    metadata = ProtectedResourceMetadata(
-      resource = "http://localhost:3000",
-      authorizationServers = List("https://auth.example.com"),
-      scopesSupported = Some(List("mcp:read", "mcp:write"))
-    ),
-    validator = TokenValidator.allowAll[IO]
-  )
 
   val mathTools: Tools[IO] =
     mcp.Tool[IO, AddArgs]("add", "Add two numbers") { args =>
@@ -115,6 +105,5 @@ object CalculatorServer extends IOApp.Simple:
 
   def run: IO[Unit] =
     given Tracer[IO] = Tracer.noop[IO]
-    val httpConfig = HttpConfig[IO](auth = Some(authConfig))
     IO.println("Starting Calculator MCP Server on http://localhost:3000") *>
-      HttpTransport.serve[IO](server, httpConfig).useForever
+      HttpTransport.serve[IO](server, HttpConfig[IO]()).useForever

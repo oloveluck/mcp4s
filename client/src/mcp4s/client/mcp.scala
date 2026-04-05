@@ -140,12 +140,12 @@ object mcp:
       * }
       * }}}
       */
-    def apply[F[_]: Concurrent](handler: CreateMessageParams => F[CreateMessageResult]): McpSamplings[F] =
-      McpSamplings[F](handler)
+    def apply[F[_]: Concurrent](handler: CreateMessageParams => F[CreateMessageResult]): Samplings[F] =
+      Samplings[F](handler)
 
     /** Create an empty sampling handler that handles nothing. */
-    def empty[F[_]: Applicative]: McpSamplings[F] =
-      McpSamplings.empty[F]
+    def empty[F[_]: Applicative]: Samplings[F] =
+      Samplings.empty[F]
 
   /** Namespaced elicitation handler constructors. */
   object Elicitation:
@@ -159,8 +159,8 @@ object mcp:
       * }
       * }}}
       */
-    def apply[F[_]: Concurrent](handler: ElicitParams => F[ElicitResult]): McpElicitations[F] =
-      McpElicitations[F](handler)
+    def apply[F[_]: Concurrent](handler: ElicitParams => F[ElicitResult]): Elicitations[F] =
+      Elicitations[F](handler)
 
     /** Create an elicitation handler with a complete notification handler.
       *
@@ -175,12 +175,12 @@ object mcp:
     def withComplete[F[_]: Concurrent](
         handler: ElicitParams => F[ElicitResult],
         onComplete: ElicitationCompleteParams => F[Unit]
-    ): McpElicitations[F] =
-      McpElicitations.withComplete[F](handler, onComplete)
+    ): Elicitations[F] =
+      Elicitations.withComplete[F](handler, onComplete)
 
     /** Create an empty elicitation handler that handles nothing. */
-    def empty[F[_]: Applicative]: McpElicitations[F] =
-      McpElicitations.empty[F]
+    def empty[F[_]: Applicative]: Elicitations[F] =
+      Elicitations.empty[F]
 
   /** Namespaced roots constructors. */
   object Roots:
@@ -195,8 +195,8 @@ object mcp:
       * )
       * }}}
       */
-    def apply[F[_]: Applicative](roots: Root*): McpRoots[F] =
-      McpRoots[F](roots*)
+    def apply[F[_]: Applicative](roots: Root*): mcp4s.client.Roots[F] =
+      mcp4s.client.Roots[F](roots*)
 
     /** Create a roots provider from URI and name.
       *
@@ -205,12 +205,12 @@ object mcp:
       * val workspace = Roots[IO]("file:///workspace", "Workspace")
       * }}}
       */
-    def apply[F[_]: Applicative](uri: String, name: String): McpRoots[F] =
-      McpRoots[F](Root(uri, Some(name)))
+    def apply[F[_]: Applicative](uri: String, name: String): mcp4s.client.Roots[F] =
+      mcp4s.client.Roots[F](Root(uri, Some(name)))
 
     /** Create an empty roots provider with no roots. */
-    def empty[F[_]: Applicative]: McpRoots[F] =
-      McpRoots.empty[F]
+    def empty[F[_]: Applicative]: mcp4s.client.Roots[F] =
+      mcp4s.client.Roots.empty[F]
 
   // === Pure Extension ===
 

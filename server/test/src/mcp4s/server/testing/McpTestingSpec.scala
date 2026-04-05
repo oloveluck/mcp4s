@@ -13,9 +13,11 @@ class McpTestingSpec extends CatsEffectSuite:
 
   // === ToolsTest Extension Tests ===
 
+  case class CalcArgs(a: Double, b: Double) derives ToolInput
+
   val calcTools: Tools[IO] =
-    McpTool.twoNumbersPure[IO]("add", "Add") { (a, b) => s"${a + b}" } |+|
-    McpTool.twoNumbersPure[IO]("subtract", "Subtract") { (a, b) => s"${a - b}" }
+    McpTool.pureText[IO, CalcArgs]("add", "Add") { args => s"${args.a + args.b}" } |+|
+    McpTool.pureText[IO, CalcArgs]("subtract", "Subtract") { args => s"${args.a - args.b}" }
 
   test("testCall with typed arguments") {
     case class AddArgs(a: Double, b: Double) derives ToolInput, Encoder.AsObject

@@ -94,9 +94,9 @@ object McpClient:
     */
   def from[F[_]: Concurrent](
       info: ClientInfo,
-      roots: Option[McpRoots[F]] = None,
-      sampling: Option[McpSamplings[F]] = None,
-      elicitation: Option[McpElicitations[F]] = None
+      roots: Option[Roots[F]] = None,
+      sampling: Option[Samplings[F]] = None,
+      elicitation: Option[Elicitations[F]] = None
   ): McpClient[F] =
     val caps = ClientCapabilities(
       roots = roots.map(_ => RootsCapability(Some(true))),

@@ -13,12 +13,12 @@ import mcp4s.protocol.*
   *
   * Example:
   * {{{
-  * val mock = McpSamplings[IO](params => IO.pure(result))
-  * val fallback = McpSamplings[IO](params => IO.pure(defaultResult))
+  * val mock = Samplings[IO](params => IO.pure(result))
+  * val fallback = Samplings[IO](params => IO.pure(defaultResult))
   * val combined = mock |+| fallback
   * }}}
   */
-trait McpSamplings[F[_]]:
+trait Samplings[F[_]]:
 
   /** Handle a sampling/createMessage request.
     *
@@ -26,28 +26,28 @@ trait McpSamplings[F[_]]:
     */
   def handle(params: CreateMessageParams): OptionT[F, CreateMessageResult]
 
-object McpSamplings:
+object Samplings:
 
   /** Create a sampling handler from a function.
     *
     * The function is wrapped to always return Some, indicating it handles
     * all requests.
     */
-  def apply[F[_]: Concurrent](handler: CreateMessageParams => F[CreateMessageResult]): McpSamplings[F] =
-    new McpSamplings[F]:
+  def apply[F[_]: Concurrent](handler: CreateMessageParams => F[CreateMessageResult]): Samplings[F] =
+    new Samplings[F]:
       def handle(params: CreateMessageParams): OptionT[F, CreateMessageResult] =
         OptionT.liftF(handler(params))
 
   /** Create an empty sampling handler that handles nothing. */
-  def empty[F[_]: Applicative]: McpSamplings[F] =
-    new McpSamplings[F]:
+  def empty[F[_]: Applicative]: Samplings[F] =
+    new Samplings[F]:
       def handle(params: CreateMessageParams): OptionT[F, CreateMessageResult] =
         OptionT.none[F, CreateMessageResult]
 
   /** Semigroup instance that combines handlers by trying each in order. */
-  given [F[_]: Concurrent]: Semigroup[McpSamplings[F]] with
-    def combine(x: McpSamplings[F], y: McpSamplings[F]): McpSamplings[F] =
-      new McpSamplings[F]:
+  given [F[_]: Concurrent]: Semigroup[Samplings[F]] with
+    def combine(x: Samplings[F], y: Samplings[F]): Samplings[F] =
+      new Samplings[F]:
         def handle(params: CreateMessageParams): OptionT[F, CreateMessageResult] =
           x.handle(params).orElse(y.handle(params))
 
@@ -58,12 +58,12 @@ object McpSamplings:
   *
   * Example:
   * {{{
-  * val formHandler = McpElicitations[IO](params => IO.pure(accept))
-  * val urlHandler = McpElicitations[IO](params => IO.pure(decline))
+  * val formHandler = Elicitations[IO](params => IO.pure(accept))
+  * val urlHandler = Elicitations[IO](params => IO.pure(decline))
   * val combined = formHandler |+| urlHandler
   * }}}
   */
-trait McpElicitations[F[_]]:
+trait Elicitations[F[_]]:
 
   /** Handle an elicitation/create request.
     *
@@ -74,15 +74,15 @@ trait McpElicitations[F[_]]:
   /** Handle an elicitation complete notification. */
   def onComplete(params: ElicitationCompleteParams): F[Unit]
 
-object McpElicitations:
+object Elicitations:
 
   /** Create an elicitation handler from a function.
     *
     * The function is wrapped to always return Some, indicating it handles
     * all requests. The onComplete handler is a no-op.
     */
-  def apply[F[_]: Concurrent](handler: ElicitParams => F[ElicitResult]): McpElicitations[F] =
-    new McpElicitations[F]:
+  def apply[F[_]: Concurrent](handler: ElicitParams => F[ElicitResult]): Elicitations[F] =
+    new Elicitations[F]:
       def handle(params: ElicitParams): OptionT[F, ElicitResult] =
         OptionT.liftF(handler(params))
       def onComplete(params: ElicitationCompleteParams): F[Unit] =
@@ -92,25 +92,25 @@ object McpElicitations:
   def withComplete[F[_]: Concurrent](
       handler: ElicitParams => F[ElicitResult],
       completeHandler: ElicitationCompleteParams => F[Unit]
-  ): McpElicitations[F] =
-    new McpElicitations[F]:
+  ): Elicitations[F] =
+    new Elicitations[F]:
       def handle(params: ElicitParams): OptionT[F, ElicitResult] =
         OptionT.liftF(handler(params))
       def onComplete(params: ElicitationCompleteParams): F[Unit] =
         completeHandler(params)
 
   /** Create an empty elicitation handler that handles nothing. */
-  def empty[F[_]: Applicative]: McpElicitations[F] =
-    new McpElicitations[F]:
+  def empty[F[_]: Applicative]: Elicitations[F] =
+    new Elicitations[F]:
       def handle(params: ElicitParams): OptionT[F, ElicitResult] =
         OptionT.none[F, ElicitResult]
       def onComplete(params: ElicitationCompleteParams): F[Unit] =
         Applicative[F].unit
 
   /** Semigroup instance that combines handlers by trying each in order. */
-  given [F[_]: Concurrent]: Semigroup[McpElicitations[F]] with
-    def combine(x: McpElicitations[F], y: McpElicitations[F]): McpElicitations[F] =
-      new McpElicitations[F]:
+  given [F[_]: Concurrent]: Semigroup[Elicitations[F]] with
+    def combine(x: Elicitations[F], y: Elicitations[F]): Elicitations[F] =
+      new Elicitations[F]:
         def handle(params: ElicitParams): OptionT[F, ElicitResult] =
           x.handle(params).orElse(y.handle(params))
         def onComplete(params: ElicitationCompleteParams): F[Unit] =
@@ -123,35 +123,35 @@ object McpElicitations:
   *
   * Example:
   * {{{
-  * val workspace = McpRoots[IO](Root("file:///workspace", Some("Workspace")))
-  * val home = McpRoots[IO](Root("file:///home", Some("Home")))
+  * val workspace = Roots[IO](Root("file:///workspace", Some("Workspace")))
+  * val home = Roots[IO](Root("file:///home", Some("Home")))
   * val combined = workspace |+| home
   * }}}
   */
-trait McpRoots[F[_]]:
+trait Roots[F[_]]:
 
   /** List all roots. */
   def list: F[List[Root]]
 
-object McpRoots:
+object Roots:
 
   /** Create a roots provider from varargs of roots. */
-  def apply[F[_]: Applicative](roots: Root*): McpRoots[F] =
-    new McpRoots[F]:
+  def apply[F[_]: Applicative](roots: Root*): Roots[F] =
+    new Roots[F]:
       def list: F[List[Root]] = Applicative[F].pure(roots.toList)
 
   /** Convenience constructor for a single root with URI and name. */
-  def apply[F[_]: Applicative](uri: String, name: String): McpRoots[F] =
+  def apply[F[_]: Applicative](uri: String, name: String): Roots[F] =
     apply[F](Root(uri, Some(name)))
 
   /** Create an empty roots provider with no roots. */
-  def empty[F[_]: Applicative]: McpRoots[F] =
-    new McpRoots[F]:
+  def empty[F[_]: Applicative]: Roots[F] =
+    new Roots[F]:
       def list: F[List[Root]] = Applicative[F].pure(Nil)
 
   /** Semigroup instance that concatenates root lists. */
-  given [F[_]: Applicative]: Semigroup[McpRoots[F]] with
-    def combine(x: McpRoots[F], y: McpRoots[F]): McpRoots[F] =
-      new McpRoots[F]:
+  given [F[_]: Applicative]: Semigroup[Roots[F]] with
+    def combine(x: Roots[F], y: Roots[F]): Roots[F] =
+      new Roots[F]:
         def list: F[List[Root]] =
           (x.list, y.list).mapN(_ ++ _)

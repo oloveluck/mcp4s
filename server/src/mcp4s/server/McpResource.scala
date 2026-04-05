@@ -13,13 +13,10 @@ import mcp4s.protocol.*
   * They optionally carry a change stream for subscription support.
   *
   * {{{
-  * val readme = McpResource[IO]("file:///readme", "README") {
-  *   IO.pure(ResourceContent.text("file:///readme", "Hello world"))
-  * }
+  * import mcp4s.server.mcp.*
   *
-  * val config = McpResource[IO]("file:///config", "Config") {
-  *   IO.pure(ResourceContent.text("file:///config", "{}"))
-  * }
+  * val readme = Resource.text[IO]("file:///readme", "README")("Hello world")
+  * val config = Resource.text[IO]("file:///config", "Config")("{}")
   *
   * val allResources: Resources[IO] = readme |+| config
   * }}}
@@ -117,8 +114,8 @@ object Resources:
           .replaceAll("\\{[^}]+\\}", "[^/]+")
         uri.matches(regexPattern)
 
-/** Factory for creating standalone resource values */
-object McpResource:
+/** Internal resource factory. Use `Resource` from `import mcp4s.server.mcp.*` instead. */
+private[server] object McpResource:
 
   /** Create a static text resource */
   def apply[F[_]: Concurrent](uri: String, name: String)(content: => String): Resources[F] =
@@ -150,7 +147,7 @@ object McpResource:
     *
     * Example:
     * {{{
-    * val watched = McpResource.subscribable[IO](
+    * val watched = Resource.subscribable[IO](
     *   "file:///config.json", "Config",
     *   fileWatcher.events.filter(_ == "config.json").void
     * ) { _ =>
@@ -179,7 +176,7 @@ object McpResource:
     *
     * Example:
     * {{{
-    * val metrics = McpResource.polling[IO](
+    * val metrics = Resource.polling[IO](
     *   "metrics://cpu", "CPU Metrics",
     *   5.seconds, checkCpuChanged
     * ) { _ => getCpuMetrics.map(text(_, _)) }

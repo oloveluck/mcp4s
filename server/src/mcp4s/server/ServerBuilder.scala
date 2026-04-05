@@ -20,55 +20,49 @@ import mcp4s.protocol.*
   * }}}
   */
 final class ServerBuilder[F[_]: Concurrent] private (
-    private val serverInfo: ServerInfo,
-    private val tools: Map[String, (Tool, Json => F[ToolResult])],
-    private val contextTools: Map[String, (Tool, (Json, ToolContext[F]) => F[ToolResult])],
-    private val resources: Map[String, (Resource, String => F[ResourceContent])],
-    private val resourceTemplates: List[ResourceTemplate],
-    private val templateHandlers: Map[String, String => F[ResourceContent]],
-    private val prompts: Map[String, (Prompt, Map[String, String] => F[GetPromptResult])],
-    private val mcpTools: Option[Tools[F]],
-    private val mcpResources: Option[Resources[F]],
-    private val mcpPrompts: Option[Prompts[F]]
+    private val state: ServerBuilder.State[F]
 ):
 
   /** Set the server info */
   def withInfo(info: ServerInfo): ServerBuilder[F] =
-    new ServerBuilder(info, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts, mcpTools, mcpResources, mcpPrompts)
+    new ServerBuilder(state.copy(serverInfo = info))
 
   /** Register a tool with its handler */
   def withTool(tool: Tool, handler: Json => F[ToolResult]): ServerBuilder[F] =
-    new ServerBuilder(serverInfo, tools + (tool.name -> (tool, handler)), contextTools, resources, resourceTemplates, templateHandlers, prompts, mcpTools, mcpResources, mcpPrompts)
+    new ServerBuilder(state.copy(tools = state.tools + (tool.name -> (tool, handler))))
 
   /** Register a context-aware tool with its handler */
   def withToolWithContext(tool: Tool, handler: (Json, ToolContext[F]) => F[ToolResult]): ServerBuilder[F] =
-    new ServerBuilder(serverInfo, tools, contextTools + (tool.name -> (tool, handler)), resources, resourceTemplates, templateHandlers, prompts, mcpTools, mcpResources, mcpPrompts)
+    new ServerBuilder(state.copy(contextTools = state.contextTools + (tool.name -> (tool, handler))))
 
   /** Register a resource with its handler */
   def withResource(resource: Resource, handler: String => F[ResourceContent]): ServerBuilder[F] =
-    new ServerBuilder(serverInfo, tools, contextTools, resources + (resource.uri -> (resource, handler)), resourceTemplates, templateHandlers, prompts, mcpTools, mcpResources, mcpPrompts)
+    new ServerBuilder(state.copy(resources = state.resources + (resource.uri -> (resource, handler))))
 
   /** Register a resource template without a handler (for listing only) */
   def withResourceTemplate(template: ResourceTemplate): ServerBuilder[F] =
-    new ServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates :+ template, templateHandlers, prompts, mcpTools, mcpResources, mcpPrompts)
+    new ServerBuilder(state.copy(resourceTemplates = state.resourceTemplates :+ template))
 
   /** Register a resource template with a handler for reading */
   def withResourceTemplate(template: ResourceTemplate, handler: String => F[ResourceContent]): ServerBuilder[F] =
-    new ServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates :+ template, templateHandlers + (template.uriTemplate -> handler), prompts, mcpTools, mcpResources, mcpPrompts)
+    new ServerBuilder(state.copy(
+      resourceTemplates = state.resourceTemplates :+ template,
+      templateHandlers = state.templateHandlers + (template.uriTemplate -> handler)
+    ))
 
   /** Register a prompt with its handler */
   def withPrompt(
       prompt: Prompt,
       handler: Map[String, String] => F[GetPromptResult]
   ): ServerBuilder[F] =
-    new ServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts + (prompt.name -> (prompt, handler)), mcpTools, mcpResources, mcpPrompts)
+    new ServerBuilder(state.copy(prompts = state.prompts + (prompt.name -> (prompt, handler))))
 
   /** Register tool routes (composable with <+>) */
   def withTools(newTools: Tools[F]): ServerBuilder[F] =
-    val combined = mcpTools match
+    val combined = state.mcpTools match
       case Some(existing) => Some(existing <+> newTools)
       case None           => Some(newTools)
-    new ServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts, combined, mcpResources, mcpPrompts)
+    new ServerBuilder(state.copy(mcpTools = combined))
 
   /** Register composed Resources (composable with <+>)
     *
@@ -84,10 +78,10 @@ final class ServerBuilder[F[_]: Concurrent] private (
     * }}}
     */
   def withResources(newResources: Resources[F]): ServerBuilder[F] =
-    val combined = mcpResources match
+    val combined = state.mcpResources match
       case Some(existing) => Some(existing <+> newResources)
       case None           => Some(newResources)
-    new ServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts, mcpTools, combined, mcpPrompts)
+    new ServerBuilder(state.copy(mcpResources = combined))
 
   /** Register composed Prompts (composable with <+>)
     *
@@ -103,10 +97,10 @@ final class ServerBuilder[F[_]: Concurrent] private (
     * }}}
     */
   def withPrompts(newPrompts: Prompts[F]): ServerBuilder[F] =
-    val combined = mcpPrompts match
+    val combined = state.mcpPrompts match
       case Some(existing) => Some(existing <+> newPrompts)
       case None           => Some(newPrompts)
-    new ServerBuilder(serverInfo, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts, mcpTools, mcpResources, combined)
+    new ServerBuilder(state.copy(mcpPrompts = combined))
 
   // === Simplified DSL Methods ===
 
@@ -243,9 +237,9 @@ final class ServerBuilder[F[_]: Concurrent] private (
 
   /** Build the server with computed capabilities */
   def build: Server[F] =
-    val hasTools = tools.nonEmpty || contextTools.nonEmpty || mcpTools.isDefined
-    val hasResources = resources.nonEmpty || resourceTemplates.nonEmpty || mcpResources.isDefined
-    val hasPrompts = prompts.nonEmpty || mcpPrompts.isDefined
+    val hasTools = state.tools.nonEmpty || state.contextTools.nonEmpty || state.mcpTools.isDefined
+    val hasResources = state.resources.nonEmpty || state.resourceTemplates.nonEmpty || state.mcpResources.isDefined
+    val hasPrompts = state.prompts.nonEmpty || state.mcpPrompts.isDefined
     val caps = ServerCapabilities(
       tools = if hasTools then Some(ToolsCapability()) else None,
       resources = if hasResources then Some(ResourcesCapability(subscribe = Some(true))) else None,
@@ -253,7 +247,7 @@ final class ServerBuilder[F[_]: Concurrent] private (
       logging = Some(LoggingCapability()),
       completions = Some(CompletionsCapability())
     )
-    new BuiltServer[F](serverInfo, caps, tools, contextTools, resources, resourceTemplates, templateHandlers, prompts, mcpTools, mcpResources, mcpPrompts)
+    new BuiltServer[F](state.serverInfo, caps, state.tools, state.contextTools, state.resources, state.resourceTemplates, state.templateHandlers, state.prompts, state.mcpTools, state.mcpResources, state.mcpPrompts)
 
 private final class BuiltServer[F[_]: Concurrent](
     val info: ServerInfo,
@@ -389,16 +383,24 @@ private final class BuiltServer[F[_]: Concurrent](
             Concurrent[F].raiseError(McpError.PromptNotFound(name))
 
 object ServerBuilder:
+  private case class State[F[_]](
+      serverInfo: ServerInfo = ServerInfo("mcp4s", "0.1.0"),
+      tools: Map[String, (Tool, Json => F[ToolResult])] = Map.empty,
+      contextTools: Map[String, (Tool, (Json, ToolContext[F]) => F[ToolResult])] = Map.empty,
+      resources: Map[String, (Resource, String => F[ResourceContent])] = Map.empty,
+      resourceTemplates: List[ResourceTemplate] = Nil,
+      templateHandlers: Map[String, String => F[ResourceContent]] = Map.empty,
+      prompts: Map[String, (Prompt, Map[String, String] => F[GetPromptResult])] = Map.empty,
+      mcpTools: Option[Tools[F]] = None,
+      mcpResources: Option[Resources[F]] = None,
+      mcpPrompts: Option[Prompts[F]] = None
+  )
+
   def empty[F[_]: Concurrent]: ServerBuilder[F] =
-    new ServerBuilder[F](
-      ServerInfo("mcp4s", "0.1.0"),
-      Map.empty,
-      Map.empty,
-      Map.empty,
-      Nil,
-      Map.empty,
-      Map.empty,
-      None,
-      None,
-      None
-    )
+    new ServerBuilder[F](State[F](
+      tools = Map.empty[String, (Tool, Json => F[ToolResult])],
+      contextTools = Map.empty[String, (Tool, (Json, ToolContext[F]) => F[ToolResult])],
+      resources = Map.empty[String, (Resource, String => F[ResourceContent])],
+      templateHandlers = Map.empty[String, String => F[ResourceContent]],
+      prompts = Map.empty[String, (Prompt, Map[String, String] => F[GetPromptResult])]
+    ))

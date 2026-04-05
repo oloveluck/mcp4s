@@ -14,24 +14,19 @@ import org.http4s.dsl.Http4sDsl
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.headers.{Allow, `Content-Type`}
 import org.http4s.server.{Router, Server as Http4sServer}
-import org.http4s.server.middleware.CORS
 import org.typelevel.ci.CIString
 import org.typelevel.otel4s.Attribute
 import org.typelevel.otel4s.context.propagation.TextMapGetter
 import org.typelevel.otel4s.trace.Tracer
-import org.typelevel.vault.Key
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 import mcp4s.server.*
-import mcp4s.server.auth.{AuthConfig, AuthMiddleware}
 
 /** Streamable HTTP transport configuration */
 final case class HttpConfig[F[_]](
     host: Host = host"0.0.0.0",
     port: Port = port"3000",
     path: String = "mcp",
-    enableCors: Boolean = true,
-    auth: Option[AuthConfig[F]] = None,
     enableSessions: Boolean = true,
     /** Session configuration for timeout, queue sizes, etc. */
     sessionConfig: SessionConfig = SessionConfig.default
@@ -95,52 +90,43 @@ object HttpTransport:
       nel.toList.exists(_.value.contains("text/event-stream"))
     }
 
+  /** Return the raw MCP `HttpRoutes` without CORS or auth wrapping.
+    *
+    * Use this to embed MCP routes in an existing http4s application and compose
+    * standard http4s middleware (CORS, auth, etc.) yourself.
+    *
+    * @param server The MCP server to serve
+    * @param config HTTP configuration
+    */
+  def routes[F[_]: Async: Network](
+      server: Server[F],
+      config: HttpConfig[F] = HttpConfig.default[F]
+  )(using Tracer[F]): CatsResource[F, HttpRoutes[F]] =
+    if config.enableSessions then
+      SessionManager.withCleanup[F](server, config.sessionConfig).map { sessionManager =>
+        createSessionRoutes(sessionManager, config.path, config.host, summon[Tracer[F]])
+      }
+    else
+      CatsResource.eval(mcp4s.server.Dispatcher[F](server)).map { dispatcher =>
+        createLegacyRoutes(dispatcher, config.path, config.host, summon[Tracer[F]])
+      }
+
   /** Start an HTTP server for the given MCP server.
     *
     * @param server The MCP server to serve
     * @param config HTTP configuration
-    * @param tracer Optional OpenTelemetry tracer for distributed tracing (defaults to noop)
     */
   def serve[F[_]: Async: Network](
       server: Server[F],
       config: HttpConfig[F] = HttpConfig.default[F]
   )(using Tracer[F]): CatsResource[F, Http4sServer] =
     for
-      tokenKey <- CatsResource.eval(AuthMiddleware.tokenInfoKey[F])
-      given Key[TokenInfo] = tokenKey
-      baseRoutes <- if config.enableSessions then
-        // Use SessionManager with automatic cleanup loop
-        SessionManager.withCleanup[F](server, config.sessionConfig).map { sessionManager =>
-          createSessionRoutes(sessionManager, config.path, config.host, summon[Tracer[F]])
-        }
-      else
-        // Legacy mode: single shared dispatcher (not MCP compliant)
-        CatsResource.eval(mcp4s.server.Dispatcher[F](server)).map { dispatcher =>
-          createLegacyRoutes(dispatcher, config.path, config.host, summon[Tracer[F]])
-        }
-
-      // Apply auth middleware if configured
-      protectedRoutes = config.auth match
-        case Some(authConfig) => AuthMiddleware[F](authConfig, baseRoutes)
-        case None => baseRoutes
-
-      // Add metadata endpoint if auth configured (must be outside auth middleware)
-      allRoutes = config.auth match
-        case Some(authConfig) =>
-          AuthMiddleware.metadataRoutes[F](authConfig) <+> protectedRoutes
-        case None => protectedRoutes
-
-      corsRoutes = if config.enableCors then
-        CORS.policy
-          .withAllowOriginAll
-          .withExposeHeadersAll  // Expose Mcp-Session-Id for browser clients
-          (allRoutes)
-      else allRoutes
+      mcpRoutes <- routes(server, config)
       httpServer <- EmberServerBuilder
         .default[F]
         .withHost(config.host)
         .withPort(config.port)
-        .withHttpApp(Router("/" -> corsRoutes).orNotFound)
+        .withHttpApp(Router("/" -> mcpRoutes).orNotFound)
         .withIdleTimeout(scala.concurrent.duration.FiniteDuration(10, "min")) // SSE streams need long idle timeout
         .build
     yield httpServer

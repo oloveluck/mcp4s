@@ -207,9 +207,11 @@ class ResourceSubscriptionSpec extends CatsEffectSuite:
       // Trigger both
       _ <- signal1.set(true)
       _ <- signal2.set(true)
-      _ <- IO.sleep(100.millis)
 
+      // Wait until both changes are observed (with timeout to avoid hanging)
       changes <- changesRef.get
+        .iterateUntil(c => c.contains("file:///a.txt") && c.contains("file:///b.txt"))
+        .timeout(5.seconds)
       _ = assert(changes.contains("file:///a.txt"))
       _ = assert(changes.contains("file:///b.txt"))
 

@@ -73,7 +73,7 @@ object syntax:
     /** Serve the server over HTTP with custom configuration.
       *
       * {{{
-      * server.serveHttpWith(HttpConfig(port = port"8080", enableCors = false))
+      * server.serveHttpWith(HttpConfig(port = port"8080", path = "api"))
       *   .useForever
       * }}}
       */
