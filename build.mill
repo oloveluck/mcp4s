@@ -39,7 +39,7 @@ trait Mcp4sModule extends Cross.Module[String] with ScalaModule with ScalafmtMod
 
   def pomSettings = PomSettings(
     description = "MCP (Model Context Protocol) for Scala",
-    organization = "io.github.mcp4s",
+    organization = "io.github.oloveluck",
     url = "https://github.com/mcp4s/mcp4s",
     licenses = Seq(License.`Apache-2.0`),
     versionControl = VersionControl.github("mcp4s", "mcp4s"),
