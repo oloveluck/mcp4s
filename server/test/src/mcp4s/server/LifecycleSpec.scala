@@ -10,6 +10,8 @@ import munit.CatsEffectSuite
 
 class LifecycleSpec extends CatsEffectSuite:
 
+  case class CalcArgs(a: Double, b: Double) derives ToolInput
+
   // === McpLifecycleTool Tests ===
 
   test("McpLifecycleTool.apply creates tool with managed resource") {
@@ -138,8 +140,8 @@ class LifecycleSpec extends CatsEffectSuite:
           counter.get.map(v => ToolResult.text(s"$v"))
       }
 
-      staticTool = McpTool.twoNumbersPure[IO]("add", "Add numbers") { (a, b) =>
-        s"${a + b}"
+      staticTool = McpTool.pureText[IO, CalcArgs]("add", "Add numbers") { args =>
+        s"${args.a + args.b}"
       }
 
       combined = McpLifecycleTool.combineWith[IO](lifecycleTool, staticTool)

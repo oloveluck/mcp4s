@@ -15,7 +15,6 @@ import org.http4s.circe.*
 import org.http4s.dsl.Http4sDsl
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.{Router, Server as Http4sServer}
-import org.http4s.server.middleware.CORS
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
 import org.typelevel.otel4s.trace.Tracer
@@ -27,7 +26,6 @@ import mcp4s.server.*
 final case class WebSocketConfig(
     host: Host = host"0.0.0.0",
     port: Port = port"3000",
-    enableCors: Boolean = true,
     path: String = "ws"
 )
 
@@ -49,11 +47,35 @@ object WebSocketConfig:
   */
 object WebSocketTransport:
 
+  /** Return the raw MCP WebSocket `HttpRoutes` without any middleware wrapping.
+    *
+    * Use this to embed MCP WebSocket routes in an existing http4s application and
+    * compose standard http4s middleware (CORS, auth, etc.) yourself.
+    *
+    * @param server The MCP server to serve
+    * @param wsb WebSocket builder from http4s
+    * @param config WebSocket configuration
+    */
+  def routes[F[_]: Async](
+      server: Server[F],
+      wsb: WebSocketBuilder2[F],
+      config: WebSocketConfig = WebSocketConfig.default
+  )(using Tracer[F]): HttpRoutes[F] =
+    val dsl = new Http4sDsl[F] {}
+    import dsl.*
+
+    HttpRoutes.of[F] {
+      case GET -> Root / config.path =>
+        createWebSocket(server, wsb, summon[Tracer[F]])
+
+      case GET -> Root / "health" =>
+        Ok(Json.obj("status" -> Json.fromString("ok")))
+    }
+
   /** Start a WebSocket server for the given MCP server.
     *
     * @param server The MCP server to serve
     * @param config WebSocket configuration
-    * @param tracer OpenTelemetry tracer for distributed tracing
     */
   def serve[F[_]: Async: Network](
       server: Server[F],
@@ -63,35 +85,8 @@ object WebSocketTransport:
       .default[F]
       .withHost(config.host)
       .withPort(config.port)
-      .withHttpWebSocketApp(wsb => createApp(server, wsb, config, summon[Tracer[F]]))
+      .withHttpWebSocketApp(wsb => Router("/" -> routes(server, wsb, config)).orNotFound)
       .build
-
-  private def createApp[F[_]: Async](
-      server: Server[F],
-      wsb: WebSocketBuilder2[F],
-      config: WebSocketConfig,
-      tracer: Tracer[F]
-  ): HttpApp[F] =
-    val routes = createRoutes(server, wsb, config, tracer)
-    val corsRoutes = if config.enableCors then CORS.policy.withAllowOriginAll(routes) else routes
-    Router("/" -> corsRoutes).orNotFound
-
-  private def createRoutes[F[_]: Async](
-      server: Server[F],
-      wsb: WebSocketBuilder2[F],
-      config: WebSocketConfig,
-      tracer: Tracer[F]
-  ): HttpRoutes[F] =
-    val dsl = new Http4sDsl[F] {}
-    import dsl.*
-
-    HttpRoutes.of[F] {
-      case GET -> Root / config.path =>
-        createWebSocket(server, wsb, tracer)
-
-      case GET -> Root / "health" =>
-        Ok(Json.obj("status" -> Json.fromString("ok")))
-    }
 
   private def createWebSocket[F[_]: Async](
       server: Server[F],

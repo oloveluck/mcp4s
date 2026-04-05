@@ -41,16 +41,16 @@ object ConformanceServer extends IOApp.Simple:
   ) derives PromptInput
 
   val simpleTools: Tools[IO] =
-    mcp.Tool[IO]("test_simple_text", "Tests simple text content response") {
-      ok("This is a simple text response for testing.").pure[IO]
+    mcp.Tool.text[IO]("test_simple_text", "Tests simple text content response") {
+      "This is a simple text response for testing."
     } |+|
-    mcp.Tool[IO]("test_image_content", "Tests image content response") {
+    mcp.Tool.withContext[IO]("test_image_content", "Tests image content response") { _ =>
       content(imageContent(TestImageBase64, "image/png")).pure[IO]
     } |+|
-    mcp.Tool[IO]("test_audio_content", "Tests audio content response") {
+    mcp.Tool.withContext[IO]("test_audio_content", "Tests audio content response") { _ =>
       content(audioContent(TestAudioBase64, "audio/wav")).pure[IO]
     } |+|
-    mcp.Tool[IO]("test_embedded_resource", "Tests embedded resource content response") {
+    mcp.Tool.withContext[IO]("test_embedded_resource", "Tests embedded resource content response") { _ =>
       ToolResult(List(
         ResourceContentRef(
           uri = "test://embedded-resource",
@@ -59,7 +59,7 @@ object ConformanceServer extends IOApp.Simple:
         )
       )).pure[IO]
     } |+|
-    mcp.Tool[IO]("test_multiple_content_types", "Tests response with multiple content types") {
+    mcp.Tool.withContext[IO]("test_multiple_content_types", "Tests response with multiple content types") { _ =>
       ToolResult(List(
         textContent("Multiple content types test:"),
         imageContent(TestImageBase64, "image/png"),
@@ -70,11 +70,11 @@ object ConformanceServer extends IOApp.Simple:
         )
       )).pure[IO]
     } |+|
-    mcp.Tool[IO]("test_error_handling", "Tests error response handling") {
+    mcp.Tool.withContext[IO]("test_error_handling", "Tests error response handling") { _ =>
       error("This tool intentionally returns an error for testing").pure[IO]
     } |+|
-    mcp.Tool[IO]("test_reconnection", "Tests SSE stream disconnection and client reconnection") {
-      ok("Reconnection test completed successfully. If you received this, the client properly reconnected after stream closure.").pure[IO]
+    mcp.Tool.text[IO]("test_reconnection", "Tests SSE stream disconnection and client reconnection") {
+      "Reconnection test completed successfully. If you received this, the client properly reconnected after stream closure."
     }
 
   val contextTools: Tools[IO] =

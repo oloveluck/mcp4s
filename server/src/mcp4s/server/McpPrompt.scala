@@ -11,10 +11,12 @@ import mcp4s.protocol.*
   * Prompts are standalone typed values that compose via `|+|`.
   *
   * {{{
+  * import mcp4s.server.mcp.*
+  *
   * case class GreetArgs(name: String) derives PromptInput
   *
-  * val greeting = McpPrompt[IO, GreetArgs]("greet", "Greet someone") { args =>
-  *   IO.pure(GetPromptResult(None, List(PromptMessage(Role.User, TextContent(s"Hi ${args.name}")))))
+  * val greeting = Prompt[IO, GreetArgs]("greet", "Greet someone") { args =>
+  *   IO.pure(messages(user(s"Hi ${args.name}")))
   * }
   * }}}
   */
@@ -53,8 +55,8 @@ object Prompts:
     def <+>(other: Prompts[F]): Prompts[F] =
       combine(prompts, other)
 
-/** Factory for creating standalone prompt values */
-object McpPrompt:
+/** Internal prompt factory. Use `Prompt` from `import mcp4s.server.mcp.*` instead. */
+private[server] object McpPrompt:
 
   /** Create a prompt with PromptInput-based arguments */
   def apply[F[_]: Concurrent, A: PromptInput](name: String, description: String)(

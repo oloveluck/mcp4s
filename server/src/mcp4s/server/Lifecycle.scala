@@ -12,7 +12,10 @@ import mcp4s.protocol.*
   *
   * Example:
   * {{{
-  * val dbTool = McpTool.withLifecycle[IO, QueryArgs, Connection](
+  * import mcp4s.server.mcp.*
+  *
+  * // Use McpLifecycleTool for tools that need managed resources:
+  * val dbTool = McpLifecycleTool[IO, QueryArgs, Connection](
   *   "query",
   *   "Run SQL query",
   *   acquire = Database.connection(config)

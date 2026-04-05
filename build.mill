@@ -4,6 +4,7 @@ import mill._
 import mill.scalalib._
 import mill.scalalib.scalafmt._
 import mill.scalalib.publish._
+import mill.scalajslib._
 
 object Versions {
   val scala3 = "3.3.4"
@@ -17,6 +18,9 @@ object Versions {
   val sttp = "4.0.13"
   val munitCatsEffect = "2.1.0"
   val munitScalaCheck = "1.0.0"
+  val scalaJS = "1.17.0"
+  val scalatags = "0.13.1"
+  val scalajsDom = "2.8.0"
 }
 
 trait Mcp4sModule extends Cross.Module[String] with ScalaModule with ScalafmtModule with PublishModule {
@@ -101,21 +105,10 @@ trait ClientModule extends Mcp4sModule {
   object test extends Mcp4sTests
 }
 
-object agent extends Cross[AgentModule](Versions.scalaVersions)
-trait AgentModule extends Mcp4sModule {
-  def artifactName = "mcp4s-agent"
-  def moduleDeps = Seq(core(crossValue), client(crossValue), server(crossValue))
-  def mvnDeps = Seq(
-    mvn"org.typelevel::cats-effect::${Versions.catsEffect}",
-    mvn"co.fs2::fs2-core::${Versions.fs2}"
-  )
-  object test extends Mcp4sTests
-}
-
 object examples extends ScalaModule with ScalafmtModule {
   def scalaVersion = Versions.scala
 
-  def moduleDeps = Seq(server(Versions.scala), client(Versions.scala), agent(Versions.scala))
+  def moduleDeps = Seq(server(Versions.scala), client(Versions.scala))
 
   def scalacOptions = Seq(
     "-deprecation",
@@ -134,6 +127,47 @@ object examples extends ScalaModule with ScalafmtModule {
   }
 
   object test extends Mcp4sTests
+}
+
+object site extends ScalaJSModule with ScalafmtModule {
+  def scalaVersion = Versions.scala
+  def scalaJSVersion = Versions.scalaJS
+
+  def scalacOptions = Seq(
+    "-deprecation",
+    "-feature",
+    "-unchecked",
+    "-Wunused:all",
+    "-Wvalue-discard",
+    "-Xfatal-warnings"
+  )
+
+  def mvnDeps = Seq(
+    mvn"com.lihaoyi::scalatags::${Versions.scalatags}",
+    mvn"org.scala-js::scalajs-dom::${Versions.scalajsDom}"
+  )
+
+  def siteResources = Task.Source("resources")
+
+  def dist = Task {
+    val jsDir = fullLinkJS().dest.path
+    val resDir = siteResources().path
+    val out = Task.dest / "site"
+    os.makeDir.all(out)
+    os.list(jsDir).foreach(f => os.copy.into(f, out, replaceExisting = true))
+    os.list(resDir).foreach(f => os.copy.into(f, out, replaceExisting = true))
+    PathRef(out)
+  }
+
+  def devDist = Task {
+    val jsDir = fastLinkJS().dest.path
+    val resDir = siteResources().path
+    val out = Task.dest / "site"
+    os.makeDir.all(out)
+    os.list(jsDir).foreach(f => os.copy.into(f, out, replaceExisting = true))
+    os.list(resDir).foreach(f => os.copy.into(f, out, replaceExisting = true))
+    PathRef(out)
+  }
 }
 
 /** Run the MCP Inspector UI against the calculator server.
@@ -159,7 +193,6 @@ def unitTests(): Command[Unit] = Task.Command {
   core(Versions.scala).test.testCached()
   server(Versions.scala).test.testCached()
   client(Versions.scala).test.testCached()
-  agent(Versions.scala).test.testCached()
 }
 
 // =============================================================================

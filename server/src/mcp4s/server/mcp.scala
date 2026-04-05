@@ -14,12 +14,14 @@ import mcp4s.protocol.*
   * {{{
   * import mcp4s.server.mcp.*
   *
+  * case class GreetArgs(name: String) derives ToolInput
+  *
   * val textTools =
   *   Tool.text[IO]("echo", "Echo text") {
   *     "Hello, world!"
   *   } |+|
-  *   Tool[IO]("greet", "Greet someone") {
-  *     IO.pure(ok("Hello!"))
+  *   Tool[IO, GreetArgs]("greet", "Greet someone") { args =>
+  *     IO.pure(ok(s"Hello, $${args.name}!"))
   *   }
   *
   * val resources =
@@ -123,18 +125,6 @@ object mcp:
     def text[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(f: A => String): Tools[F] =
       McpTool.pureText[F, A](name, desc)(f)
 
-    /** Create a tool with an effectful handler (no arguments).
-      *
-      * Example:
-      * {{{
-      * val time = Tool[IO]("time", "Get current time") {
-      *   IO.realTimeInstant.map(t => ok(t.toString))
-      * }
-      * }}}
-      */
-    def apply[F[_]: Concurrent](name: String, desc: String)(f: => F[ToolResult]): Tools[F] =
-      McpTool.noArgs[F](name, desc)(f)
-
     /** Create a tool with an effectful handler with typed arguments.
       *
       * Example:
@@ -219,6 +209,32 @@ object mcp:
     ): Tools[F] =
       McpTool.streamingNoArgs[F](name, desc)(f)
 
+    /** Create a tool with typed output. */
+    def typed[F[_]: Concurrent, A: ToolInput, B](name: String, desc: String)(
+        handler: A => F[B]
+    )(using ToolOutput[B]): Tools[F] =
+      McpTool.typed[F, A, B](name, desc)(handler)
+
+    /** Create a tool with annotations. */
+    def annotated[F[_]: Concurrent, A: ToolInput](
+        name: String,
+        desc: String,
+        annotations: ToolAnnotations
+    )(handler: A => F[ToolResult]): Tools[F] =
+      McpTool.annotated[F, A](name, desc, annotations)(handler)
+
+    /** Create a streaming tool with context support. */
+    def streamingWithContext[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(
+        handler: (A, ToolContext[F]) => Stream[F, ToolResult]
+    ): Tools[F] =
+      McpTool.streamingWithContext[F, A](name, desc)(handler)
+
+    /** Create a streaming tool from a regular tool handler. */
+    def fromNonStreaming[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(
+        handler: A => F[ToolResult]
+    ): Tools[F] =
+      McpTool.fromNonStreaming[F, A](name, desc)(handler)
+
   // === Resource Constructors ===
 
   /** Namespaced resource constructors */
@@ -264,6 +280,18 @@ object mcp:
         handler: String => F[ResourceContent]
     ): Resources[F] =
       Resources.template[F](pattern, name, description)(handler)
+
+    /** Create a resource with a handler function. */
+    def handler[F[_]: Concurrent](uri: String, name: String, mimeType: String = "text/plain")(
+        handler: String => F[ResourceContent]
+    ): Resources[F] =
+      McpResource.handler[F](uri, name, mimeType)(handler)
+
+    /** Create a resource from a Resource definition and handler. */
+    def single[F[_]: Concurrent](resource: mcp4s.protocol.Resource)(
+        handler: String => F[ResourceContent]
+    ): Resources[F] =
+      McpResource.single[F](resource)(handler)
 
     /** Create a subscribable resource that emits change notifications.
       *
@@ -351,6 +379,12 @@ object mcp:
         f: A => F[GetPromptResult]
     ): Prompts[F] =
       McpPrompt[F, A](name, desc)(f)
+
+    /** Create a prompt from a raw map handler. */
+    def raw[F[_]: Concurrent](name: String, desc: String, arguments: List[PromptArgument] = Nil)(
+        handler: Map[String, String] => F[GetPromptResult]
+    ): Prompts[F] =
+      McpPrompt.raw[F](name, desc, arguments)(handler)
 
   // === Pure Lifting Extension ===
 

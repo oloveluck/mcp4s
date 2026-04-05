@@ -13,10 +13,11 @@ import scala.deriving.Mirror
   * {{{
   * case class CalcResult(result: Double, operation: String) derives ToolOutput
   *
-  * // Used with McpTool:
-  * McpTool.typed[IO, (Double, Double), CalcResult]("add", "Add two numbers")(
-  *   number("a") *: number("b")
-  * ) { case (a, b) => IO.pure(CalcResult(a + b, "add")) }
+  * // Used with Tool DSL:
+  * // import mcp4s.server.mcp.*
+  * // Tool.typed[IO, AddArgs, CalcResult]("add", "Add two numbers") { args =>
+  * //   IO.pure(CalcResult(args.a + args.b, "add"))
+  * // }
   * }}}
   */
 trait ToolOutput[A]:

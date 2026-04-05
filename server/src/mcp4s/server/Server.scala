@@ -61,11 +61,14 @@ object Server:
   /** Create a server declaratively from composed parts.
     *
     * {{{
-    * val add = McpTool[IO]("add", "Add")(number("a") *: number("b")) { case (a, b) =>
-    *   IO.pure(ToolResult.text(s"${a + b}"))
+    * import mcp4s.server.mcp.*
+    *
+    * case class CalcArgs(a: Double, b: Double) derives ToolInput
+    * val add = Tool[IO, CalcArgs]("add", "Add") { args =>
+    *   IO.pure(ToolResult.text(s"${args.a + args.b}"))
     * }
-    * val readme = McpResource[IO]("file:///readme", "README")("Hello")
-    * val greet = McpPrompt.noArgs[IO]("greet", "Greet")(IO.pure(GetPromptResult(...)))
+    * val readme = Resource.text[IO]("file:///readme", "README")("Hello")
+    * val greet = Prompt[IO]("greet", "Greet")(user("Hello!"))
     *
     * val server = Server.from[IO](
     *   info      = ServerInfo("calc", "1.0.0"),

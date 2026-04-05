@@ -9,105 +9,20 @@ import munit.CatsEffectSuite
 
 class McpToolSpec extends CatsEffectSuite:
 
-  // === McpTool Convenience Constructor Tests ===
-
-  test("McpTool.twoNumbers creates tool with two number params") {
-    val add = McpTool.twoNumbers[IO]("add", "Add two numbers", "a", "b", "First number", "Second number") {
-      (a, b) => IO.pure(ToolResult.text(s"${a + b}"))
-    }
-
-    for
-      tools <- add.list
-      _ = assertEquals(tools.size, 1)
-      _ = assertEquals(tools.head.name, "add")
-      _ = assertEquals(tools.head.description, Some("Add two numbers"))
-      props = tools.head.inputSchema.properties.get
-      _ = assertEquals(props("a").`type`.get, "number")
-      _ = assertEquals(props("a").description, Some("First number"))
-      _ = assertEquals(props("b").`type`.get, "number")
-      _ = assertEquals(props("b").description, Some("Second number"))
-    yield ()
-  }
-
-  test("McpTool.twoNumbers calls handler with decoded args") {
-    val add = McpTool.twoNumbers[IO]("add", "Add") { (a, b) =>
-      IO.pure(ToolResult.text(s"${a + b}"))
-    }
-
-    val json = Json.obj("a" -> Json.fromDoubleOrNull(1.5), "b" -> Json.fromDoubleOrNull(2.5))
-    for
-      result <- add.call("add", json).value
-      _ = assertEquals(result.map(_.textContent), Some("4.0"))
-    yield ()
-  }
-
-  test("McpTool.singleNumber creates tool with single number param") {
-    val double = McpTool.singleNumber[IO]("double", "Double a number") { n =>
-      IO.pure(ToolResult.text(s"${n * 2}"))
-    }
-
-    val json = Json.obj("value" -> Json.fromDoubleOrNull(5.0))
-    for
-      result <- double.call("double", json).value
-      _ = assertEquals(result.map(_.textContent), Some("10.0"))
-    yield ()
-  }
-
-  test("McpTool.singleString creates tool with single string param") {
-    val echo = McpTool.singleString[IO]("echo", "Echo input", "message") { msg =>
-      IO.pure(ToolResult.text(msg))
-    }
-
-    val json = Json.obj("message" -> Json.fromString("hello"))
-    for
-      result <- echo.call("echo", json).value
-      _ = assertEquals(result.map(_.textContent), Some("hello"))
-    yield ()
-  }
-
-  test("McpTool.singleBoolean creates tool with single boolean param") {
-    val toggle = McpTool.singleBoolean[IO]("toggle", "Toggle flag") { flag =>
-      IO.pure(ToolResult.text(if flag then "on" else "off"))
-    }
-
-    val json = Json.obj("flag" -> Json.fromBoolean(true))
-    for
-      result <- toggle.call("toggle", json).value
-      _ = assertEquals(result.map(_.textContent), Some("on"))
-    yield ()
-  }
-
-  test("McpTool returns None for unknown tool name") {
-    val add = McpTool.singleNumber[IO]("add", "Add") { a =>
-      IO.pure(ToolResult.text(s"$a"))
-    }
-
-    for
-      result <- add.call("subtract", Json.obj()).value
-      _ = assertEquals(result, None)
-    yield ()
-  }
-
-  test("McpTool raises error for invalid args") {
-    val add = McpTool.singleNumber[IO]("add", "Add") { a =>
-      IO.pure(ToolResult.text(s"$a"))
-    }
-
-    for
-      result <- add.call("add", Json.obj("value" -> Json.fromString("not a number"))).value.attempt
-      _ = assert(result.isLeft)
-    yield ()
-  }
+  case class CalcArgs(
+    @description("First number") a: Double,
+    @description("Second number") b: Double
+  ) derives ToolInput
 
   // === McpTool composition Tests ===
 
   test("McpTool values compose with |+|") {
-    val add = McpTool.twoNumbers[IO]("add", "Add") { (a, b) =>
-      IO.pure(ToolResult.text(s"${a + b}"))
+    val add = McpTool[IO, CalcArgs]("add", "Add") { args =>
+      IO.pure(ToolResult.text(s"${args.a + args.b}"))
     }
 
-    val subtract = McpTool.twoNumbers[IO]("subtract", "Subtract") { (a, b) =>
-      IO.pure(ToolResult.text(s"${a - b}"))
+    val subtract = McpTool[IO, CalcArgs]("subtract", "Subtract") { args =>
+      IO.pure(ToolResult.text(s"${args.a - args.b}"))
     }
 
     val mathTools = add |+| subtract
@@ -153,11 +68,6 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  case class CalcArgs(
-    @description("First number") a: Double,
-    @description("Second number") b: Double
-  ) derives ToolInput
-
   test("McpTool works with derived ToolInput") {
     val add = McpTool[IO, CalcArgs]("add", "Add") { args =>
       IO.pure(ToolResult.text(s"${args.a + args.b}"))
@@ -192,8 +102,8 @@ class McpToolSpec extends CatsEffectSuite:
   // === Declarative Server.from Tests ===
 
   test("Server.from creates server from composed parts") {
-    val add = McpTool.twoNumbers[IO]("add", "Add") { (a, b) =>
-      IO.pure(ToolResult.text(s"${a + b}"))
+    val add = McpTool[IO, CalcArgs]("add", "Add") { args =>
+      IO.pure(ToolResult.text(s"${args.a + args.b}"))
     }
 
     val readme = McpResource[IO]("test://readme", "README")("Hello world")
@@ -226,12 +136,12 @@ class McpToolSpec extends CatsEffectSuite:
   }
 
   test("Server.fromTools composes multiple tools with |+|") {
-    val add = McpTool.twoNumbers[IO]("add", "Add") { (a, b) =>
-      IO.pure(ToolResult.text(s"${a + b}"))
+    val add = McpTool[IO, CalcArgs]("add", "Add") { args =>
+      IO.pure(ToolResult.text(s"${args.a + args.b}"))
     }
 
-    val mul = McpTool.twoNumbers[IO]("multiply", "Multiply") { (a, b) =>
-      IO.pure(ToolResult.text(s"${a * b}"))
+    val mul = McpTool[IO, CalcArgs]("multiply", "Multiply") { args =>
+      IO.pure(ToolResult.text(s"${args.a * args.b}"))
     }
 
     val server = Server.fromTools[IO](
@@ -316,42 +226,6 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpTool.singleStringPure creates tool with pure string result") {
-    val upper = McpTool.singleStringPure[IO]("upper", "Uppercase") { s =>
-      s.toUpperCase
-    }
-
-    val json = Json.obj("input" -> Json.fromString("hello"))
-    for
-      result <- upper.call("upper", json).value
-      _ = assertEquals(result.map(_.textContent), Some("HELLO"))
-    yield ()
-  }
-
-  test("McpTool.singleNumberPure creates tool with pure string result") {
-    val double = McpTool.singleNumberPure[IO]("double", "Double a number") { n =>
-      s"${n * 2}"
-    }
-
-    val json = Json.obj("value" -> Json.fromDoubleOrNull(5.0))
-    for
-      result <- double.call("double", json).value
-      _ = assertEquals(result.map(_.textContent), Some("10.0"))
-    yield ()
-  }
-
-  test("McpTool.twoNumbersPure creates tool with pure string result") {
-    val add = McpTool.twoNumbersPure[IO]("add", "Add two numbers") { (a, b) =>
-      s"${a + b}"
-    }
-
-    val json = Json.obj("a" -> Json.fromDoubleOrNull(3.0), "b" -> Json.fromDoubleOrNull(2.0))
-    for
-      result <- add.call("add", json).value
-      _ = assertEquals(result.map(_.textContent), Some("5.0"))
-    yield ()
-  }
-
   // === PromptResult Builder Tests ===
 
   test("PromptResult creates prompt messages concisely") {
@@ -421,7 +295,7 @@ class McpToolSpec extends CatsEffectSuite:
   test("McpTool.withContext returns Tools for composition") {
     case class QueryArgs(query: String) derives ToolInput
 
-    val regular = McpTool.twoNumbersPure[IO]("add", "Add") { (a, b) => s"${a + b}" }
+    val regular = McpTool.pureText[IO, CalcArgs]("add", "Add") { args => s"${args.a + args.b}" }
 
     val contextAware = McpTool.withContext[IO, QueryArgs]("smart", "Smart") { (args, ctx) =>
       IO.pure(ToolResult.text(s"Query: ${args.query}"))

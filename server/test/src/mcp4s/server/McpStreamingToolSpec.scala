@@ -149,11 +149,9 @@ class McpStreamingToolSpec extends CatsEffectSuite:
   }
 
   test("non-streaming tools return None for callStreaming") {
-    val tool = McpTool.singleNumberPure[IO]("double", "Double a number") { n =>
-      s"${n * 2}"
-    }
+    val tool = McpTool.pureTextNoArgs[IO]("ping", "Ping") { "pong" }
 
-    assertEquals(tool.callStreaming("double", Json.obj("value" -> 5.asJson)), None)
+    assertEquals(tool.callStreaming("ping", Json.obj()), None)
   }
 
   test("McpTool.fromNonStreaming wraps regular handler") {

@@ -129,17 +129,6 @@ class McpDslSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("Tool.apply creates tool with effectful handler (no args)") {
-    val ping = Tool[IO]("ping", "Ping") {
-      IO.pure(ok("pong"))
-    }
-
-    for
-      result <- ping.call("ping", Json.obj()).value
-      _ = assertEquals(result.map(_.textContent), Some("pong"))
-    yield ()
-  }
-
   case class AddArgs(a: Double, b: Double) derives ToolInput
 
   test("Tool.apply creates tool with effectful handler (with args)") {
@@ -344,7 +333,7 @@ class McpDslSpec extends CatsEffectSuite:
   test("composed tools work with builder.withTools") {
     val tools =
       Tool.text[IO]("echo", "Echo") { "echo" } |+|
-      Tool[IO]("ping", "Ping") { IO.pure(ok("pong")) }
+      Tool.text[IO]("ping", "Ping") { "pong" }
 
     val server = Server.builder[IO]
       .withInfo(ServerInfo("test", "1.0.0"))
