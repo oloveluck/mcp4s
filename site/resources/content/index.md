@@ -47,12 +47,12 @@ server.serveHttp(3000)
 
 ```scala
 // Mill
-mvn"io.github.mcp4s::mcp4s-server::0.1.5"
-mvn"io.github.mcp4s::mcp4s-client::0.1.5"
+mvn"io.github.oloveluck::mcp4s-server::0.1.5"
+mvn"io.github.oloveluck::mcp4s-client::0.1.5"
 
 // SBT
-"io.github.mcp4s" %% "mcp4s-server" % "0.1.5"
-"io.github.mcp4s" %% "mcp4s-client" % "0.1.5"
+"io.github.oloveluck" %% "mcp4s-server" % "0.1.5"
+"io.github.oloveluck" %% "mcp4s-client" % "0.1.5"
 ```
 
 ## Modules
