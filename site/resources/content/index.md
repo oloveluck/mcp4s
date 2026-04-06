@@ -40,19 +40,19 @@ server.serveHttp(3000)
 - **Type-safe tool derivation** — `derives ToolInput` generates JSON schemas from case classes at compile time
 - **Cats Effect resource safety** — connections, processes, and transports clean up deterministically via `Resource`
 - **Multiple transports** — HTTP, stdio, and WebSocket out of the box
-- **Client resilience** — circuit breaker, retry, and reconnection built in
+- **Client resilience** — retry policies and timeouts built in
 - **Bidirectional communication** — servers can request LLM completions (sampling) and user input (elicitation)
 
 ## Installation
 
 ```scala
 // Mill
-mvn"io.github.oloveluck::mcp4s-server::0.1.5"
-mvn"io.github.oloveluck::mcp4s-client::0.1.5"
+mvn"io.github.oloveluck::mcp4s-server::0.1.6"
+mvn"io.github.oloveluck::mcp4s-client::0.1.6"
 
 // SBT
-"io.github.oloveluck" %% "mcp4s-server" % "0.1.5"
-"io.github.oloveluck" %% "mcp4s-client" % "0.1.5"
+"io.github.oloveluck" %% "mcp4s-server" % "0.1.6"
+"io.github.oloveluck" %% "mcp4s-client" % "0.1.6"
 ```
 
 ## Modules

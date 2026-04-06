@@ -1,11 +1,10 @@
 package mcp4s.examples
 
-import cats.effect.{IO, Ref, Resource}
+import cats.effect.{IO, Resource}
 import cats.syntax.all.*
 import com.comcast.ip4s.port
 import io.circe.Json
 import mcp4s.client.*
-import mcp4s.client.resilient.*
 import mcp4s.client.retry.*
 import mcp4s.client.transport.*
 import mcp4s.examples.fixtures.*
@@ -47,13 +46,21 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   def wsServerResource(server: Server[IO]): Resource[IO, org.http4s.server.Server] =
     WebSocketTransport.serve[IO](server, WebSocketConfig(port = port"0"))
 
-  def httpConnection(client: McpClient[IO], port: Int): Resource[IO, McpConnection[IO]] =
+  def httpConnection(
+      client: McpClient[IO],
+      port: Int,
+      resilience: Option[ResilienceConfig] = None
+  ): Resource[IO, McpConnection[IO]] =
     EmberClientBuilder.default[IO].build.flatMap { httpClient =>
-      HttpClientTransport.connect[IO](client, HttpClientConfig(s"http://localhost:$port"), httpClient)
+      HttpClientTransport.connect[IO](client, HttpClientConfig(s"http://localhost:$port"), httpClient, resilience)
     }
 
-  def wsConnection(client: McpClient[IO], port: Int): Resource[IO, McpConnection[IO]] =
-    WebSocketClientTransport.connect[IO](client, WebSocketClientConfig(s"ws://localhost:$port"))
+  def wsConnection(
+      client: McpClient[IO],
+      port: Int,
+      resilience: Option[ResilienceConfig] = None
+  ): Resource[IO, McpConnection[IO]] =
+    WebSocketClientTransport.connect[IO](client, WebSocketClientConfig(s"ws://localhost:$port"), resilience)
 
   // ============================================================================
   // CATEGORY 1: PROTOCOL COMPLIANCE
@@ -286,11 +293,11 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
 
   test("Resilience: request timeout fires for slow operations") {
     val delayingServer = TestServers.delaying[IO](simpleServer, 500.millis)
+    val config = ResilienceConfig(retry = RetryPolicy.noRetry, timeout = Some(100.millis))
     httpServerResource(delayingServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+      httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
         for
-          resilient <- conn.withTimeout(100.millis)
-          result <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
+          result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
         yield
           assert(result.isLeft)
           assert(result.left.exists(_.isInstanceOf[java.util.concurrent.TimeoutException]))
@@ -299,11 +306,11 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   }
 
   test("Resilience: request succeeds within timeout") {
+    val config = ResilienceConfig(retry = RetryPolicy.noRetry, timeout = Some(5.seconds))
     httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+      httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
         for
-          resilient <- conn.withTimeout(5.seconds)
-          result <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
+          result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
         yield
           assertEquals(result.isError.getOrElse(false), false)
       }
@@ -311,11 +318,11 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   }
 
   test("Resilience: tool execution timeout for slow_add") {
+    val config = ResilienceConfig(retry = RetryPolicy.noRetry, timeout = Some(100.millis))
     httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+      httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
         for
-          resilient <- conn.withTimeout(100.millis)
-          result <- resilient.callTool("slow_add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
+          result <- conn.callTool("slow_add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
         yield
           assert(result.isLeft)
       }
@@ -325,12 +332,15 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   // --- Retry Tests ---
 
   test("Resilience: retry succeeds after transient failure") {
+    val config = ResilienceConfig(
+      retry = RetryPolicy.fixedDelay(maxRetries = 3, delay = 10.millis, retryOn = _ => true),
+      timeout = None
+    )
     TestServers.failingAfter[IO](simpleServer, failAfter = 2, "Transient error").flatMap { case (failingServer, _) =>
       httpServerResource(failingServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort).use { conn =>
+        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
           for
-            resilient <- conn.withRetry(RetryPolicy.fixedDelay(maxRetries = 3, delay = 10.millis, retryOn = _ => true))
-            result <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
+            result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
           yield
             assertEquals(result.isError.getOrElse(false), false)
         }
@@ -339,12 +349,15 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   }
 
   test("Resilience: retry gives up after max retries") {
+    val config = ResilienceConfig(
+      retry = RetryPolicy.fixedDelay(maxRetries = 2, delay = 10.millis, retryOn = _ => true),
+      timeout = None
+    )
     TestServers.failingAfter[IO](simpleServer, failAfter = 0, "Always fails").flatMap { case (failingServer, _) =>
       httpServerResource(failingServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort).use { conn =>
+        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
           for
-            resilient <- conn.withRetry(RetryPolicy.fixedDelay(maxRetries = 2, delay = 10.millis, retryOn = _ => true))
-            result <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
+            result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
           yield
             assert(result.isLeft)
         }
@@ -365,122 +378,16 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   }
 
   test("Resilience: no retry policy means single attempt") {
+    val config = ResilienceConfig(retry = RetryPolicy.noRetry, timeout = None)
     TestServers.failingAfter[IO](simpleServer, failAfter = 0, "Fails").flatMap { case (failingServer, getCount) =>
       httpServerResource(failingServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort).use { conn =>
+        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
           for
-            resilient <- conn.withRetry(RetryPolicy.noRetry)
-            _ <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
+            _ <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
             count <- getCount
           yield
             assertEquals(count, 1)
         }
-      }
-    }
-  }
-
-  // --- Circuit Breaker Tests ---
-
-  test("Resilience: circuit breaker opens after failure threshold") {
-    val cbConfig = CircuitBreakerConfig(failureThreshold = 2, resetTimeout = 1.minute)
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
-        for
-          resilient <- conn.withCircuitBreaker(cbConfig)
-          cb = resilient.circuitBreaker.get
-          // Cause failures
-          _ <- resilient.callTool("fail", Json.obj()).attempt
-          _ <- resilient.callTool("fail", Json.obj()).attempt
-          state <- cb.state
-        yield
-          assertEquals(state, CircuitState.Open)
-      }
-    }
-  }
-
-  test("Resilience: circuit breaker fails fast when open") {
-    val cbConfig = CircuitBreakerConfig(failureThreshold = 1, resetTimeout = 1.minute)
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
-        for
-          resilient <- conn.withCircuitBreaker(cbConfig)
-          cb = resilient.circuitBreaker.get
-          // Open the circuit
-          _ <- resilient.callTool("fail", Json.obj()).attempt
-          state <- cb.state
-          _ = assertEquals(state, CircuitState.Open)
-          // Now operations should fail fast
-          executed <- Ref.of[IO, Boolean](false)
-          result <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
-        yield
-          assert(result.isLeft)
-          assert(result.left.exists(_.isInstanceOf[CircuitBreakerOpenException]))
-      }
-    }
-  }
-
-  test("Resilience: circuit breaker transitions to half-open after reset timeout") {
-    val cbConfig = CircuitBreakerConfig(failureThreshold = 1, resetTimeout = 50.millis)
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
-        for
-          resilient <- conn.withCircuitBreaker(cbConfig)
-          cb = resilient.circuitBreaker.get
-          // Open the circuit
-          _ <- resilient.callTool("fail", Json.obj()).attempt
-          state1 <- cb.state
-          _ = assertEquals(state1, CircuitState.Open)
-          // Wait for reset timeout
-          _ <- IO.sleep(100.millis)
-          // Next call should be allowed (half-open)
-          result <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
-        yield
-          assertEquals(result.isError.getOrElse(false), false)
-      }
-    }
-  }
-
-  test("Resilience: circuit breaker closes after success threshold in half-open") {
-    val cbConfig = CircuitBreakerConfig(
-      failureThreshold = 1,
-      resetTimeout = 50.millis,
-      successThreshold = 2
-    )
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
-        for
-          resilient <- conn.withCircuitBreaker(cbConfig)
-          cb = resilient.circuitBreaker.get
-          // Open the circuit
-          _ <- resilient.callTool("fail", Json.obj()).attempt
-          _ <- IO.sleep(100.millis)
-          // First success
-          _ <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
-          state1 <- cb.state
-          _ = assertEquals(state1, CircuitState.HalfOpen)
-          // Second success - should close
-          _ <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(3)))
-          state2 <- cb.state
-        yield
-          assertEquals(state2, CircuitState.Closed)
-      }
-    }
-  }
-
-  test("Resilience: circuit breaker stats are accurate") {
-    val cbConfig = CircuitBreakerConfig(failureThreshold = 5)
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
-        for
-          resilient <- conn.withCircuitBreaker(cbConfig)
-          _ <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
-          _ <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(3)))
-          _ <- resilient.callTool("fail", Json.obj()).attempt
-          stats <- resilient.circuitBreakerStats
-        yield
-          assert(stats.isDefined)
-          assertEquals(stats.get.totalRequests, 3L)
-          assertEquals(stats.get.failures, 1)
       }
     }
   }
@@ -730,12 +637,15 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
 
   test("Chaos: random failures with high retry count eventually succeed") {
     // 30% failure rate, but with 10 retries we should succeed eventually
+    val config = ResilienceConfig(
+      retry = RetryPolicy.fixedDelay(maxRetries = 10, delay = 10.millis, retryOn = _ => true),
+      timeout = None
+    )
     TestServers.chaotic[IO](simpleServer, failureRate = 0.3, seed = Some(42L)).flatMap { chaoticServer =>
       httpServerResource(chaoticServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort).use { conn =>
+        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
           for
-            resilient <- conn.withRetry(RetryPolicy.fixedDelay(maxRetries = 10, delay = 10.millis, retryOn = _ => true))
-            result <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
+            result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
           yield
             assertEquals(result.isError.getOrElse(false), false)
         }
@@ -744,13 +654,13 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   }
 
   test("Chaos: jittered delays complete within reasonable time") {
+    val config = ResilienceConfig(retry = RetryPolicy.noRetry, timeout = Some(5.seconds))
     TestServers.jittered[IO](simpleServer, minDelay = 10.millis, maxDelay = 50.millis).flatMap { jitteredServer =>
       httpServerResource(jitteredServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort).use { conn =>
+        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
           for
-            resilient <- conn.withTimeout(5.seconds)
             results <- (1 to 5).toList.parTraverse { i =>
-              resilient.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
+              conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
             }
           yield
             assertEquals(results.length, 5)
@@ -778,8 +688,12 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   }
 
   test("Performance: 100 parallel tool calls complete") {
+    val config = ResilienceConfig(
+      retry = RetryPolicy.fixedDelay(maxRetries = 3, delay = 10.millis, retryOn = _ => true),
+      timeout = None
+    )
     httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+      httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
         (1 to 100).toList.parTraverse { i =>
           conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
         }.map { results =>
@@ -906,45 +820,17 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   // ADDITIONAL RESILIENCE TESTS
   // ============================================================================
 
-  test("Resilience: full resilience config with retry, timeout, and circuit breaker") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
-        val config = ResilienceConfig.builder
-          .withRetry(RetryPolicy.exponentialBackoff(maxRetries = 3))
-          .withTimeout(5.seconds)
-          .withCircuitBreaker(CircuitBreakerConfig(failureThreshold = 5))
-          .build
-        for
-          resilient <- conn.withResilience(config)
-          result <- resilient.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
-        yield
-          assertEquals(result.isError.getOrElse(false), false)
-      }
-    }
-  }
-
-  test("Resilience: custom isFailure predicate for circuit breaker") {
-    // Test that the custom isFailure predicate is applied correctly
-    // Using a predicate that only counts specific exception types
-    val cbConfig = CircuitBreakerConfig(
-      failureThreshold = 1,
-      isFailure = {
-        // Only count TimeoutException as failure, not other types
-        case _: java.util.concurrent.TimeoutException => true
-        case _                                        => false
-      }
+  test("Resilience: full resilience config with retry and timeout") {
+    val config = ResilienceConfig(
+      retry = RetryPolicy.exponentialBackoff(maxRetries = 3),
+      timeout = Some(5.seconds)
     )
     httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+      httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
         for
-          resilient <- conn.withCircuitBreaker(cbConfig)
-          cb = resilient.circuitBreaker.get
-          // Tool errors come through as McpError which is not a TimeoutException
-          // So this should NOT trip the circuit
-          _ <- resilient.callTool("fail", Json.obj()).attempt
-          state <- cb.state
+          result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
         yield
-          assertEquals(state, CircuitState.Closed)
+          assertEquals(result.isError.getOrElse(false), false)
       }
     }
   }
@@ -1104,6 +990,52 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
     }
   }
 
+  test("Resilience: WebSocket request timeout fires for slow operations") {
+    val delayingServer = TestServers.delaying[IO](simpleServer, 500.millis)
+    val config = ResilienceConfig(retry = RetryPolicy.noRetry, timeout = Some(100.millis))
+    wsServerResource(delayingServer).use { server =>
+      wsConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
+        for
+          result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
+        yield
+          assert(result.isLeft)
+          assert(result.left.exists(_.isInstanceOf[java.util.concurrent.TimeoutException]))
+      }
+    }
+  }
+
+  test("Resilience: WebSocket retry succeeds after transient failure") {
+    val config = ResilienceConfig(
+      retry = RetryPolicy.fixedDelay(maxRetries = 3, delay = 10.millis, retryOn = _ => true),
+      timeout = None
+    )
+    TestServers.failingAfter[IO](simpleServer, failAfter = 2, "Transient error").flatMap { case (failingServer, _) =>
+      wsServerResource(failingServer).use { server =>
+        wsConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
+          for
+            result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
+          yield
+            assertEquals(result.isError.getOrElse(false), false)
+        }
+      }
+    }
+  }
+
+  test("Resilience: WebSocket full resilience config") {
+    val config = ResilienceConfig(
+      retry = RetryPolicy.exponentialBackoff(maxRetries = 3),
+      timeout = Some(5.seconds)
+    )
+    wsServerResource(simpleServer).use { server =>
+      wsConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
+        for
+          result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
+        yield
+          assertEquals(result.isError.getOrElse(false), false)
+      }
+    }
+  }
+
   // ============================================================================
   // LARGE PAYLOADS
   // ============================================================================
@@ -1133,6 +1065,216 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
         )
         operations.parSequence.map { results =>
           assertEquals(results.length, 6)
+        }
+      }
+    }
+  }
+
+  // ============================================================================
+  // CATEGORY 9: RIGOROUS PERFORMANCE TESTS
+  // ============================================================================
+
+  test("Performance: parallel is faster than sequential for slow operations") {
+    httpServerResource(simpleServer).use { server =>
+      httpConnection(simpleClient, server.address.getPort).use { conn =>
+        val args = Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))
+        for
+          seqStart <- IO.monotonic
+          _ <- (1 to 10).toList.traverse(_ => conn.callTool("slow_add", args))
+          seqEnd <- IO.monotonic
+          seqTime = seqEnd - seqStart
+          parStart <- IO.monotonic
+          _ <- (1 to 10).toList.parTraverse(_ => conn.callTool("slow_add", args))
+          parEnd <- IO.monotonic
+          parTime = parEnd - parStart
+        yield
+          assert(
+            parTime < seqTime / 2,
+            s"Parallel time ($parTime) should be less than half of sequential time ($seqTime)"
+          )
+      }
+    }
+  }
+
+  test("Performance: sustained parallel load loses no requests") {
+    TestServers.counting[IO](simpleServer).flatMap { case (countingServer, getCounts) =>
+      val config = ResilienceConfig(
+        retry = RetryPolicy.fixedDelay(maxRetries = 3, delay = 10.millis, retryOn = _ => true),
+        timeout = None
+      )
+      httpServerResource(countingServer).use { server =>
+        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
+          for
+            results <- (1 to 200).toList.parTraverse { i =>
+              conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
+            }
+            counts <- getCounts
+          yield
+            assertEquals(results.length, 200)
+            assert(results.forall(!_.isError.getOrElse(false)), "All 200 results should be non-error")
+            assertEquals(counts.toolCalls, 200)
+        }
+      }
+    }
+  }
+
+  test("Performance: multi-connection parallel throughput") {
+    val config = ResilienceConfig(
+      retry = RetryPolicy.fixedDelay(maxRetries = 3, delay = 10.millis, retryOn = _ => true),
+      timeout = None
+    )
+    httpServerResource(simpleServer).use { server =>
+      val port = server.address.getPort
+      val connections = (1 to 5).toList.map(_ => httpConnection(simpleClient, port, Some(config)))
+      connections.sequence.use { conns =>
+        conns.parTraverse { conn =>
+          (1 to 20).toList.parTraverse { i =>
+            conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
+          }
+        }.map { allResults =>
+          val flat = allResults.flatten
+          assertEquals(flat.length, 100)
+          assert(flat.forall(!_.isError.getOrElse(false)), "All 100 results should succeed")
+          // Verify correct values
+          flat.foreach { result =>
+            result.content.head match
+              case TextContent(text, _, _) =>
+                val value = text.toDouble
+                assert(value > 0, s"Expected positive result, got $value")
+              case _ => fail("Expected text content")
+          }
+        }
+      }
+    }
+  }
+
+  // ============================================================================
+  // CATEGORY 10: RIGOROUS RESILIENCE TESTS
+  // ============================================================================
+
+  test("Resilience: parallel chaos calls all succeed with retry") {
+    val config = ResilienceConfig(
+      retry = RetryPolicy.fixedDelay(maxRetries = 10, delay = 10.millis, retryOn = _ => true),
+      timeout = None
+    )
+    TestServers.chaotic[IO](simpleServer, failureRate = 0.3, seed = Some(42L)).flatMap { chaoticServer =>
+      httpServerResource(chaoticServer).use { server =>
+        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
+          (1 to 20).toList.parTraverse { i =>
+            conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
+          }.map { results =>
+            assertEquals(results.length, 20)
+            results.zipWithIndex.foreach { case (result, idx) =>
+              val i = idx + 1
+              assertEquals(result.isError.getOrElse(false), false, s"Call $i should succeed")
+              result.content.head match
+                case TextContent(text, _, _) => assertEquals(text, s"${(i * 2).toDouble}")
+                case _ => fail(s"Expected text content for call $i")
+            }
+          }
+        }
+      }
+    }
+  }
+
+  test("Resilience: timeout fires under concurrent load") {
+    val delayingServer = TestServers.delaying[IO](simpleServer, 500.millis)
+    val config = ResilienceConfig(
+      retry = RetryPolicy.noRetry,
+      timeout = Some(100.millis)
+    )
+    httpServerResource(delayingServer).use { server =>
+      httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
+        (1 to 5).toList.parTraverse { i =>
+          conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i))).attempt
+        }.map { results =>
+          assertEquals(results.length, 5)
+          results.foreach { result =>
+            assert(result.isLeft, "All calls should fail due to timeout")
+            assert(
+              result.left.exists(_.isInstanceOf[java.util.concurrent.TimeoutException]),
+              s"Expected TimeoutException, got: ${result.left.toOption}"
+            )
+          }
+        }
+      }
+    }
+  }
+
+  test("Resilience: retry exhaustion preserves the original error") {
+    val config = ResilienceConfig(
+      retry = RetryPolicy.fixedDelay(maxRetries = 2, delay = 10.millis, retryOn = _ => true),
+      timeout = None
+    )
+    TestServers.failingAfter[IO](simpleServer, failAfter = 0, "Server down").flatMap { case (failingServer, _) =>
+      httpServerResource(failingServer).use { server =>
+        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
+          conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt.map { result =>
+            assert(result.isLeft, "Call should fail after retry exhaustion")
+            val errorMsg = result.left.toOption.get.getMessage
+            assert(
+              errorMsg.contains("Server down"),
+              s"Error message should contain 'Server down', got: $errorMsg"
+            )
+          }
+        }
+      }
+    }
+  }
+
+  test("Resilience: exponential backoff total time matches expected delays") {
+    val config = ResilienceConfig(
+      retry = RetryPolicy.exponentialBackoff(
+        maxRetries = 3,
+        baseDelay = 50.millis,
+        jitterFactor = 0.0,
+        retryOn = _ => true
+      ),
+      timeout = None
+    )
+    TestServers.failingAfter[IO](simpleServer, failAfter = 0, "Always fails").flatMap { case (failingServer, _) =>
+      httpServerResource(failingServer).use { server =>
+        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
+          for
+            start <- IO.monotonic
+            _ <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
+            end <- IO.monotonic
+            elapsed = end - start
+          yield
+            // Expected delays: 50ms + 100ms + 200ms = 350ms
+            assert(
+              elapsed >= 300.millis && elapsed <= 500.millis,
+              s"Exponential backoff total time ($elapsed) should be between 300ms and 500ms"
+            )
+        }
+      }
+    }
+  }
+
+  test("Resilience: linear backoff timing is correct") {
+    val config = ResilienceConfig(
+      retry = RetryPolicy.linearBackoff(
+        maxRetries = 3,
+        initialDelay = 50.millis,
+        increment = 50.millis,
+        retryOn = _ => true
+      ),
+      timeout = None
+    )
+    TestServers.failingAfter[IO](simpleServer, failAfter = 0, "Always fails").flatMap { case (failingServer, _) =>
+      httpServerResource(failingServer).use { server =>
+        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
+          for
+            start <- IO.monotonic
+            _ <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
+            end <- IO.monotonic
+            elapsed = end - start
+          yield
+            // Expected delays: 50ms + 100ms + 150ms = 300ms
+            assert(
+              elapsed >= 250.millis && elapsed <= 450.millis,
+              s"Linear backoff total time ($elapsed) should be between 250ms and 450ms"
+            )
         }
       }
     }

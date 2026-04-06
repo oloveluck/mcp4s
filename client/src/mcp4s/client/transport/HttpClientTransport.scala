@@ -1,6 +1,6 @@
 package mcp4s.client.transport
 
-import cats.effect.{Async, Ref, Resource as CatsResource}
+import cats.effect.{Async, Ref, Resource as CatsResource, Temporal}
 import cats.syntax.all.*
 import fs2.io.net.Network
 import io.circe.*
@@ -12,7 +12,7 @@ import org.http4s.headers.`Content-Type`
 import org.typelevel.ci.CIString
 import org.typelevel.otel4s.context.propagation.TextMapUpdater
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.client.{McpClient, McpConnection}
+import mcp4s.client.{McpClient, McpConnection, ResilienceConfig}
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 
@@ -52,10 +52,11 @@ object HttpClientTransport:
   def connect[F[_]: Async: Network](
       client: McpClient[F],
       config: HttpClientConfig[F],
-      httpClient: Client[F]
+      httpClient: Client[F],
+      resilience: Option[ResilienceConfig] = None
   )(using Tracer[F]): CatsResource[F, McpConnection[F]] =
     for
-      connection <- CatsResource.eval(establishConnection(client, httpClient, config, summon[Tracer[F]]))
+      connection <- CatsResource.eval(establishConnection(client, httpClient, config, summon[Tracer[F]], resilience))
     yield connection
 
   /** Session header name (case-insensitive per MCP spec) */
@@ -65,7 +66,8 @@ object HttpClientTransport:
       client: McpClient[F],
       httpClient: Client[F],
       config: HttpClientConfig[F],
-      tracer: Tracer[F]
+      tracer: Tracer[F],
+      resilience: Option[ResilienceConfig]
   ): F[McpConnection[F]] =
     val endpointUri = Uri.unsafeFromString(s"${config.baseUrl}${config.endpoint}")
 
@@ -97,10 +99,15 @@ object HttpClientTransport:
       // Send initialized notification (now with session ID)
       _ <- sendNotification(JsonRpcNotification(McpMethod.Initialized, None))
 
+      // Wrap sendRequest with resilience if configured
+      wrappedSendRequest = resilience match
+        case Some(config) => ResilienceConfig.wrapSendRequest(sendRequest, config)(using Temporal[F])
+        case None         => sendRequest
+
       // Create connection via factory
       conn <- McpConnection[F](
         initResult.serverInfo, initResult.capabilities,
-        sendRequest, sendNotification, tracer
+        wrappedSendRequest, sendNotification, tracer
       )
 
       // Wire up progress handlers so SSE routing can find them

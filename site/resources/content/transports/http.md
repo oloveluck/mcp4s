@@ -62,7 +62,17 @@ import mcp4s.client.transport.*
 HttpClientTransport.connect[IO](client, HttpClientConfig(
   baseUrl = "http://localhost:3000",
   endpoint = "/mcp"
-)).use { conn => ... }
+), httpClient).use { conn => ... }
+
+// With resilience
+import mcp4s.client.*
+
+HttpClientTransport.connect[IO](client, HttpClientConfig(
+  baseUrl = "http://localhost:3000",
+  endpoint = "/mcp"
+), httpClient,
+  resilience = Some(ResilienceConfig.default)
+).use { conn => ... }
 ```
 
 ## Features

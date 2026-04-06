@@ -47,27 +47,26 @@ The connection is a `Resource` — it handles initialization, capability negotia
 
 ## Resilience
 
-Production clients should use resilience wrappers for retry, timeout, and circuit breaker protection:
+Production clients should configure resilience at transport connect time for retry and timeout protection:
 
 ```scala
+import mcp4s.client.*
 import mcp4s.client.retry.*
-import mcp4s.client.resilient.*
 
-val config = ResilienceConfig.builder
-  .withRetry(RetryPolicy.exponentialBackoff(maxRetries = 5))
-  .withTimeout(30.seconds)
-  .withCircuitBreaker(CircuitBreakerConfig(failureThreshold = 3))
-  .build
-
-conn.withResilience(config).flatMap { resilient =>
-  resilient.callTool("operation", args)
+HttpClientTransport.connect(client, config, httpClient,
+  resilience = Some(ResilienceConfig(
+    retry = RetryPolicy.exponentialBackoff(maxRetries = 5),
+    timeout = Some(30.seconds)
+  ))
+).use { conn =>
+  conn.callTool("operation", args)  // already resilient
 }
 ```
 
 ## Guide Contents
 
 - [Connection Operations](connection) — Full McpConnection API
-- [Resilience Patterns](resilience) — Retry, circuit breaker, timeout
+- [Resilience Patterns](resilience) — Retry, timeout
 
 ---
 **Next:** [Connection Operations](connection)

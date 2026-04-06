@@ -48,10 +48,34 @@ conn.callTool("tool", args).attempt.flatMap {
 
 ## With Resilience
 
-Automatic retry on transient errors:
+Automatic retry on transient errors — configure at transport connect time:
 
 ```scala
-conn.withResilience(ResilienceConfig.default).flatMap { resilient =>
-  resilient.callTool("tool", args)
+HttpClientTransport.connect(client, config, httpClient,
+  resilience = Some(ResilienceConfig.default)
+).use { conn =>
+  conn.callTool("tool", args)
+}
+```
+
+Use `retryOn` to control which errors are retried:
+
+```scala
+import mcp4s.client.*
+import mcp4s.client.retry.*
+
+// Only retry on connection errors, not application errors
+HttpClientTransport.connect(client, config, httpClient,
+  resilience = Some(ResilienceConfig(
+    retry = RetryPolicy.fixedDelay(
+      maxRetries = 3,
+      retryOn = {
+        case _: java.io.IOException => true
+        case _ => false
+      }
+    )
+  ))
+).use { conn =>
+  conn.callTool("tool", args)
 }
 ```

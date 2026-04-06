@@ -2,7 +2,7 @@
 
 A Scala implementation of the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) for the Typelevel ecosystem.
 
-[Documentation](https://oloveluck.github.io/mcp4s/) | [API Reference](https://oloveluck.github.io/mcp4s/api/)
+[![Docs](https://img.shields.io/badge/docs-oloveluck.github.io%2Fmcp4s-blue)](https://oloveluck.github.io/mcp4s/) [![Maven Central](https://img.shields.io/maven-central/v/io.github.oloveluck/mcp4s-core_3)](https://central.sonatype.com/search?q=io.github.oloveluck)
 
 ## Overview
 
@@ -14,9 +14,9 @@ Add to your `build.mill`:
 
 ```scala
 def ivyDeps = Agg(
-  ivy"io.github.oloveluck::mcp4s-core::0.1.5",
-  ivy"io.github.oloveluck::mcp4s-server::0.1.5",  // for servers
-  ivy"io.github.oloveluck::mcp4s-client::0.1.5"   // for clients
+  ivy"io.github.oloveluck::mcp4s-core::0.1.6",
+  ivy"io.github.oloveluck::mcp4s-server::0.1.6",  // for servers
+  ivy"io.github.oloveluck::mcp4s-client::0.1.6"   // for clients
 )
 ```
 
@@ -24,9 +24,9 @@ Or in sbt:
 
 ```scala
 libraryDependencies ++= Seq(
-  "io.github.oloveluck" %% "mcp4s-core" % "0.1.5",
-  "io.github.oloveluck" %% "mcp4s-server" % "0.1.5",
-  "io.github.oloveluck" %% "mcp4s-client" % "0.1.5"
+  "io.github.oloveluck" %% "mcp4s-core" % "0.1.6",
+  "io.github.oloveluck" %% "mcp4s-server" % "0.1.6",
+  "io.github.oloveluck" %% "mcp4s-client" % "0.1.6"
 )
 ```
 

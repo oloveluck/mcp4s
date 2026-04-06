@@ -14,13 +14,12 @@ import scala.util.Random
   *
   * Example:
   * {{{
-  * val policy = RetryPolicy.exponentialBackoff(
-  *   maxRetries = 5,
-  *   baseDelay = 100.millis,
-  *   maxDelay = 30.seconds
+  * val config = ResilienceConfig(
+  *   retry = RetryPolicy.exponentialBackoff(maxRetries = 5, baseDelay = 100.millis),
+  *   timeout = Some(30.seconds)
   * )
   *
-  * connection.withRetry(policy).callTool("myTool", args)
+  * HttpClientTransport.connect(client, httpConfig, httpClient, resilience = Some(config))
   * }}}
   */
 final case class RetryPolicy(
@@ -128,10 +127,11 @@ object RetryPolicy:
 
 /** Helper to apply retry logic to an effect.
   *
-  * This is an internal implementation detail. Users should use the
-  * resilience extension methods on McpConnection instead:
+  * This is an internal implementation detail. Users should pass a
+  * `ResilienceConfig` at transport connect time instead:
   * {{{
-  * connection.withRetry(RetryPolicy.exponentialBackoff())
+  * HttpClientTransport.connect(client, config, httpClient,
+  *   resilience = Some(ResilienceConfig.default))
   * }}}
   */
 private[client] object Retry:
