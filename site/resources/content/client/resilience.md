@@ -1,71 +1,130 @@
 # Resilience
 
-Production MCP clients need protection against transient failures — network blips, server restarts, overloaded endpoints. The resilience module wraps an `McpConnection` with retry, timeout, and circuit breaker patterns.
+Production MCP clients need protection against transient failures — network blips, server restarts, overloaded endpoints. Resilience is applied at transport connect time by wrapping the underlying request function with retry and timeout before `McpConnection` is constructed.
 
 ## Configuration
 
+All three transports accept an optional `resilience` parameter:
+
 ```scala
+import mcp4s.client.*
 import mcp4s.client.retry.*
-import mcp4s.client.resilient.*
+import mcp4s.client.transport.*
 import scala.concurrent.duration.*
 
-val config = ResilienceConfig.builder
-  .withRetry(RetryPolicy.exponentialBackoff(maxRetries = 5))
-  .withTimeout(30.seconds)
-  .withCircuitBreaker(CircuitBreakerConfig(failureThreshold = 3))
-  .build
+// With custom resilience
+HttpClientTransport.connect[IO](client, config, httpClient,
+  resilience = Some(ResilienceConfig(
+    retry = RetryPolicy.exponentialBackoff(maxRetries = 5),
+    timeout = Some(30.seconds)
+  ))
+).use { conn =>
+  conn.callTool("add", args)  // already resilient
+}
 
-conn.withResilience(config)
+// With defaults (exponential backoff, 3 retries, 30s timeout)
+StdioClientTransport.connect[IO](client, stdioConfig,
+  resilience = Some(ResilienceConfig.default)
+).use { conn => ... }
+
+// Without resilience (default)
+WebSocketClientTransport.connect[IO](client, wsConfig).use { conn => ... }
 ```
 
 ## Retry Policies
 
+### Exponential backoff (recommended)
+
 ```scala
-// Exponential backoff (recommended)
 RetryPolicy.exponentialBackoff(
-  maxRetries = 5,
-  baseDelay = 100.millis,
-  maxDelay = 30.seconds,
-  jitterFactor = 0.1
+  maxRetries = 3,           // default
+  baseDelay = 100.millis,   // default
+  maxDelay = 10.seconds,    // default
+  jitterFactor = 0.1,       // default; 0.0 to 1.0
+  retryOn = defaultRetryPredicate  // default
 )
+```
 
-// Fixed delay
-RetryPolicy.fixedDelay(maxRetries = 3, delay = 1.second)
+### Fixed delay
 
-// Linear backoff
-RetryPolicy.linearBackoff(maxRetries = 3, initialDelay = 100.millis, increment = 100.millis)
+```scala
+RetryPolicy.fixedDelay(
+  maxRetries = 3,          // default
+  delay = 1.second,        // default
+  retryOn = defaultRetryPredicate  // default
+)
+```
 
-// No retry
+### Linear backoff
+
+```scala
+RetryPolicy.linearBackoff(
+  maxRetries = 3,            // default
+  initialDelay = 100.millis, // default
+  increment = 100.millis,    // default
+  maxDelay = 10.seconds,     // default
+  retryOn = defaultRetryPredicate  // default
+)
+```
+
+### No retry
+
+```scala
 RetryPolicy.noRetry
 ```
 
-## Circuit Breaker
+## Custom retry predicates
 
-A circuit breaker prevents cascading failures by stopping requests to a failing server. After enough failures, the circuit **opens** and fast-fails all requests. After a timeout, it lets a test request through (**half-open**). If that succeeds, the circuit **closes** again.
+Every policy accepts a `retryOn` parameter to control which errors trigger a retry. By default, `defaultRetryPredicate` retries on transient network and timeout errors:
+
+- `java.net.ConnectException`
+- `java.net.SocketTimeoutException`
+- `java.net.UnknownHostException`
+- `java.io.IOException`
+- `java.util.concurrent.TimeoutException`
+- Errors with message containing `"Connection refused"` or `"Connection reset"`
+
+To override:
 
 ```scala
-CircuitBreakerConfig(
-  failureThreshold = 5,    // Failures before opening
-  resetTimeout = 30.seconds,  // Time before testing
-  successThreshold = 2     // Successes to close
+// Only retry on IOExceptions
+RetryPolicy.exponentialBackoff(
+  retryOn = {
+    case _: java.io.IOException => true
+    case _ => false
+  }
 )
 
-// States: Closed → Open → HalfOpen → Closed
+// Retry on everything
+RetryPolicy.fixedDelay(retryOn = _ => true)
 ```
 
-## Monitoring
+## Defaults
+
+`ResilienceConfig.default` provides sensible production defaults:
+
+| Parameter | Default |
+|-----------|---------|
+| Retry policy | `exponentialBackoff(maxRetries = 3, baseDelay = 100ms, maxDelay = 10s, jitter = 0.1)` |
+| Timeout | `30.seconds` per attempt |
 
 ```scala
-resilient.circuitBreakerStats  // IO[Option[CircuitBreakerStats]]
-// stats.state, stats.failures, stats.successes, stats.totalRequests
+// These are equivalent:
+ResilienceConfig.default
+ResilienceConfig()
+ResilienceConfig(
+  retry = RetryPolicy.exponentialBackoff(),
+  timeout = Some(30.seconds)
+)
 ```
 
 ## Layering
 
 Per-attempt order:
-1. **Timeout** — per attempt
-2. **Circuit Breaker** — tracks failures
-3. **Retry** — retries operation
+1. **Timeout** — applied to each individual attempt
+2. **Retry** — retries the operation on failure
+
+The init handshake always uses the raw (unwrapped) function so it fails fast.
 
 ---
 **Next:** [Transports](../transports/)

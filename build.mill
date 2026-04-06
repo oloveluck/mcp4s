@@ -35,7 +35,7 @@ trait Mcp4sModule extends Cross.Module[String] with ScalaModule with ScalafmtMod
     "-Xfatal-warnings"
   )
 
-  def publishVersion = "0.1.5"
+  def publishVersion = "0.1.6"
 
   def pomSettings = PomSettings(
     description = "MCP (Model Context Protocol) for Scala",

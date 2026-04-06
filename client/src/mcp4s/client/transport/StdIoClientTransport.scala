@@ -1,6 +1,6 @@
 package mcp4s.client.transport
 
-import cats.effect.{Async, Deferred, Ref, Resource as CatsResource}
+import cats.effect.{Async, Deferred, Ref, Resource as CatsResource, Temporal}
 import cats.effect.std.Queue
 import cats.syntax.all.*
 import fs2.Stream
@@ -9,7 +9,7 @@ import io.circe.*
 import io.circe.parser.*
 import io.circe.syntax.*
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.client.{McpClient, McpConnection}
+import mcp4s.client.{McpClient, McpConnection, ResilienceConfig}
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 import fs2.io.process.Processes
@@ -34,7 +34,8 @@ object StdioClientTransport:
     */
   def connect[F[_]: Async: Processes](
       client: McpClient[F],
-      config: StdioClientConfig
+      config: StdioClientConfig,
+      resilience: Option[ResilienceConfig] = None
   )(using Tracer[F]): CatsResource[F, McpConnection[F]] =
     for
       // Create queues for message passing
@@ -104,7 +105,7 @@ object StdioClientTransport:
 
       // Create the connection
       connection <- CatsResource.eval(
-        establishConnection(client, inputQueue, responseMap, progressHandlersRef, summon[Tracer[F]])
+        establishConnection(client, inputQueue, responseMap, progressHandlersRef, summon[Tracer[F]], resilience)
       )
 
     yield connection
@@ -187,7 +188,8 @@ object StdioClientTransport:
       inputQueue: Queue[F, String],
       responseMap: Ref[F, Map[RequestId, Deferred[F, Json]]],
       progressHandlersRef: Ref[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]],
-      tracer: Tracer[F]
+      tracer: Tracer[F],
+      resilience: Option[ResilienceConfig]
   ): F[McpConnection[F]] =
     val sendRequest = createRequestSender(inputQueue, responseMap)
     val sendNotification = createNotificationSender(inputQueue)
@@ -202,12 +204,16 @@ object StdioClientTransport:
         ).asJson
       )
     )
+    // Wrap sendRequest with resilience if configured (init uses raw sendRequest)
+    val wrappedSendRequest = resilience match
+      case Some(config) => ResilienceConfig.wrapSendRequest(sendRequest, config)(using Temporal[F])
+      case None         => sendRequest
     for
       initResult <- sendInitRequest(initRequest, sendRequest)
       _ <- sendNotification(JsonRpcNotification(McpMethod.Initialized, None))
       conn <- McpConnection[F](
         initResult.serverInfo, initResult.capabilities,
-        sendRequest, sendNotification, tracer
+        wrappedSendRequest, sendNotification, tracer
       )
       _ <- progressHandlersRef.set(Some(conn.progressHandlers))
     yield conn

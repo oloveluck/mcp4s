@@ -1,13 +1,26 @@
 # Changelog
 
+## [0.1.6] - 2026-04-05
+
+### Added
+- Fluent builder methods on `ResilienceConfig` (`withRetry`, `withTimeout`, `withoutTimeout`)
+- WebSocket transport resilience integration tests
+- Resilient client example (`ResilientClient`)
+- Docs site badge in README
+
+### Fixed
+- Stale docstrings in `RetryPolicy` referencing removed `connection.withRetry()` API
+
 ## [0.1.5] - 2026-04-05
 
 ### Removed
 - Agent module
 - Auth module (use standard http4s middleware for authentication)
 - Server middleware (use standard error handling patterns)
+- CircuitBreaker and ResilientConnection (resilience simplified to RetryPolicy + timeout at transport connect time)
 
 ### Changed
+- Resilience applied at transport connect time via `ResilienceConfig` instead of post-connection wrapping
 - Cross-build for Scala 3.3.4 and 3.6.4
 - Publish to Maven Central
 - Simplified type names (dropped `Mcp` prefix from most types)
@@ -36,7 +49,7 @@
 - Streaming tools and `McpStreamingConnection`
 - Resource subscriptions
 - Server testing utilities
-- CircuitBreaker, RetryPolicy, ResilientConnection builder
+- RetryPolicy, ResilienceConfig (transport-level retry + timeout)
 - MCP conformance testing in CI
 - Dependabot and Scala Steward configuration
 
