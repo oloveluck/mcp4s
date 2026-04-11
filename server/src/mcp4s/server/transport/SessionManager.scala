@@ -4,6 +4,7 @@ import cats.effect.{Async, Ref, Resource as CatsResource}
 import cats.effect.std.Supervisor
 import cats.syntax.all.*
 import org.typelevel.otel4s.trace.Tracer
+import mcp4s.protocol.McpError
 import mcp4s.server.Server
 
 import scala.concurrent.duration.*
@@ -17,7 +18,9 @@ final case class SessionConfig(
     /** Request timeout for pending operations */
     requestTimeout: FiniteDuration = 5.minutes,
     /** Interval between cleanup runs */
-    cleanupInterval: FiniteDuration = 1.minute
+    cleanupInterval: FiniteDuration = 1.minute,
+    /** Maximum number of concurrent sessions. Rejects new sessions when at capacity. */
+    maxSessions: Int = 1000
 )
 
 object SessionConfig:
@@ -103,8 +106,13 @@ object SessionManager:
       }
 
     def create: F[HttpSession[F]] =
-      HttpSession.create[F](server, config).flatMap { session =>
-        sessionsRef.update(_ + (session.id -> session)).as(session)
+      sessionsRef.get.flatMap { sessions =>
+        if sessions.size >= config.maxSessions then
+          Async[F].raiseError(McpError.InternalError(s"Maximum session limit (${config.maxSessions}) reached"))
+        else
+          HttpSession.create[F](server, config).flatMap { session =>
+            sessionsRef.update(_ + (session.id -> session)).as(session)
+          }
       }
 
     def remove(sessionId: String): F[Unit] =

@@ -22,7 +22,13 @@ import mcp4s.protocol.Codecs.given
 /** WebSocket transport configuration for MCP clients */
 final case class WebSocketClientConfig(
     url: String,
-    path: String = "ws"
+    path: String = "ws",
+    /** Maximum queue size for outgoing messages (bounded queue with backpressure) */
+    maxQueueSize: Int = 1000,
+    /** Request timeout for pending operations */
+    requestTimeout: scala.concurrent.duration.FiniteDuration = scala.concurrent.duration.FiniteDuration(5, "min"),
+    /** Timeout for the entire initialization sequence (connect + initialize handshake) */
+    initTimeout: scala.concurrent.duration.FiniteDuration = scala.concurrent.duration.FiniteDuration(30, "s")
 )
 
 /** WebSocket transport for MCP clients.
@@ -64,8 +70,8 @@ object WebSocketClientTransport:
       pendingRequests <- CatsResource.eval(
         Ref.of[F, Map[RequestId, Deferred[F, Either[JsonRpcError, Json]]]](Map.empty)
       )
-      // Queue for outgoing messages
-      outQueue <- CatsResource.eval(Queue.unbounded[F, WebSocketFrame])
+      // Queue for outgoing messages (bounded with backpressure)
+      outQueue <- CatsResource.eval(Queue.bounded[F, WebSocketFrame](config.maxQueueSize))
       // Indirection for progress handlers - set after connection creation
       progressHandlersRef <- CatsResource.eval(
         Ref.of[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]](None)
@@ -117,10 +123,16 @@ object WebSocketClientTransport:
           deferred <- Deferred[F, Either[JsonRpcError, Json]]
           _ <- pendingRequests.update(_ + (req.id -> deferred))
           _ <- outQueue.offer(WebSocketFrame.text(req.asJson.noSpaces))
-          result <- deferred.get.guarantee(pendingRequests.update(_ - req.id))
-          json <- result match
-            case Right(json) => Async[F].pure(json)
-            case Left(error) => Async[F].raiseError(McpError.fromJsonRpcError(error))
+          // Apply configured request timeout
+          raceResult <- Async[F].race(
+            Async[F].sleep(config.requestTimeout),
+            deferred.get
+          ).guarantee(pendingRequests.update(_ - req.id))
+          json <- raceResult match
+            case Left(_) =>
+              Async[F].raiseError(McpError.InternalError(s"Request timed out after ${config.requestTimeout}"))
+            case Right(Right(json)) => Async[F].pure(json)
+            case Right(Left(error)) => Async[F].raiseError(McpError.fromJsonRpcError(error))
         yield json
 
       // Create the sendNotification function
@@ -194,9 +206,15 @@ object WebSocketClientTransport:
         }
       )(fiber => fiber.cancel)
 
-      // Wait for streams to be ready, then initialize (with error handling)
+      // Wait for streams to be ready, then initialize (with timeout and error handling)
       _ <- CatsResource.eval {
-        initSignal.waitUntil(identity) *> doInit.onError { _ =>
+        Async[F].timeoutTo(
+          initSignal.waitUntil(identity) *> doInit,
+          config.initTimeout,
+          cleanupPendingRequests *> Async[F].raiseError(
+            McpError.InternalError(s"WebSocket initialization timed out after ${config.initTimeout}")
+          )
+        ).onError { _ =>
           // On init failure, cleanup so pending requests don't hang
           cleanupPendingRequests
         }

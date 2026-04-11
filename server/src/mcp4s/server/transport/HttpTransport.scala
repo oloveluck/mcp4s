@@ -277,32 +277,27 @@ object HttpTransport:
         Stream.bracket(
           session.dispatcher.dispatch(message).attempt.flatMap(dispatchResult.complete).void.start
         )(_.cancel) >> {
-          // Poll the queue, emitting notifications as they arrive.
-          // When the queue is empty, check if dispatch has completed.
-          def pollQueue: Stream[F, ServerSentEvent] =
-            Stream.eval(session.outQueue.tryTake).flatMap {
-              case Some(msg) =>
-                Stream.emit(toSSE(msg)) ++ pollQueue
-              case None =>
-                Stream.eval(dispatchResult.tryGet).flatMap {
-                  case Some(result) =>
-                    // Dispatch completed. All notifications were enqueued before the
-                    // handler returned, so drain the queue to capture any remaining items,
-                    // then emit the response (or propagate the error).
-                    Stream.eval(drainQueue(session)).flatMap { remaining =>
-                      Stream.emits(remaining.map(toSSE))
-                    } ++ (result match
-                      case Right(Some(response)) => Stream.emit(toSSE(response))
-                      case Right(None)           => Stream.empty
-                      case Left(error)           => Stream.raiseError[F](error)
-                    )
-                  case None =>
-                    // Dispatch still running, wait briefly and retry
-                    Stream.eval(Async[F].sleep(scala.concurrent.duration.Duration(5, "ms"))) >> pollQueue
-                }
+          // Race between dispatch completion and a queue item arriving.
+          // This eliminates the busy-wait polling loop and its 5ms latency.
+          def raceLoop: Stream[F, ServerSentEvent] =
+            Stream.eval(Async[F].race(dispatchResult.get, session.outQueue.take)).flatMap {
+              case Left(result) =>
+                // Dispatch completed. All notifications were enqueued before the
+                // handler returned, so drain the queue to capture any remaining items,
+                // then emit the response (or propagate the error).
+                Stream.eval(drainQueue(session)).flatMap { remaining =>
+                  Stream.emits(remaining.map(toSSE))
+                } ++ (result match
+                  case Right(Some(response)) => Stream.emit(toSSE(response))
+                  case Right(None)           => Stream.empty
+                  case Left(error)           => Stream.raiseError[F](error)
+                )
+              case Right(msg) =>
+                // Got a notification from the queue; emit it and continue
+                Stream.emit(toSSE(msg)) ++ raceLoop
             }
 
-          pollQueue
+          raceLoop
         }
 
       span.addAttribute(Attribute("http.status_code", 200L)) *>

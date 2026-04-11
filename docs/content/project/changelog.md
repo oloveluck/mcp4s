@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.7 - 2026-04-11
+
+### Fixed
+- `ToolOutput` schema derivation: optional fields now emit correct JSON Schema instead of wrapping in an extra `Option` layer
+- `Dispatcher` initialization: server capabilities are now sent in `initialize` response before any tool/resource requests
+- `PromptInput` error messages: validation failures now include the prompt name and argument details
+- Landing page "Get Started" button rendering (was unstyled text link)
+
+### Added
+- WebSocket client: configurable connect/request timeouts and bounded message queues
+- WebSocket server: graceful disconnect cleanup on client departure
+- `ResourceSubscription`: bounded update queue to prevent unbounded memory growth
+- `SessionManager`: configurable maximum session limit
+- Client pagination support for `listTools`, `listResources`, and `listPrompts`
+
 ## 0.1.6 - 2026-04-05
 
 ### Added

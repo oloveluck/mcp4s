@@ -90,18 +90,19 @@ class McpConnectionSpec extends CatsEffectSuite:
     val response = Json.obj("tools" -> List(testTool).asJson)
     for
       conn <- createConnection(mockResponse(McpMethod.ToolsList, response))
-      tools <- conn.listTools
+      result <- conn.listTools()
     yield
-      assertEquals(tools.length, 1)
-      assertEquals(tools.head.name, "calculate")
+      assertEquals(result._1.length, 1)
+      assertEquals(result._1.head.name, "calculate")
+      assertEquals(result._2, None)
   }
 
   test("listTools returns empty list") {
     val response = Json.obj("tools" -> Json.arr())
     for
       conn <- createConnection(mockResponse(McpMethod.ToolsList, response))
-      tools <- conn.listTools
-    yield assertEquals(tools.length, 0)
+      result <- conn.listTools()
+    yield assertEquals(result._1.length, 0)
   }
 
   // === Call Tool Tests ===
@@ -147,20 +148,20 @@ class McpConnectionSpec extends CatsEffectSuite:
     val response = Json.obj("resources" -> List(testResource).asJson)
     for
       conn <- createConnection(mockResponse(McpMethod.ResourcesList, response))
-      resources <- conn.listResources
+      result <- conn.listResources()
     yield
-      assertEquals(resources.length, 1)
-      assertEquals(resources.head.uri, "file:///test.txt")
+      assertEquals(result._1.length, 1)
+      assertEquals(result._1.head.uri, "file:///test.txt")
   }
 
   test("listResourceTemplates parses response correctly") {
     val response = Json.obj("resourceTemplates" -> List(testResourceTemplate).asJson)
     for
       conn <- createConnection(mockResponse(McpMethod.ResourcesTemplatesList, response))
-      templates <- conn.listResourceTemplates
+      result <- conn.listResourceTemplates()
     yield
-      assertEquals(templates.length, 1)
-      assertEquals(templates.head.uriTemplate, "file:///{path}")
+      assertEquals(result._1.length, 1)
+      assertEquals(result._1.head.uriTemplate, "file:///{path}")
   }
 
   // === Read Resource Tests ===
@@ -213,10 +214,10 @@ class McpConnectionSpec extends CatsEffectSuite:
     val response = Json.obj("prompts" -> List(testPrompt).asJson)
     for
       conn <- createConnection(mockResponse(McpMethod.PromptsList, response))
-      prompts <- conn.listPrompts
+      result <- conn.listPrompts()
     yield
-      assertEquals(prompts.length, 1)
-      assertEquals(prompts.head.name, "greeting")
+      assertEquals(result._1.length, 1)
+      assertEquals(result._1.head.name, "greeting")
   }
 
   // === Get Prompt Tests ===
@@ -298,9 +299,9 @@ class McpConnectionSpec extends CatsEffectSuite:
           case _ => ()
         IO.pure(Json.obj("tools" -> Json.arr()))
       }
-      _ <- conn.listTools
-      _ <- conn.listTools
-      _ <- conn.listTools
+      _ <- conn.listTools()
+      _ <- conn.listTools()
+      _ <- conn.listTools()
     yield
       assertEquals(ids.toList, List(1L, 2L, 3L))
   }
@@ -312,7 +313,7 @@ class McpConnectionSpec extends CatsEffectSuite:
       conn <- createConnection { _ =>
         IO.raiseError(new RuntimeException("Transport error"))
       }
-      result <- conn.listTools.attempt
+      result <- conn.listTools().attempt
     yield
       assert(result.isLeft)
       assert(result.left.toOption.get.getMessage.contains("Transport error"))
@@ -321,7 +322,7 @@ class McpConnectionSpec extends CatsEffectSuite:
   test("connection handles malformed response") {
     for
       conn <- createConnection(_ => IO.pure(Json.obj("invalid" -> Json.fromString("response"))))
-      result <- conn.listTools.attempt
+      result <- conn.listTools().attempt
     yield assert(result.isLeft)
   }
 

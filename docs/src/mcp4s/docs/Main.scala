@@ -18,7 +18,7 @@ object Main extends IOApp:
       title = Some("mcp4s"),
       description = Some("MCP (Model Context Protocol) for Scala"),
       language = Some("en"),
-      version = Some("0.1.6")
+      version = Some("0.1.7")
     )
     .all.themeColors(
       primary = Color.hex("1a5276"),
@@ -59,10 +59,10 @@ object Main extends IOApp:
       title = Some("mcp4s"),
       subtitle = Some("Type-safe MCP (Model Context Protocol) for Scala, powered by Cats Effect and fs2"),
       latestReleases = Seq(
-        ReleaseInfo("Latest Release", "0.1.6")
+        ReleaseInfo("Latest Release", "0.1.7")
       ),
       license = Some("Apache-2.0"),
-      projectLinks = Seq(
+      titleLinks = Seq(
         ButtonLink.internal(Root / "getting-started" / "README.md", "Get Started"),
         ButtonLink.external("https://central.sonatype.com/artifact/io.github.oloveluck/mcp4s-core_3", "Maven Central")
       ),

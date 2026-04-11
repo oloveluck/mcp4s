@@ -112,7 +112,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
     httpServerResource(simpleServer).use { server =>
       httpConnection(simpleClient, server.address.getPort).use { conn =>
         for
-          tools <- conn.listTools
+          tools <- conn.listAllTools
         yield
           assertEquals(tools.length, 4)
           assert(tools.exists(_.name == "add"))
@@ -187,7 +187,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
     httpServerResource(simpleServer).use { server =>
       httpConnection(simpleClient, server.address.getPort).use { conn =>
         for
-          resources <- conn.listResources
+          resources <- conn.listAllResources
         yield
           assertEquals(resources.length, 2)
           assert(resources.exists(_.uri == "file:///test.txt"))
@@ -235,7 +235,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
     httpServerResource(simpleServer).use { server =>
       httpConnection(simpleClient, server.address.getPort).use { conn =>
         for
-          templates <- conn.listResourceTemplates
+          templates <- conn.listAllResourceTemplates
         yield
           assertEquals(templates.length, 1)
           assertEquals(templates.head.uriTemplate, "file:///docs/{name}")
@@ -249,7 +249,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
     httpServerResource(simpleServer).use { server =>
       httpConnection(simpleClient, server.address.getPort).use { conn =>
         for
-          prompts <- conn.listPrompts
+          prompts <- conn.listAllPrompts
         yield
           assertEquals(prompts.length, 1)
           assertEquals(prompts.head.name, "greeting")
@@ -277,7 +277,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
       httpConnection(simpleClient, server.address.getPort).use { conn =>
         for
           // Do a successful operation first to ensure connection is established
-          _ <- conn.listPrompts
+          _ <- conn.listAllPrompts
           result <- conn.getPrompt("nonexistent", Map.empty[String, String]).attempt
         yield
           assert(result.isLeft)
@@ -410,9 +410,9 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
             assertEquals(conn2.serverInfo.name, "test-server")
             assertEquals(conn3.serverInfo.name, "test-server")
           }
-          tools1 <- conn1.listTools
-          tools2 <- conn2.listTools
-          tools3 <- conn3.listTools
+          tools1 <- conn1.listAllTools
+          tools2 <- conn2.listAllTools
+          tools3 <- conn3.listAllTools
         yield
           assertEquals(tools1.length, 4)
           assertEquals(tools2.length, 4)
@@ -449,7 +449,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
       val port = server.address.getPort
       (1 to 5).toList.traverse_ { _ =>
         httpConnection(simpleClient, port).use { conn =>
-          conn.listTools.map(tools => assertEquals(tools.length, 4))
+          conn.listAllTools.map(tools => assertEquals(tools.length, 4))
         } >> IO.sleep(10.millis)
       }
     }
@@ -480,8 +480,8 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
       val wsPort = wsServer.address.getPort
       (httpConnection(simpleClient, httpPort), wsConnection(simpleClient, wsPort)).tupled.use { case (httpConn, wsConn) =>
         for
-          httpTools <- httpConn.listTools
-          wsTools <- wsConn.listTools
+          httpTools <- httpConn.listAllTools
+          wsTools <- wsConn.listAllTools
         yield
           assertEquals(httpTools.map(_.name).sorted, wsTools.map(_.name).sorted)
       }
@@ -593,8 +593,8 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
             assertEquals(conn1.serverInfo.name, "server-1")
             assertEquals(conn2.serverInfo.name, "server-2")
           }
-          tools1 <- conn1.listTools
-          tools2 <- conn2.listTools
+          tools1 <- conn1.listAllTools
+          tools2 <- conn2.listAllTools
           _ = assertEquals(tools1.map(_.name), List("tool1"))
           _ = assertEquals(tools2.map(_.name), List("tool2"))
           result1 <- conn1.callTool("tool1", Json.obj())
@@ -709,12 +709,12 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
       httpServerResource(countingServer).use { server =>
         httpConnection(simpleClient, server.address.getPort).use { conn =>
           for
-            _ <- conn.listTools
-            _ <- conn.listTools
+            _ <- conn.listAllTools
+            _ <- conn.listAllTools
             _ <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
-            _ <- conn.listResources
+            _ <- conn.listAllResources
             _ <- conn.readResource("file:///test.txt")
-            _ <- conn.listPrompts
+            _ <- conn.listAllPrompts
             _ <- conn.getPrompt("greeting", Map("name" -> "Test"))
             counts <- getCounts
           yield
@@ -917,10 +917,10 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
       httpConnection(simpleClient, server.address.getPort).use { conn =>
         for
           // List available capabilities
-          tools <- conn.listTools
-          resources <- conn.listResources
-          prompts <- conn.listPrompts
-          templates <- conn.listResourceTemplates
+          tools <- conn.listAllTools
+          resources <- conn.listAllResources
+          prompts <- conn.listAllPrompts
+          templates <- conn.listAllResourceTemplates
           // Use each capability
           toolResult <- conn.callTool("add", Json.obj("a" -> Json.fromInt(5), "b" -> Json.fromInt(5)))
           resourceContent <- conn.readResource("file:///test.txt")
@@ -942,9 +942,9 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
       httpConnection(simpleClient, server.address.getPort).use { conn =>
         for
           // Repeat the same operation multiple times
-          r1 <- conn.listTools
-          r2 <- conn.listTools
-          r3 <- conn.listTools
+          r1 <- conn.listAllTools
+          r2 <- conn.listAllTools
+          r3 <- conn.listAllTools
           r4 <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(1)))
           r5 <- conn.callTool("add", Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(2)))
           r6 <- conn.callTool("add", Json.obj("a" -> Json.fromInt(3), "b" -> Json.fromInt(3)))
@@ -966,9 +966,9 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
       (wsConnection(simpleClient, port), wsConnection(simpleClient, port), wsConnection(simpleClient, port)).tupled
         .use { case (conn1, conn2, conn3) =>
           for
-            t1 <- conn1.listTools
-            t2 <- conn2.listTools
-            t3 <- conn3.listTools
+            t1 <- conn1.listAllTools
+            t2 <- conn2.listAllTools
+            t3 <- conn3.listAllTools
           yield
             assertEquals(t1.length, 4)
             assertEquals(t2.length, 4)
@@ -1046,7 +1046,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
       val connections = (1 to 10).toList.map(_ => httpConnection(simpleClient, port))
       connections.sequence.use { conns =>
         conns.parTraverse { conn =>
-          conn.listTools.map(tools => assertEquals(tools.length, 4))
+          conn.listAllTools.map(tools => assertEquals(tools.length, 4))
         }.void
       }
     }
@@ -1056,9 +1056,9 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
     httpServerResource(simpleServer).use { server =>
       httpConnection(simpleClient, server.address.getPort).use { conn =>
         val operations = List(
-          conn.listTools,
-          conn.listResources,
-          conn.listPrompts,
+          conn.listAllTools,
+          conn.listAllResources,
+          conn.listAllPrompts,
           conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(1))).map(_ => List.empty[Tool]),
           conn.readResource("file:///test.txt").map(_ => List.empty[Tool]),
           conn.ping.map(_ => List.empty[Tool])

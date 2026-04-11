@@ -14,9 +14,9 @@ Add to your `build.mill`:
 
 ```scala
 def ivyDeps = Agg(
-  ivy"io.github.oloveluck::mcp4s-core::0.1.6",
-  ivy"io.github.oloveluck::mcp4s-server::0.1.6",  // for servers
-  ivy"io.github.oloveluck::mcp4s-client::0.1.6"   // for clients
+  ivy"io.github.oloveluck::mcp4s-core::0.1.7",
+  ivy"io.github.oloveluck::mcp4s-server::0.1.7",  // for servers
+  ivy"io.github.oloveluck::mcp4s-client::0.1.7"   // for clients
 )
 ```
 
@@ -24,9 +24,9 @@ Or in sbt:
 
 ```scala
 libraryDependencies ++= Seq(
-  "io.github.oloveluck" %% "mcp4s-core" % "0.1.6",
-  "io.github.oloveluck" %% "mcp4s-server" % "0.1.6",
-  "io.github.oloveluck" %% "mcp4s-client" % "0.1.6"
+  "io.github.oloveluck" %% "mcp4s-core" % "0.1.7",
+  "io.github.oloveluck" %% "mcp4s-server" % "0.1.7",
+  "io.github.oloveluck" %% "mcp4s-client" % "0.1.7"
 )
 ```
 

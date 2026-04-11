@@ -12,12 +12,12 @@ This guide gets you running with both.
 
 ```scala
 // Mill
-mvn"io.github.oloveluck::mcp4s-server::0.1.6"
-mvn"io.github.oloveluck::mcp4s-client::0.1.6"
+mvn"io.github.oloveluck::mcp4s-server::0.1.7"
+mvn"io.github.oloveluck::mcp4s-client::0.1.7"
 
 // SBT
-"io.github.oloveluck" %% "mcp4s-server" % "0.1.6"
-"io.github.oloveluck" %% "mcp4s-client" % "0.1.6"
+"io.github.oloveluck" %% "mcp4s-server" % "0.1.7"
+"io.github.oloveluck" %% "mcp4s-client" % "0.1.7"
 ```
 
 ## Minimal Server

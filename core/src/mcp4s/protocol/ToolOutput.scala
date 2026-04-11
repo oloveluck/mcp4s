@@ -108,11 +108,13 @@ object ToolOutput:
     val schemas = summonSchemas[m.MirroredElemTypes]
     val descriptions = ToolInput.fieldDescriptions[A]
 
-    val properties = labels.zip(schemas).map { (label, schemaType) =>
-      label -> JsonSchemaProperty.make(schemaType, descriptions.get(label), None)
+    val properties = labels.zip(schemas).map { (label, fs) =>
+      val itemsProp = fs.items.map(t => JsonSchemaProperty.make(t))
+      label -> JsonSchemaProperty.make(fs.typeName, descriptions.get(label), None, None, None, None, itemsProp)
     }.toMap
 
-    val jsonSchema = JsonSchema("object", Some(properties), Some(labels))
+    val requiredFields = labels.zip(schemas).filter((_, fs) => !fs.isOptional).map((label, _) => label)
+    val jsonSchema = JsonSchema("object", Some(properties), if requiredFields.isEmpty then None else Some(requiredFields))
 
     instance[A](
       jsonSchema,
@@ -124,13 +126,28 @@ object ToolOutput:
         )
     )
 
-  // Helper to summon schema type strings for tuple elements
-  private inline def summonSchemas[T <: Tuple]: List[String] =
+  /** Schema metadata for a single field, carrying type info, optionality, and array items. */
+  private final case class FieldSchema(
+      typeName: String,
+      isOptional: Boolean,
+      items: Option[String]
+  )
+
+  // Helper to summon schema info for tuple elements
+  private inline def summonSchemas[T <: Tuple]: List[FieldSchema] =
     inline erasedValue[T] match
       case _: EmptyTuple => Nil
-      case _: (t *: ts)  => schemaTypeFor[t] :: summonSchemas[ts]
+      case _: (t *: ts)  => fieldSchemaFor[t] :: summonSchemas[ts]
 
-  // Map Scala types to JSON schema types
+  // Map Scala types to FieldSchema with type, optionality, and array items info
+  private inline def fieldSchemaFor[T]: FieldSchema =
+    inline erasedValue[T] match
+      case _: Option[t]     => FieldSchema(schemaTypeFor[t], true, arrayItemsFor[t])
+      case _: List[t]       => FieldSchema("array", false, Some(schemaTypeFor[t]))
+      case _: Seq[t]        => FieldSchema("array", false, Some(schemaTypeFor[t]))
+      case _                => FieldSchema(schemaTypeFor[T], false, None)
+
+  // Map Scala types to JSON schema type names
   private inline def schemaTypeFor[T]: String =
     inline erasedValue[T] match
       case _: String        => "string"
@@ -139,8 +156,14 @@ object ToolOutput:
       case _: Double        => "number"
       case _: Float         => "number"
       case _: Boolean       => "boolean"
-      case _: Option[?]     => "string"
       case _: List[?]       => "array"
       case _: Seq[?]        => "array"
       case _: Map[?, ?]     => "object"
       case _                => "object"
+
+  // Extract array items type for types that are arrays, None otherwise
+  private inline def arrayItemsFor[T]: Option[String] =
+    inline erasedValue[T] match
+      case _: List[t] => Some(schemaTypeFor[t])
+      case _: Seq[t]  => Some(schemaTypeFor[t])
+      case _          => None

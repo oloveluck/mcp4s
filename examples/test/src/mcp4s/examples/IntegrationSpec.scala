@@ -126,7 +126,7 @@ class IntegrationSpec extends CatsEffectSuite:
       val port = server.address.getPort
       connectedClient(port).use { conn =>
         for
-          tools <- conn.listTools
+          tools <- conn.listAllTools
         yield
           assertEquals(tools.length, 2)
           assert(tools.exists(_.name == "add"))
@@ -171,7 +171,7 @@ class IntegrationSpec extends CatsEffectSuite:
       val port = server.address.getPort
       connectedClient(port).use { conn =>
         for
-          resources <- conn.listResources
+          resources <- conn.listAllResources
         yield
           assertEquals(resources.length, 1)
           assertEquals(resources.head.uri, "file:///test.txt")
@@ -197,7 +197,7 @@ class IntegrationSpec extends CatsEffectSuite:
       val port = server.address.getPort
       connectedClient(port).use { conn =>
         for
-          prompts <- conn.listPrompts
+          prompts <- conn.listAllPrompts
         yield
           assertEquals(prompts.length, 1)
           assertEquals(prompts.head.name, "greeting")

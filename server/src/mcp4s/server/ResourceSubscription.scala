@@ -92,13 +92,23 @@ trait ResourceSubscriptionManager[F[_]]:
 
 object ResourceSubscriptionManager:
 
-  /** Create a new subscription manager. */
+  /** Default maximum queue size for resource change notifications */
+  val DefaultMaxQueueSize: Int = 1000
+
+  /** Create a new subscription manager with default bounded queue size. */
   def apply[F[_]: Concurrent]: F[ResourceSubscriptionManager[F]] =
+    apply(DefaultMaxQueueSize)
+
+  /** Create a new subscription manager.
+    *
+    * @param maxQueueSize Maximum number of pending notifications (bounded with backpressure)
+    */
+  def apply[F[_]: Concurrent](maxQueueSize: Int): F[ResourceSubscriptionManager[F]] =
     for
       // Map from resource URI -> Set of subscribed session IDs
       subscriptionsRef <- Ref.of[F, Map[String, Set[String]]](Map.empty)
-      // Queue for notifications (sessionId, uri)
-      notificationQueue <- Queue.unbounded[F, (String, String)]
+      // Queue for notifications (sessionId, uri) — bounded with backpressure
+      notificationQueue <- Queue.bounded[F, (String, String)](maxQueueSize)
     yield new ResourceSubscriptionManagerImpl(subscriptionsRef, notificationQueue)
 
   private class ResourceSubscriptionManagerImpl[F[_]: Concurrent](

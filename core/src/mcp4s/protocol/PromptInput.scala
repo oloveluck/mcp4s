@@ -98,16 +98,11 @@ object PromptInput:
             buildTuple[ts](map, labels.tail, optionalFlags.tail).map(value *: _)
           case None =>
             Left(s"Missing required argument: $label")
-      case _: (t *: ts) =>
-        // For non-string types, we still require string input and pass it through
-        // This handles edge cases; in practice, prompts use strings
+      case _: (Option[t] *: ts) =>
+        // Non-String optional type — reject with a clear error
         val label = labels.head
-        val isOptional = optionalFlags.head
-        if isOptional then
-          buildTuple[ts](map, labels.tail, optionalFlags.tail).map(map.get(label) *: _)
-        else
-          map.get(label) match
-            case Some(value) =>
-              buildTuple[ts](map, labels.tail, optionalFlags.tail).map(value *: _)
-            case None =>
-              Left(s"Missing required argument: $label")
+        Left(s"Field '$label' has unsupported type; prompt arguments must be String or Option[String]")
+      case _: (t *: ts) =>
+        // Non-String required type — reject with a clear error
+        val label = labels.head
+        Left(s"Field '$label' has unsupported type; prompt arguments must be String or Option[String]")

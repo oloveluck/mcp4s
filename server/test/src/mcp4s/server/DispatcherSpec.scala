@@ -382,8 +382,7 @@ class DispatcherSpec extends CatsEffectSuite:
 
     for
       dispatcher <- Dispatcher[IO](failingServer)
-      _ <- sendRequest(dispatcher, McpMethod.Initialize, Json.obj())
-      _ <- sendNotification(dispatcher, McpMethod.Initialized)
+      _ <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
       response <- sendRequest(dispatcher, McpMethod.ToolsList)
     yield
       response match
