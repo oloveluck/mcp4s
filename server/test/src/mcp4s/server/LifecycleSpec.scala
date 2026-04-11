@@ -10,6 +10,8 @@ import munit.CatsEffectSuite
 
 class LifecycleSpec extends CatsEffectSuite:
 
+  private val minimalCtx = ToolContext.minimal[IO](SamplingRequester.unsupported[IO], RequestId.NullId)
+
   case class CalcArgs(a: Double, b: Double) derives ToolInput
 
   // === McpLifecycleTool Tests ===
@@ -43,8 +45,8 @@ class LifecycleSpec extends CatsEffectSuite:
         for
           acquired <- acquiredRef.get
           _ = assert(acquired, "Resource should be acquired")
-          result1 <- tools.call("increment", Json.obj("increment" -> 5.asJson)).value
-          result2 <- tools.call("increment", Json.obj("increment" -> 3.asJson)).value
+          result1 <- tools.call("increment", Json.obj("increment" -> 5.asJson), minimalCtx).value
+          result2 <- tools.call("increment", Json.obj("increment" -> 3.asJson), minimalCtx).value
           _ = assertEquals(result1.map(_.textContent), Some("Counter: 5"))
           _ = assertEquals(result2.map(_.textContent), Some("Counter: 8"))
         yield ()
@@ -77,7 +79,7 @@ class LifecycleSpec extends CatsEffectSuite:
         for
           acquired <- acquiredRef.get
           _ = assert(acquired)
-          result <- tools.call("getValue", Json.obj()).value
+          result <- tools.call("getValue", Json.obj(), minimalCtx).value
           _ = assertEquals(result.map(_.textContent), Some("Value: 42"))
         yield ()
       }
@@ -116,8 +118,8 @@ class LifecycleSpec extends CatsEffectSuite:
         for
           toolList <- tools.list
           _ = assertEquals(toolList.map(_.name).toSet, Set("increment", "multiply"))
-          r1 <- tools.call("increment", Json.obj("value" -> 5.asJson)).value
-          r2 <- tools.call("multiply", Json.obj("value" -> 7.asJson)).value
+          r1 <- tools.call("increment", Json.obj("value" -> 5.asJson), minimalCtx).value
+          r2 <- tools.call("multiply", Json.obj("value" -> 7.asJson), minimalCtx).value
           _ = assertEquals(r1.map(_.textContent), Some("5"))
           _ = assertEquals(r2.map(_.textContent), Some("14"))
         yield ()
@@ -150,8 +152,8 @@ class LifecycleSpec extends CatsEffectSuite:
         for
           toolList <- tools.list
           _ = assertEquals(toolList.map(_.name).toSet, Set("increment", "add"))
-          r1 <- tools.call("increment", Json.obj("value" -> 5.asJson)).value
-          r2 <- tools.call("add", Json.obj("a" -> 3.asJson, "b" -> 2.asJson)).value
+          r1 <- tools.call("increment", Json.obj("value" -> 5.asJson), minimalCtx).value
+          r2 <- tools.call("add", Json.obj("a" -> 3.asJson, "b" -> 2.asJson), minimalCtx).value
           _ = assertEquals(r1.map(_.textContent), Some("5"))
           _ = assertEquals(r2.map(_.textContent), Some("5.0"))
         yield ()

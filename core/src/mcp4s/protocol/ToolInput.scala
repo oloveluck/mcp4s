@@ -50,6 +50,12 @@ object ToolInput:
   /** Extract field descriptions from @description annotations at compile time */
   inline def fieldDescriptions[A]: Map[String, String] = ${ fieldDescriptionsMacro[A] }
 
+  /** Extract class-level @description annotation at compile time */
+  inline def classDescription[A]: Option[String] = ${ classDescriptionMacro[A] }
+
+  /** Get the simple class name at compile time */
+  inline def typeName[A]: String = ${ typeNameMacro[A] }
+
   private def fieldDescriptionsMacro[A: Type](using Quotes): Expr[Map[String, String]] =
     import quotes.reflect.*
     val tpe = TypeRepr.of[A]
@@ -64,6 +70,39 @@ object ToolInput:
       }.filter(_ != null)
     }
     Expr(descriptions.toMap)
+
+  private def classDescriptionMacro[A: Type](using Quotes): Expr[Option[String]] =
+    import quotes.reflect.*
+    val tpe = TypeRepr.of[A]
+    val desc = tpe.typeSymbol.annotations.collectFirst {
+      case term if term.tpe.typeSymbol.fullName == "mcp4s.protocol.description" =>
+        term match
+          case Apply(_, List(Literal(StringConstant(desc)))) => desc
+          case _                                             => null
+    }.filter(_ != null)
+    desc match
+      case Some(d) => '{ Some(${ Expr(d) }) }
+      case None    => '{ None }
+
+  private def typeNameMacro[A: Type](using Quotes): Expr[String] =
+    import quotes.reflect.*
+    Expr(TypeRepr.of[A].typeSymbol.name)
+
+  /** Derive a tool/prompt name from a class name.
+    * Strips common suffixes, converts PascalCase to snake_case.
+    * Examples: "AddArgs" -> "add", "SmartCalcArgs" -> "smart_calc", "Add" -> "add"
+    */
+  def deriveName(className: String): String =
+    val stripped = Seq("Args", "Input", "Params", "Request")
+      .foldLeft(className) { (name, suffix) =>
+        if name.endsWith(suffix) && name.length > suffix.length
+        then name.dropRight(suffix.length)
+        else name
+      }
+    stripped
+      .replaceAll("([A-Z]+)([A-Z][a-z])", "$1_$2")
+      .replaceAll("([a-z\\d])([A-Z])", "$1_$2")
+      .toLowerCase
 
   // === Derivation Support ===
 

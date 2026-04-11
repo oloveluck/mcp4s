@@ -10,6 +10,8 @@ import munit.CatsEffectSuite
 
 class McpStreamingToolSpec extends CatsEffectSuite:
 
+  private val minimalCtx = ToolContext.minimal[IO](SamplingRequester.unsupported[IO], RequestId.NullId)
+
   // === McpTool Streaming Tests ===
 
   test("McpTool.streaming creates tool with streaming handler") {
@@ -24,14 +26,14 @@ class McpStreamingToolSpec extends CatsEffectSuite:
       _ = assertEquals(tools.size, 1)
       _ = assertEquals(tools.head.name, "count")
 
-      // Call the streaming tool
-      results <- streamingTool.callStreaming(
+      // Call returns the last emitted result
+      result <- streamingTool.call(
         "count",
-        Json.obj("count" -> 3.asJson)
-      ).get.compile.toList
+        Json.obj("count" -> 3.asJson),
+        minimalCtx
+      ).value
 
-      _ = assertEquals(results.size, 3)
-      _ = assertEquals(results.map(_.textContent), List("Count: 1", "Count: 2", "Count: 3"))
+      _ = assertEquals(result.map(_.textContent), Some("Count: 3"))
     yield ()
   }
 
@@ -48,8 +50,8 @@ class McpStreamingToolSpec extends CatsEffectSuite:
       tools <- streamingTool.list
       _ = assertEquals(tools.head.inputSchema, JsonSchema.empty)
 
-      results <- streamingTool.callStreaming("tick", Json.obj()).get.compile.toList
-      _ = assertEquals(results.size, 3)
+      result <- streamingTool.call("tick", Json.obj(), minimalCtx).value
+      _ = assertEquals(result.map(_.textContent), Some("tick 3"))
     yield ()
   }
 
@@ -60,8 +62,10 @@ class McpStreamingToolSpec extends CatsEffectSuite:
       Stream.emit(ToolResult.text("ok"))
     }
 
-    val result = tool.callStreaming("unknown", Json.obj())
-    assertEquals(result, None)
+    for
+      result <- tool.call("unknown", Json.obj(), minimalCtx).value
+      _ = assertEquals(result, None)
+    yield ()
   }
 
   test("McpTool.streaming handles errors in stream") {
@@ -76,11 +80,11 @@ class McpStreamingToolSpec extends CatsEffectSuite:
 
     for
       // Success case
-      successResult <- tool.callStreaming("maybe-fail", Json.obj("fail" -> false.asJson)).get.compile.toList
-      _ = assertEquals(successResult.head.textContent, "success")
+      successResult <- tool.call("maybe-fail", Json.obj("fail" -> false.asJson), minimalCtx).value
+      _ = assertEquals(successResult.map(_.textContent), Some("success"))
 
       // Failure case
-      failResult <- tool.callStreaming("maybe-fail", Json.obj("fail" -> true.asJson)).get.compile.toList.attempt
+      failResult <- tool.call("maybe-fail", Json.obj("fail" -> true.asJson), minimalCtx).value.attempt
       _ = assert(failResult.isLeft)
     yield ()
   }
@@ -105,19 +109,12 @@ class McpStreamingToolSpec extends CatsEffectSuite:
       tools <- combined.list
       _ = assertEquals(tools.map(_.name).toSet, Set("stream-tool", "regular-tool"))
 
-      // Streaming tool returns stream
-      streamResults <- combined.callStreaming("stream-tool", Json.obj("x" -> 3.asJson)).get.compile.toList
-      _ = assertEquals(streamResults.map(_.textContent), List("chunk 1", "chunk 2", "chunk 3"))
-
-      // Regular tool has no streaming capability
-      _ = assertEquals(combined.callStreaming("regular-tool", Json.obj("y" -> "hello".asJson)), None)
-
       // Regular tool works via call
-      regularResult <- combined.call("regular-tool", Json.obj("y" -> "hello".asJson)).value
+      regularResult <- combined.call("regular-tool", Json.obj("y" -> "hello".asJson), minimalCtx).value
       _ = assertEquals(regularResult.map(_.textContent), Some("result: hello"))
 
       // Streaming tool also works via call (returns last result)
-      callResult <- combined.call("stream-tool", Json.obj("x" -> 2.asJson)).value
+      callResult <- combined.call("stream-tool", Json.obj("x" -> 2.asJson), minimalCtx).value
       _ = assertEquals(callResult.map(_.textContent), Some("chunk 2"))
     yield ()
   }
@@ -140,31 +137,11 @@ class McpStreamingToolSpec extends CatsEffectSuite:
       tools <- combined.list
       _ = assertEquals(tools.map(_.name).toSet, Set("tool1", "tool2"))
 
-      r1 <- combined.callStreaming("tool1", Json.obj("x" -> 42.asJson)).get.compile.toList
-      r2 <- combined.callStreaming("tool2", Json.obj("y" -> "hello".asJson)).get.compile.toList
+      r1 <- combined.call("tool1", Json.obj("x" -> 42.asJson), minimalCtx).value
+      r2 <- combined.call("tool2", Json.obj("y" -> "hello".asJson), minimalCtx).value
 
-      _ = assertEquals(r1.head.textContent, "Tool1: 42")
-      _ = assertEquals(r2.head.textContent, "Tool2: hello")
-    yield ()
-  }
-
-  test("non-streaming tools return None for callStreaming") {
-    val tool = McpTool.pureTextNoArgs[IO]("ping", "Ping") { "pong" }
-
-    assertEquals(tool.callStreaming("ping", Json.obj()), None)
-  }
-
-  test("McpTool.fromNonStreaming wraps regular handler") {
-    case class EchoArgs(message: String) derives ToolInput
-
-    val tool = McpTool.fromNonStreaming[IO, EchoArgs]("echo", "Echo message") { args =>
-      IO.pure(ToolResult.text(args.message))
-    }
-
-    for
-      results <- tool.callStreaming("echo", Json.obj("message" -> "hello".asJson)).get.compile.toList
-      _ = assertEquals(results.size, 1)
-      _ = assertEquals(results.head.textContent, "hello")
+      _ = assertEquals(r1.map(_.textContent), Some("Tool1: 42"))
+      _ = assertEquals(r2.map(_.textContent), Some("Tool2: hello"))
     yield ()
   }
 
@@ -183,7 +160,7 @@ class McpStreamingToolSpec extends CatsEffectSuite:
       tools <- tool.list
       _ = assertEquals(tools.head.name, "log")
 
-      results <- tool.callStreaming("log", Json.obj("count" -> 2.asJson)).get.compile.toList
-      _ = assertEquals(results.size, 2)
+      result <- tool.call("log", Json.obj("count" -> 2.asJson), minimalCtx).value
+      _ = assertEquals(result.map(_.textContent), Some("Done: 2"))
     yield ()
   }

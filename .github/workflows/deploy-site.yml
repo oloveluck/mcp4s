@@ -1,10 +1,10 @@
-name: Deploy Site
+name: Deploy Docs
 
 on:
   push:
     branches: [main]
     paths:
-      - 'site/**'
+      - 'docs/**'
       - 'build.mill'
   workflow_dispatch:
 
@@ -29,10 +29,12 @@ jobs:
         run: |
           curl -fLo mill https://repo1.maven.org/maven2/com/lihaoyi/mill-dist/1.0.6/mill-dist-1.0.6-mill.sh
           chmod +x mill
-      - run: ./mill site.dist
+      - run: ./mill docs.run
+      - name: Disable Jekyll
+        run: touch out/docs/site/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: out/site/dist.dest/site
+          path: out/docs/site
 
   deploy:
     needs: build

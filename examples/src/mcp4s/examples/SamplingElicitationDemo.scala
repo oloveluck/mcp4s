@@ -7,7 +7,7 @@ import io.circe.Json
 import mcp4s.protocol.*
 import mcp4s.server.*
 import mcp4s.server.mcp
-import mcp4s.server.mcp.{ok, pure}
+import mcp4s.server.mcp.ok
 import mcp4s.server.transport.*
 import mcp4s.client.*
 import mcp4s.client.{mcp => clientMcp}
@@ -113,11 +113,13 @@ object ElicitationHandlers:
 
 // === Demo Server with Smart Tools ===
 
+@description("Add two numbers")
 case class DemoAddArgs(
     @description("First number") a: Double,
     @description("Second number") b: Double
 ) derives ToolInput
 
+@description("Calculate using LLM assistance")
 case class SmartCalcArgs(
     @description("Mathematical expression or question for the LLM") query: String
 ) derives ToolInput
@@ -128,12 +130,12 @@ object DemoServer extends IOApp.Simple:
   // === Tools using new DSL ===
 
   val tools: Tools[IO] =
-    // Regular tool using new DSL
-    mcp.Tool[IO, DemoAddArgs]("add", "Add two numbers") { args =>
+    // Regular tool — name override needed (DemoAddArgs derives "demo_add", not "add")
+    mcp.Tool[IO, DemoAddArgs]("add") { args =>
       ok(s"${args.a + args.b}").pure[IO]
     } |+|
-    // Context-aware tool that uses sampling
-    mcp.Tool.withContext[IO, SmartCalcArgs]("smart-calc", "Calculate using LLM assistance") { (args, ctx) =>
+    // Context-aware tool — name override needed (SmartCalcArgs derives "smart_calc", not "smart-calc")
+    mcp.Tool.withContext[IO, SmartCalcArgs]("smart-calc") { (args, ctx) =>
       for
         _ <- IO.println(s"[Server] smart-calc called with: ${args.query}")
         _ <- IO.println(s"[Server] Requesting LLM completion from client...")

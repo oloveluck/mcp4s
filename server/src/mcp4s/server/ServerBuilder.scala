@@ -287,7 +287,8 @@ private final class BuiltServer[F[_]: Concurrent](
           case None =>
             mcpTools match
               case Some(mt) =>
-                mt.call(name, arguments).getOrElseF(
+                val ctx = ToolContext.minimal[F](SamplingRequester.unsupported[F], RequestId.NullId)
+                mt.call(name, arguments, ctx).getOrElseF(
                   Concurrent[F].raiseError(McpError.ToolNotFound(name))
                 )
               case None =>
@@ -303,8 +304,7 @@ private final class BuiltServer[F[_]: Concurrent](
           case None =>
             mcpTools match
               case Some(mt) =>
-                // Use callWithContext to support both regular and context-aware tools
-                mt.callWithContext(name, arguments, context).getOrElseF(
+                mt.call(name, arguments, context).getOrElseF(
                   Concurrent[F].raiseError(McpError.ToolNotFound(name))
                 )
               case None =>

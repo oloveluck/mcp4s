@@ -223,12 +223,13 @@ private final class DeclarativeServer[F[_]: Concurrent](
   def listTools: F[List[Tool]] = tools.list
 
   def callTool(name: String, arguments: Json): F[ToolResult] =
-    tools.call(name, arguments).getOrElseF(
+    val ctx = ToolContext.minimal[F](SamplingRequester.unsupported[F], RequestId.NullId)
+    tools.call(name, arguments, ctx).getOrElseF(
       Concurrent[F].raiseError(McpError.ToolNotFound(name))
     )
 
   override def callToolWithContext(name: String, arguments: Json, context: ToolContext[F]): F[ToolResult] =
-    tools.callWithContext(name, arguments, context).getOrElseF(
+    tools.call(name, arguments, context).getOrElseF(
       Concurrent[F].raiseError(McpError.ToolNotFound(name))
     )
 

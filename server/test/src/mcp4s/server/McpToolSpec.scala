@@ -9,6 +9,8 @@ import munit.CatsEffectSuite
 
 class McpToolSpec extends CatsEffectSuite:
 
+  private val minimalCtx = ToolContext.minimal[IO](SamplingRequester.unsupported[IO], RequestId.NullId)
+
   case class CalcArgs(
     @description("First number") a: Double,
     @description("Second number") b: Double
@@ -30,8 +32,8 @@ class McpToolSpec extends CatsEffectSuite:
     for
       tools <- mathTools.list
       _ = assertEquals(tools.map(_.name).toSet, Set("add", "subtract"))
-      addResult <- mathTools.call("add", Json.obj("a" -> 3.asJson, "b" -> 2.asJson)).value
-      subResult <- mathTools.call("subtract", Json.obj("a" -> 3.asJson, "b" -> 2.asJson)).value
+      addResult <- mathTools.call("add", Json.obj("a" -> 3.asJson, "b" -> 2.asJson), minimalCtx).value
+      subResult <- mathTools.call("subtract", Json.obj("a" -> 3.asJson, "b" -> 2.asJson), minimalCtx).value
       _ = assertEquals(addResult.map(_.textContent), Some("5.0"))
       _ = assertEquals(subResult.map(_.textContent), Some("1.0"))
     yield ()
@@ -45,7 +47,7 @@ class McpToolSpec extends CatsEffectSuite:
     for
       tools <- ping.list
       _ = assertEquals(tools.head.inputSchema, JsonSchema.empty)
-      result <- ping.call("ping", Json.obj()).value
+      result <- ping.call("ping", Json.obj(), minimalCtx).value
       _ = assertEquals(result.map(_.textContent), Some("pong"))
     yield ()
   }
@@ -77,7 +79,7 @@ class McpToolSpec extends CatsEffectSuite:
     for
       tools <- add.list
       _ = assertEquals(tools.head.inputSchema.properties.get("a").description, Some("First number"))
-      result <- add.call("add", json).value
+      result <- add.call("add", json, minimalCtx).value
       _ = assertEquals(result.map(_.textContent), Some("3.0"))
     yield ()
   }
@@ -93,7 +95,7 @@ class McpToolSpec extends CatsEffectSuite:
       tools <- add.list
       _ = assert(tools.head.outputSchema.isDefined)
       _ = assertEquals(tools.head.outputSchema.get.`type`, "object")
-      result <- add.call("add", Json.obj("a" -> 3.asJson, "b" -> 2.asJson)).value
+      result <- add.call("add", Json.obj("a" -> 3.asJson, "b" -> 2.asJson), minimalCtx).value
       _ = assert(result.isDefined)
       _ = assert(result.get.structuredContent.isDefined)
     yield ()
@@ -210,7 +212,7 @@ class McpToolSpec extends CatsEffectSuite:
 
     val json = Json.obj("message" -> Json.fromString("hello"))
     for
-      result <- echo.call("echo", json).value
+      result <- echo.call("echo", json, minimalCtx).value
       _ = assertEquals(result.map(_.textContent), Some("Echo: hello"))
     yield ()
   }
@@ -221,7 +223,7 @@ class McpToolSpec extends CatsEffectSuite:
     }
 
     for
-      result <- version.call("version", Json.obj()).value
+      result <- version.call("version", Json.obj(), minimalCtx).value
       _ = assertEquals(result.map(_.textContent), Some("1.0.0"))
     yield ()
   }
@@ -307,8 +309,8 @@ class McpToolSpec extends CatsEffectSuite:
     for
       tools <- combined.list
       _ = assertEquals(tools.map(_.name).toSet, Set("add", "smart"))
-      addResult <- combined.call("add", Json.obj("a" -> 1.asJson, "b" -> 2.asJson)).value
-      smartResult <- combined.call("smart", Json.obj("query" -> "test".asJson)).value
+      addResult <- combined.call("add", Json.obj("a" -> 1.asJson, "b" -> 2.asJson), minimalCtx).value
+      smartResult <- combined.call("smart", Json.obj("query" -> "test".asJson), minimalCtx).value
       _ = assertEquals(addResult.map(_.textContent), Some("3.0"))
       _ = assertEquals(smartResult.map(_.textContent), Some("Query: test"))
     yield ()
@@ -322,7 +324,7 @@ class McpToolSpec extends CatsEffectSuite:
     for
       tools <- pingTool.list
       _ = assertEquals(tools.head.name, "ping")
-      result <- pingTool.call("ping", Json.obj()).value
+      result <- pingTool.call("ping", Json.obj(), minimalCtx).value
       _ = assert(result.isDefined)
       _ = assert(result.get.textContent.startsWith("pong"))
     yield ()
