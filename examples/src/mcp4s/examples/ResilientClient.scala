@@ -42,8 +42,8 @@ object ResilientClient extends IOApp.Simple:
         ).use { conn =>
           for
             _ <- IO.println(s"Connected to: ${conn.serverInfo.name} v${conn.serverInfo.version}")
-            tools <- conn.listTools
-            _ <- IO.println(s"Available tools: ${tools.map(_.name).mkString(", ")}")
+            toolsResult <- conn.listTools()
+            _ <- IO.println(s"Available tools: ${toolsResult._1.map(_.name).mkString(", ")}")
             result <- conn.callTool("add", Json.obj(
               "a" -> Json.fromDouble(5.0).get,
               "b" -> Json.fromDouble(3.0).get

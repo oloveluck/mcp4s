@@ -88,3 +88,62 @@ class ToolOutputSpec extends FunSuite:
     val result = to.encode(CalcResult(42.0, "add"))
     assert(result.asText.isDefined)
   }
+
+  // === Option field tests ===
+
+  case class OutputWithOptional(
+      @description("Always present") name: String,
+      @description("Sometimes present") tag: Option[String]
+  )
+  object OutputWithOptional:
+    given Encoder[OutputWithOptional] = deriveEncoder
+
+  test("derived ToolOutput excludes optional fields from required") {
+    val to = ToolOutput.derived[OutputWithOptional]
+    assertEquals(to.schema.required, Some(List("name")))
+  }
+
+  test("derived ToolOutput maps Option[String] to string type") {
+    val to = ToolOutput.derived[OutputWithOptional]
+    val props = to.schema.properties.get
+    assertEquals(props("tag").`type`.get, "string")
+  }
+
+  case class OutputAllOptional(
+      a: Option[Int],
+      b: Option[Double]
+  )
+  object OutputAllOptional:
+    given Encoder[OutputAllOptional] = deriveEncoder
+
+  test("derived ToolOutput with all optional has no required") {
+    val to = ToolOutput.derived[OutputAllOptional]
+    assertEquals(to.schema.required, None)
+  }
+
+  test("derived ToolOutput Option[Int] maps to integer") {
+    val to = ToolOutput.derived[OutputAllOptional]
+    val props = to.schema.properties.get
+    assertEquals(props("a").`type`.get, "integer")
+    assertEquals(props("b").`type`.get, "number")
+  }
+
+  // === Array field tests ===
+
+  case class OutputWithArrays(
+      tags: List[String],
+      scores: List[Int]
+  )
+  object OutputWithArrays:
+    given Encoder[OutputWithArrays] = deriveEncoder
+
+  test("derived ToolOutput List fields produce array type with items") {
+    val to = ToolOutput.derived[OutputWithArrays]
+    val props = to.schema.properties.get
+    assertEquals(props("tags").`type`.get, "array")
+    assert(props("tags").items.isDefined, "List[String] should have items")
+    assertEquals(props("tags").items.get.`type`.get, "string")
+    assertEquals(props("scores").`type`.get, "array")
+    assert(props("scores").items.isDefined, "List[Int] should have items")
+    assertEquals(props("scores").items.get.`type`.get, "integer")
+  }

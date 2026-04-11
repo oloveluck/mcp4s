@@ -109,12 +109,63 @@ class ToolInputSpec extends FunSuite:
     given Decoder[OptionalArgs] = deriveDecoder
     given ToolInput[OptionalArgs] = ToolInput.derived
 
-  test("ToolInput handles optional fields") {
+  test("ToolInput handles optional fields - correct inner type") {
     val ti = summon[ToolInput[OptionalArgs]]
     val props = ti.schema.properties.get
-    // Both should be present but optional fields map to string type
     assertEquals(props("required").`type`.get, "string")
+    // Option[String] should resolve to "string", not a generic fallback
     assertEquals(props("optional").`type`.get, "string")
+  }
+
+  test("ToolInput excludes optional fields from required") {
+    val ti = summon[ToolInput[OptionalArgs]]
+    // Only non-Option fields should be required
+    assertEquals(ti.schema.required, Some(List("required")))
+  }
+
+  // === Option inner type tests ===
+
+  case class OptionTypesArgs(
+      optInt: Option[Int],
+      optDouble: Option[Double],
+      optBool: Option[Boolean]
+  )
+  object OptionTypesArgs:
+    given Decoder[OptionTypesArgs] = deriveDecoder
+    given ToolInput[OptionTypesArgs] = ToolInput.derived
+
+  test("Option[Int] produces integer type") {
+    val ti = summon[ToolInput[OptionTypesArgs]]
+    val props = ti.schema.properties.get
+    assertEquals(props("optInt").`type`.get, "integer")
+    assertEquals(props("optDouble").`type`.get, "number")
+    assertEquals(props("optBool").`type`.get, "boolean")
+  }
+
+  test("All-optional class has no required fields") {
+    val ti = summon[ToolInput[OptionTypesArgs]]
+    assertEquals(ti.schema.required, None)
+  }
+
+  // === Array type tests ===
+
+  case class ArrayArgs(
+      tags: List[String],
+      scores: List[Int]
+  )
+  object ArrayArgs:
+    given Decoder[ArrayArgs] = deriveDecoder
+    given ToolInput[ArrayArgs] = ToolInput.derived
+
+  test("List fields produce array type with items") {
+    val ti = summon[ToolInput[ArrayArgs]]
+    val props = ti.schema.properties.get
+    assertEquals(props("tags").`type`.get, "array")
+    assert(props("tags").items.isDefined, "List[String] should have items")
+    assertEquals(props("tags").items.get.`type`.get, "string")
+    assertEquals(props("scores").`type`.get, "array")
+    assert(props("scores").items.isDefined, "List[Int] should have items")
+    assertEquals(props("scores").items.get.`type`.get, "integer")
   }
 
   // === Calculator Example Pattern ===

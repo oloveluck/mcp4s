@@ -105,10 +105,9 @@ object Dispatcher:
     private def handleNotification(notif: JsonRpcNotification): F[Unit] =
       notif.method match
         case McpMethod.Initialized =>
-          stateRef.update {
-            case State.Uninitialized => State.Initialized
-            case s                   => s
-          }
+          // No-op: state already transitioned to Initialized in handleInitialize.
+          // The notifications/initialized notification is informational per spec.
+          Concurrent[F].unit
         case McpMethod.Cancelled =>
           notif.params.flatMap(_.as[CancelledParams].toOption) match
             case Some(cp) =>
@@ -222,17 +221,20 @@ object Dispatcher:
         // Accept any version and respond with our supported version.
         // Per MCP spec, server responds with the version it supports,
         // and the client decides whether to continue.
-        stateRef.get.flatMap {
+        stateRef.modify {
           case State.Uninitialized =>
             val result = InitializeResult(
               protocolVersion = McpVersion.Current,
               capabilities = server.capabilities,
               serverInfo = server.info
             )
-            result.asJson.pure[F]
+            // Transition to Initialized immediately — per spec, the server should
+            // accept requests after responding to initialize. The subsequent
+            // notifications/initialized is informational.
+            (State.Initialized, result.asJson.pure[F])
           case _ =>
-            Concurrent[F].raiseError(McpError.AlreadyInitialized())
-        }
+            (State.Initialized, Concurrent[F].raiseError[Json](McpError.AlreadyInitialized()))
+        }.flatten
       }
 
     private def requireInitialized: F[Unit] =

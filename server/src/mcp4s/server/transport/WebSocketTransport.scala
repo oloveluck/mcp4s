@@ -26,7 +26,11 @@ import mcp4s.server.*
 final case class WebSocketConfig(
     host: Host = host"0.0.0.0",
     port: Port = port"3000",
-    path: String = "ws"
+    path: String = "ws",
+    /** Maximum queue size for outgoing messages (bounded queue with backpressure) */
+    maxQueueSize: Int = 1000,
+    /** Request timeout for pending server-to-client operations (e.g. sampling) */
+    requestTimeout: scala.concurrent.duration.FiniteDuration = scala.concurrent.duration.FiniteDuration(5, "min")
 )
 
 object WebSocketConfig:
@@ -66,7 +70,7 @@ object WebSocketTransport:
 
     HttpRoutes.of[F] {
       case GET -> Root / config.path =>
-        createWebSocket(server, wsb, summon[Tracer[F]])
+        createWebSocket(server, wsb, summon[Tracer[F]], config)
 
       case GET -> Root / "health" =>
         Ok(Json.obj("status" -> Json.fromString("ok")))
@@ -91,15 +95,16 @@ object WebSocketTransport:
   private def createWebSocket[F[_]: Async](
       server: Server[F],
       wsb: WebSocketBuilder2[F],
-      tracer: Tracer[F]
+      tracer: Tracer[F],
+      config: WebSocketConfig = WebSocketConfig.default
   ): F[Response[F]] =
     // Create session state for this connection
-    WebSocketSession[F](server, tracer).flatMap { session =>
-      // Queue for outgoing messages (server-initiated requests/notifications)
-      Queue.unbounded[F, WebSocketFrame].flatMap { outQueue =>
+    WebSocketSession[F](server, tracer, config).flatMap { session =>
+      // Queue for outgoing messages (bounded with backpressure)
+      Queue.bounded[F, WebSocketFrame](config.maxQueueSize).flatMap { outQueue =>
         // Give session access to the outQueue for sending requests
         session.setOutQueue(outQueue) *> {
-          // Process incoming frames and dispatch to handler
+          // Process incoming frames and dispatch to handler, with cleanup on disconnect
           val receive: Pipe[F, WebSocketFrame, Unit] = _.evalMap {
             case WebSocketFrame.Text(text, _) =>
               tracer.span("ws.message.receive").surround {
@@ -114,7 +119,7 @@ object WebSocketTransport:
 
             case _ =>
               Async[F].unit
-          }
+          }.onFinalize(session.cleanup)
 
           // Stream of outgoing frames from the queue
           val send: Stream[F, WebSocketFrame] = Stream.fromQueueUnterminated(outQueue)
@@ -137,8 +142,21 @@ private class WebSocketSession[F[_]: Async](
     pendingRequests: Ref[F, Map[RequestId, Deferred[F, Either[JsonRpcError, Json]]]],
     clientCapsRef: Ref[F, Option[ClientCapabilities]],
     outQueueRef: Ref[F, Option[Queue[F, WebSocketFrame]]],
-    tracer: Tracer[F]
+    tracer: Tracer[F],
+    config: WebSocketConfig
 ):
+
+  /** Clean up session resources on disconnect.
+    * Completes all pending deferreds with connection-closed errors and clears refs.
+    */
+  def cleanup: F[Unit] =
+    val connectionClosedError = Left(JsonRpcError(-32000, "Connection closed", None))
+    pendingRequests.getAndSet(Map.empty).flatMap { pending =>
+      pending.values.toList.traverse_ { deferred =>
+        deferred.complete(connectionClosedError).void
+          .handleErrorWith(_ => Async[F].unit) // Ignore if already completed
+      }
+    } *> outQueueRef.set(None) *> clientCapsRef.set(None)
 
   /** Set the dispatcher (used during initialization) */
   private[transport] def setDispatcher(d: Dispatcher[F]): F[Unit] =
@@ -257,10 +275,16 @@ private class WebSocketSession[F[_]: Async](
           queue.offer(WebSocketFrame.Text(request.asJson.noSpaces))
         case None =>
           Async[F].raiseError(new RuntimeException("WebSocket not connected"))
-      result <- deferred.get.guarantee(pendingRequests.update(_ - reqId))
+      // Apply configured request timeout
+      result <- Async[F].race(
+        Async[F].sleep(config.requestTimeout),
+        deferred.get
+      ).guarantee(pendingRequests.update(_ - reqId))
       decoded <- result match
-        case Right(json) => json.as[A].liftTo[F]
-        case Left(err)   => Async[F].raiseError(McpError.fromJsonRpcError(err))
+        case Left(_) =>
+          Async[F].raiseError(McpError.InternalError(s"Request timed out after ${config.requestTimeout}"))
+        case Right(Right(json)) => json.as[A].liftTo[F]
+        case Right(Left(err))   => Async[F].raiseError(McpError.fromJsonRpcError(err))
     yield decoded
 
   private def nextRequestId: F[RequestId] =
@@ -290,7 +314,7 @@ private class WebSocketSession[F[_]: Async](
       Async[F].unit
 
 private object WebSocketSession:
-  def apply[F[_]: Async](server: Server[F], tracer: Tracer[F]): F[WebSocketSession[F]] =
+  def apply[F[_]: Async](server: Server[F], tracer: Tracer[F], config: WebSocketConfig = WebSocketConfig.default): F[WebSocketSession[F]] =
     given Tracer[F] = tracer
     for
       dispatcherRef <- Ref.of[F, Option[Dispatcher[F]]](None)
@@ -299,7 +323,7 @@ private object WebSocketSession:
       clientCapsRef <- Ref.of[F, Option[ClientCapabilities]](None)
       outQueueRef <- Ref.of[F, Option[Queue[F, WebSocketFrame]]](None)
       // Create session
-      session = new WebSocketSession(dispatcherRef, requestIdGen, pendingRequests, clientCapsRef, outQueueRef, tracer)
+      session = new WebSocketSession(dispatcherRef, requestIdGen, pendingRequests, clientCapsRef, outQueueRef, tracer, config)
       // Create context factory with full capabilities: sampling, elicitation, progress, logging
       contextFactory = (reqId: RequestId, progressToken: Option[RequestId]) => ToolContext[F](
         session.samplingRequester,

@@ -45,8 +45,14 @@ trait McpConnection[F[_]]:
 
   // === Tool Operations ===
 
-  /** List available tools from the server */
-  def listTools: F[List[Tool]]
+  /** List available tools from the server.
+    *
+    * @param cursor Optional pagination cursor from a previous response's `nextCursor`
+    */
+  def listTools(cursor: Option[String] = None): F[(List[Tool], Option[String])]
+
+  /** List all tools, automatically following pagination. */
+  def listAllTools: F[List[Tool]]
 
   /** Call a tool with the given arguments.
     *
@@ -84,11 +90,23 @@ trait McpConnection[F[_]]:
 
   // === Resource Operations ===
 
-  /** List available resources from the server */
-  def listResources: F[List[Resource]]
+  /** List available resources from the server.
+    *
+    * @param cursor Optional pagination cursor from a previous response's `nextCursor`
+    */
+  def listResources(cursor: Option[String] = None): F[(List[Resource], Option[String])]
 
-  /** List available resource templates */
-  def listResourceTemplates: F[List[ResourceTemplate]]
+  /** List all resources, automatically following pagination. */
+  def listAllResources: F[List[Resource]]
+
+  /** List available resource templates.
+    *
+    * @param cursor Optional pagination cursor from a previous response's `nextCursor`
+    */
+  def listResourceTemplates(cursor: Option[String] = None): F[(List[ResourceTemplate], Option[String])]
+
+  /** List all resource templates, automatically following pagination. */
+  def listAllResourceTemplates: F[List[ResourceTemplate]]
 
   /** Read a resource by URI.
     *
@@ -108,8 +126,14 @@ trait McpConnection[F[_]]:
 
   // === Prompt Operations ===
 
-  /** List available prompts from the server */
-  def listPrompts: F[List[Prompt]]
+  /** List available prompts from the server.
+    *
+    * @param cursor Optional pagination cursor from a previous response's `nextCursor`
+    */
+  def listPrompts(cursor: Option[String] = None): F[(List[Prompt], Option[String])]
+
+  /** List all prompts, automatically following pagination. */
+  def listAllPrompts: F[List[Prompt]]
 
   /** Get a prompt with the given arguments.
     *
@@ -227,12 +251,32 @@ object McpConnection:
     private def requestJson(method: String, params: Json = Json.obj()): F[Json] =
       request(method, params, Concurrent[F].pure)
 
-    def listTools: F[List[Tool]] =
+    private def cursorParams(cursor: Option[String]): Json =
+      cursor match
+        case Some(c) => Json.obj("cursor" -> Json.fromString(c))
+        case None    => Json.obj()
+
+    private def paginate[A](fetch: Option[String] => F[(List[A], Option[String])]): F[List[A]] =
+      def loop(cursor: Option[String], acc: List[A]): F[List[A]] =
+        fetch(cursor).flatMap { (items, nextCursor) =>
+          val combined = acc ++ items
+          nextCursor match
+            case Some(c) => loop(Some(c), combined)
+            case None    => Concurrent[F].pure(combined)
+        }
+      loop(None, Nil)
+
+    def listTools(cursor: Option[String] = None): F[(List[Tool], Option[String])] =
       request(
         McpMethod.ToolsList,
-        Json.obj(),
-        _.hcursor.get[List[Tool]]("tools").liftTo[F]
+        cursorParams(cursor),
+        json => for
+          tools <- json.hcursor.get[List[Tool]]("tools").liftTo[F]
+          next = json.hcursor.get[String]("nextCursor").toOption
+        yield (tools, next)
       )
+
+    def listAllTools: F[List[Tool]] = paginate(listTools)
 
     def callTool[A: Encoder](name: ToolName, arguments: A): F[ToolResult] =
       request(
@@ -261,19 +305,29 @@ object McpConnection:
       if supportsTools then callTool(name, arguments).map(Some(_))
       else Concurrent[F].pure(None)
 
-    def listResources: F[List[Resource]] =
+    def listResources(cursor: Option[String] = None): F[(List[Resource], Option[String])] =
       request(
         McpMethod.ResourcesList,
-        Json.obj(),
-        _.hcursor.get[List[Resource]]("resources").liftTo[F]
+        cursorParams(cursor),
+        json => for
+          resources <- json.hcursor.get[List[Resource]]("resources").liftTo[F]
+          next = json.hcursor.get[String]("nextCursor").toOption
+        yield (resources, next)
       )
 
-    def listResourceTemplates: F[List[ResourceTemplate]] =
+    def listAllResources: F[List[Resource]] = paginate(listResources)
+
+    def listResourceTemplates(cursor: Option[String] = None): F[(List[ResourceTemplate], Option[String])] =
       request(
         McpMethod.ResourcesTemplatesList,
-        Json.obj(),
-        _.hcursor.get[List[ResourceTemplate]]("resourceTemplates").liftTo[F]
+        cursorParams(cursor),
+        json => for
+          templates <- json.hcursor.get[List[ResourceTemplate]]("resourceTemplates").liftTo[F]
+          next = json.hcursor.get[String]("nextCursor").toOption
+        yield (templates, next)
       )
+
+    def listAllResourceTemplates: F[List[ResourceTemplate]] = paginate(listResourceTemplates)
 
     def readResource(uri: ResourceUri): F[ResourceContent] =
       request(
@@ -293,12 +347,17 @@ object McpConnection:
       if supportsResources then readResource(uri).map(Some(_))
       else Concurrent[F].pure(None)
 
-    def listPrompts: F[List[Prompt]] =
+    def listPrompts(cursor: Option[String] = None): F[(List[Prompt], Option[String])] =
       request(
         McpMethod.PromptsList,
-        Json.obj(),
-        _.hcursor.get[List[Prompt]]("prompts").liftTo[F]
+        cursorParams(cursor),
+        json => for
+          prompts <- json.hcursor.get[List[Prompt]]("prompts").liftTo[F]
+          next = json.hcursor.get[String]("nextCursor").toOption
+        yield (prompts, next)
       )
+
+    def listAllPrompts: F[List[Prompt]] = paginate(listPrompts)
 
     def getPrompt[A: Encoder](name: PromptName, arguments: A): F[GetPromptResult] =
       request(

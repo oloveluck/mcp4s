@@ -122,7 +122,7 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
       val port = server.address.getPort
       wsConnectedClient(port).use { conn =>
         for
-          tools <- conn.listTools
+          tools <- conn.listAllTools
         yield
           assertEquals(tools.length, 2)
           assert(tools.exists(_.name == "multiply"))
@@ -167,7 +167,7 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
       val port = server.address.getPort
       wsConnectedClient(port).use { conn =>
         for
-          resources <- conn.listResources
+          resources <- conn.listAllResources
         yield
           assertEquals(resources.length, 1)
           assertEquals(resources.head.uri, "file:///ws-test.txt")
@@ -193,7 +193,7 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
       val port = server.address.getPort
       wsConnectedClient(port).use { conn =>
         for
-          prompts <- conn.listPrompts
+          prompts <- conn.listAllPrompts
         yield
           assertEquals(prompts.length, 1)
           assertEquals(prompts.head.name, "ws-greeting")
@@ -315,9 +315,9 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
             assertEquals(conn3.serverInfo.name, "ws-test-server")
           }
           // Each client can list tools independently
-          tools1 <- conn1.listTools
-          tools2 <- conn2.listTools
-          tools3 <- conn3.listTools
+          tools1 <- conn1.listAllTools
+          tools2 <- conn2.listAllTools
+          tools3 <- conn3.listAllTools
         yield
           assertEquals(tools1.length, 2)
           assertEquals(tools2.length, 2)
@@ -364,7 +364,7 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
       iterations.traverse_ { i =>
         wsConnectedClient(port).use { conn =>
           for
-            tools <- conn.listTools
+            tools <- conn.listAllTools
             _ <- IO(assertEquals(tools.length, 2))
           yield ()
         } >> IO.sleep(50.millis) // Allow resource cleanup between iterations

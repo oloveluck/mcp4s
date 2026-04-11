@@ -37,8 +37,8 @@ object CalculatorClient extends IOApp.Simple:
             _ <- IO.println("")
 
             // List available tools
-            tools <- conn.listTools
-            _ <- IO.println(s"Available tools: ${tools.map(_.name).mkString(", ")}")
+            toolsResult <- conn.listTools()
+            _ <- IO.println(s"Available tools: ${toolsResult._1.map(_.name).mkString(", ")}")
             _ <- IO.println("")
 
             // Test addition
