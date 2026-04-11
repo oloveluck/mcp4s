@@ -252,11 +252,11 @@ object HttpTransport:
     * 2. Polls the outQueue for notifications (progress, logging, server requests) and emits SSE events
     * 3. When dispatch completes, drains any remaining queue messages and emits the final response
     *
-    * Uses a Deferred to signal dispatch completion rather than interruptWhen or SignallingRef,
-    * which avoids a race condition where a queue item could be consumed by tryTake but lost
-    * before emission. When we observe the Deferred is complete, we know all notifications
-    * have been enqueued (since they are enqueued before the tool handler returns), so a
-    * final drainQueue is guaranteed to capture any stragglers.
+    * Uses non-destructive tryTake/tryGet polling to avoid a race condition where
+    * race(deferred.get, queue.take) could consume and discard a queue item when
+    * the deferred wins. When we observe the Deferred is complete, we know all
+    * notifications have been enqueued (since they are enqueued before the tool
+    * handler returns), so a final drainQueue is guaranteed to capture any stragglers.
     */
   private def handleStreamingRequest[F[_]: Async](
       session: HttpSession[F],
@@ -277,27 +277,33 @@ object HttpTransport:
         Stream.bracket(
           session.dispatcher.dispatch(message).attempt.flatMap(dispatchResult.complete).void.start
         )(_.cancel) >> {
-          // Race between dispatch completion and a queue item arriving.
-          // This eliminates the busy-wait polling loop and its 5ms latency.
-          def raceLoop: Stream[F, ServerSentEvent] =
-            Stream.eval(Async[F].race(dispatchResult.get, session.outQueue.take)).flatMap {
-              case Left(result) =>
-                // Dispatch completed. All notifications were enqueued before the
-                // handler returned, so drain the queue to capture any remaining items,
-                // then emit the response (or propagate the error).
-                Stream.eval(drainQueue(session)).flatMap { remaining =>
-                  Stream.emits(remaining.map(toSSE))
-                } ++ (result match
-                  case Right(Some(response)) => Stream.emit(toSSE(response))
-                  case Right(None)           => Stream.empty
-                  case Left(error)           => Stream.raiseError[F](error)
-                )
-              case Right(msg) =>
-                // Got a notification from the queue; emit it and continue
-                Stream.emit(toSSE(msg)) ++ raceLoop
+          // Poll the queue with non-destructive tryTake/tryGet to avoid a race
+          // condition where queue.take consumes an item that is then lost when
+          // race() picks dispatchResult.get as the winner.
+          def pollQueue: Stream[F, ServerSentEvent] =
+            Stream.eval(session.outQueue.tryTake).flatMap {
+              case Some(msg) =>
+                Stream.emit(toSSE(msg)) ++ pollQueue
+              case None =>
+                Stream.eval(dispatchResult.tryGet).flatMap {
+                  case Some(result) =>
+                    // Dispatch completed. All notifications were enqueued before the
+                    // handler returned, so drain the queue to capture any remaining items,
+                    // then emit the response (or propagate the error).
+                    Stream.eval(drainQueue(session)).flatMap { remaining =>
+                      Stream.emits(remaining.map(toSSE))
+                    } ++ (result match
+                      case Right(Some(response)) => Stream.emit(toSSE(response))
+                      case Right(None)           => Stream.empty
+                      case Left(error)           => Stream.raiseError[F](error)
+                    )
+                  case None =>
+                    // Dispatch still running, wait briefly and retry
+                    Stream.eval(Async[F].sleep(scala.concurrent.duration.Duration(5, "ms"))) >> pollQueue
+                }
             }
 
-          raceLoop
+          pollQueue
         }
 
       span.addAttribute(Attribute("http.status_code", 200L)) *>
