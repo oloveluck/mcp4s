@@ -1,15 +1,18 @@
 package mcp4s.examples
 
 import cats.effect.{IO, IOApp}
-import cats.syntax.semigroup.*
 import mcp4s.protocol.*
 import mcp4s.server.*
 import mcp4s.server.mcp
-import mcp4s.server.mcp.{ok, user, pure}
+import mcp4s.server.mcp.{ok, user}
 import mcp4s.server.transport.*
 import org.typelevel.otel4s.trace.Tracer
 
-case class CalcArgs(a: Double, b: Double) derives ToolInput
+@description("Add two numbers")
+case class Add(
+    @description("First number") a: Double,
+    @description("Second number") b: Double
+) derives ToolInput
 
 /** Simple MCP server without auth for conformance testing.
   *
@@ -18,8 +21,8 @@ case class CalcArgs(a: Double, b: Double) derives ToolInput
 object SimpleServer extends IOApp.Simple:
 
   val tools: Tools[IO] =
-    mcp.Tool[IO, CalcArgs]("add", "Add two numbers") { args =>
-      ok(s"Result: ${args.a + args.b}").pure[IO]
+    mcp.Tool[IO, Add] { args =>
+      IO.pure(ok(s"Result: ${args.a + args.b}"))
     }
 
   val resources: Resources[IO] =

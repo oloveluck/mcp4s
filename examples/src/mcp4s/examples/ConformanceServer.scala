@@ -5,7 +5,7 @@ import cats.syntax.all.*
 import mcp4s.protocol.*
 import mcp4s.server.*
 import mcp4s.server.mcp
-import mcp4s.server.mcp.{ok, error, content, text, messages, textContent, imageContent, audioContent, user, pure}
+import mcp4s.server.mcp.{ok, error, content, text, messages, textContent, imageContent, audioContent, user}
 import mcp4s.server.transport.*
 import org.typelevel.otel4s.trace.Tracer
 

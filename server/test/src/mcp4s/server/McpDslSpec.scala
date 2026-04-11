@@ -11,6 +11,8 @@ class McpDslSpec extends CatsEffectSuite:
 
   import mcp4s.server.mcp.*
 
+  private val minimalCtx = ToolContext.minimal[IO](SamplingRequester.unsupported[IO], RequestId.NullId)
+
   // === Result Builder Tests ===
 
   test("ok creates text tool result") {
@@ -110,7 +112,7 @@ class McpDslSpec extends CatsEffectSuite:
       _ = assertEquals(tools.size, 1)
       _ = assertEquals(tools.head.name, "version")
       _ = assertEquals(tools.head.description, Some("Get version"))
-      result <- version.call("version", Json.obj()).value
+      result <- version.call("version", Json.obj(), minimalCtx).value
       _ = assertEquals(result.map(_.textContent), Some("1.0.0"))
     yield ()
   }
@@ -124,7 +126,7 @@ class McpDslSpec extends CatsEffectSuite:
 
     val json = Json.obj("message" -> "hello".asJson)
     for
-      result <- echo.call("echo", json).value
+      result <- echo.call("echo", json, minimalCtx).value
       _ = assertEquals(result.map(_.textContent), Some("Echo: hello"))
     yield ()
   }
@@ -138,7 +140,7 @@ class McpDslSpec extends CatsEffectSuite:
 
     val json = Json.obj("a" -> 3.asJson, "b" -> 2.asJson)
     for
-      result <- add.call("add", json).value
+      result <- add.call("add", json, minimalCtx).value
       _ = assertEquals(result.map(_.textContent), Some("5.0"))
     yield ()
   }
@@ -151,7 +153,7 @@ class McpDslSpec extends CatsEffectSuite:
     for
       tools <- logTool.list
       _ = assertEquals(tools.head.name, "log")
-      result <- logTool.call("log", Json.obj()).value
+      result <- logTool.call("log", Json.obj(), minimalCtx).value
       _ = assert(result.isDefined)
       _ = assert(result.get.textContent.startsWith("Request:"))
     yield ()
@@ -166,7 +168,7 @@ class McpDslSpec extends CatsEffectSuite:
 
     val json = Json.obj("query" -> "test".asJson)
     for
-      result <- smart.call("smart", json).value
+      result <- smart.call("smart", json, minimalCtx).value
       _ = assert(result.isDefined)
       _ = assert(result.get.textContent.contains("Query: test"))
     yield ()
@@ -271,9 +273,10 @@ class McpDslSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === Pure Lifting Extension Tests ===
+  // === Pure Lifting Tests ===
 
-  test("pure extension lifts value into IO") {
+  test("cats pure lifts value into IO") {
+    import cats.syntax.applicative.*
     val result: IO[ToolResult] = ok("Success").pure[IO]
     for
       r <- result
@@ -291,8 +294,8 @@ class McpDslSpec extends CatsEffectSuite:
     for
       tools <- combined.list
       _ = assertEquals(tools.map(_.name).toSet, Set("t1", "t2"))
-      r1 <- combined.call("t1", Json.obj()).value
-      r2 <- combined.call("t2", Json.obj()).value
+      r1 <- combined.call("t1", Json.obj(), minimalCtx).value
+      r2 <- combined.call("t2", Json.obj(), minimalCtx).value
       _ = assertEquals(r1.map(_.textContent), Some("result1"))
       _ = assertEquals(r2.map(_.textContent), Some("result2"))
     yield ()

@@ -1,8 +1,6 @@
 package mcp4s.server
 
-import cats.Applicative
 import cats.effect.Concurrent
-import fs2.Stream
 import mcp4s.protocol.*
 
 /** Unified DSL for MCP server construction.
@@ -125,6 +123,14 @@ object mcp:
     def text[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(f: A => String): Tools[F] =
       McpTool.pureText[F, A](name, desc)(f)
 
+    /** Create a text tool — name + description derived from args type. */
+    inline def text[F[_]: Concurrent, A: ToolInput](
+        handler: A => String
+    ): Tools[F] =
+      val name = ToolInput.deriveName(ToolInput.typeName[A])
+      val desc = ToolInput.classDescription[A].getOrElse("")
+      McpTool.pureText[F, A](name, desc)(handler)
+
     /** Create a tool with an effectful handler with typed arguments.
       *
       * Example:
@@ -139,6 +145,24 @@ object mcp:
         f: A => F[ToolResult]
     ): Tools[F] =
       McpTool[F, A](name, desc)(f)
+
+    /** Create a tool — name + description derived from the args type.
+      * Name: class name converted to snake_case (common suffixes stripped).
+      * Description: class-level @description annotation (empty string if absent).
+      */
+    inline def apply[F[_]: Concurrent, A: ToolInput](
+        handler: A => F[ToolResult]
+    ): Tools[F] =
+      val name = ToolInput.deriveName(ToolInput.typeName[A])
+      val desc = ToolInput.classDescription[A].getOrElse("")
+      McpTool[F, A](name, desc)(handler)
+
+    /** Create a tool with a custom name — description derived from the args type. */
+    inline def apply[F[_]: Concurrent, A: ToolInput](name: String)(
+        handler: A => F[ToolResult]
+    ): Tools[F] =
+      val desc = ToolInput.classDescription[A].getOrElse("")
+      McpTool[F, A](name, desc)(handler)
 
     /** Create a context-aware tool with no typed arguments.
       *
@@ -177,10 +201,25 @@ object mcp:
     ): Tools[F] =
       McpTool.withContext[F, A](name, desc)(f)
 
+    /** Create a context-aware tool — name + description derived from args type. */
+    inline def withContext[F[_]: Concurrent, A: ToolInput](
+        handler: (A, ToolContext[F]) => F[ToolResult]
+    ): Tools[F] =
+      val name = ToolInput.deriveName(ToolInput.typeName[A])
+      val desc = ToolInput.classDescription[A].getOrElse("")
+      McpTool.withContext[F, A](name, desc)(handler)
+
+    /** Create a context-aware tool with a custom name — description derived from args type. */
+    inline def withContext[F[_]: Concurrent, A: ToolInput](name: String)(
+        handler: (A, ToolContext[F]) => F[ToolResult]
+    ): Tools[F] =
+      val desc = ToolInput.classDescription[A].getOrElse("")
+      McpTool.withContext[F, A](name, desc)(handler)
+
     /** Create a streaming tool with typed arguments.
       *
-      * Streaming tools emit multiple results over time via `callStreaming`.
-      * They also work with regular `call` (returns the last result).
+      * Streaming tools emit multiple results over time.
+      * When called via `call`, the last emitted result is returned.
       *
       * Example:
       * {{{
@@ -191,7 +230,7 @@ object mcp:
       * }}}
       */
     def streaming[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(
-        f: A => Stream[F, ToolResult]
+        f: A => fs2.Stream[F, ToolResult]
     ): Tools[F] =
       McpTool.streaming[F, A](name, desc)(f)
 
@@ -205,7 +244,7 @@ object mcp:
       * }}}
       */
     def streaming[F[_]: Concurrent](name: String, desc: String)(
-        f: Stream[F, ToolResult]
+        f: fs2.Stream[F, ToolResult]
     ): Tools[F] =
       McpTool.streamingNoArgs[F](name, desc)(f)
 
@@ -222,18 +261,6 @@ object mcp:
         annotations: ToolAnnotations
     )(handler: A => F[ToolResult]): Tools[F] =
       McpTool.annotated[F, A](name, desc, annotations)(handler)
-
-    /** Create a streaming tool with context support. */
-    def streamingWithContext[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(
-        handler: (A, ToolContext[F]) => Stream[F, ToolResult]
-    ): Tools[F] =
-      McpTool.streamingWithContext[F, A](name, desc)(handler)
-
-    /** Create a streaming tool from a regular tool handler. */
-    def fromNonStreaming[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(
-        handler: A => F[ToolResult]
-    ): Tools[F] =
-      McpTool.fromNonStreaming[F, A](name, desc)(handler)
 
   // === Resource Constructors ===
 
@@ -380,20 +407,18 @@ object mcp:
     ): Prompts[F] =
       McpPrompt[F, A](name, desc)(f)
 
-    /** Create a prompt from a raw map handler. */
-    def raw[F[_]: Concurrent](name: String, desc: String, arguments: List[PromptArgument] = Nil)(
-        handler: Map[String, String] => F[GetPromptResult]
+    /** Create a prompt — name + description derived from args type. */
+    inline def apply[F[_]: Concurrent, A: PromptInput](
+        handler: A => F[GetPromptResult]
     ): Prompts[F] =
-      McpPrompt.raw[F](name, desc, arguments)(handler)
+      val name = ToolInput.deriveName(ToolInput.typeName[A])
+      val desc = ToolInput.classDescription[A].getOrElse("")
+      McpPrompt[F, A](name, desc)(handler)
 
-  // === Pure Lifting Extension ===
+    /** Create a prompt with a custom name — description derived from args type. */
+    inline def apply[F[_]: Concurrent, A: PromptInput](name: String)(
+        handler: A => F[GetPromptResult]
+    ): Prompts[F] =
+      val desc = ToolInput.classDescription[A].getOrElse("")
+      McpPrompt[F, A](name, desc)(handler)
 
-  /** Extension to lift pure values into any Applicative context.
-    *
-    * Example:
-    * {{{
-    * val result: IO[ToolResult] = ok("Success").pure[IO]
-    * }}}
-    */
-  extension [A](a: A)
-    def pure[F[_]: Applicative]: F[A] = Applicative[F].pure(a)

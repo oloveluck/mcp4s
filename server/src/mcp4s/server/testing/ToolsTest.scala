@@ -5,7 +5,7 @@ import cats.syntax.all.*
 import io.circe.{Encoder, Json}
 import io.circe.syntax.*
 import mcp4s.protocol.*
-import mcp4s.server.Tools
+import mcp4s.server.{SamplingRequester, ToolContext, Tools}
 
 /** Test utilities for Tools.
   *
@@ -35,7 +35,8 @@ object ToolsTest:
       * Raises ToolNotFound if tool doesn't exist.
       */
     def testCall[A: Encoder](name: String, arguments: A): F[ToolResult] =
-      tools.call(name, arguments.asJson).getOrElseF(
+      val ctx = ToolContext.minimal[F](SamplingRequester.unsupported[F], RequestId.NullId)
+      tools.call(name, arguments.asJson, ctx).getOrElseF(
         Concurrent[F].raiseError(McpError.ToolNotFound(name))
       )
 
@@ -44,7 +45,8 @@ object ToolsTest:
       * Raises ToolNotFound if tool doesn't exist.
       */
     def testCallJson(name: String, arguments: Json): F[ToolResult] =
-      tools.call(name, arguments).getOrElseF(
+      val ctx = ToolContext.minimal[F](SamplingRequester.unsupported[F], RequestId.NullId)
+      tools.call(name, arguments, ctx).getOrElseF(
         Concurrent[F].raiseError(McpError.ToolNotFound(name))
       )
 

@@ -5,35 +5,41 @@ import cats.syntax.semigroup.*
 import mcp4s.protocol.*
 import mcp4s.server.*
 import mcp4s.server.mcp
-import mcp4s.server.mcp.{ok, error, user, messages, pure}
+import mcp4s.server.mcp.{ok, error, user, messages}
 import mcp4s.server.transport.*
 import org.typelevel.otel4s.trace.Tracer
 
+@description("Add two numbers")
 case class AddArgs(
     @description("First number") a: Double,
     @description("Second number") b: Double
 ) derives ToolInput
 
+@description("Subtract two numbers")
 case class SubtractArgs(
     @description("Number to subtract from") a: Double,
     @description("Number to subtract") b: Double
 ) derives ToolInput
 
+@description("Multiply two numbers")
 case class MultiplyArgs(
     @description("First number") a: Double,
     @description("Second number") b: Double
 ) derives ToolInput
 
+@description("Divide two numbers")
 case class DivideArgs(
     @description("Dividend") a: Double,
     @description("Divisor") b: Double
 ) derives ToolInput
 
+@description("Sum a list of numbers with progress reporting")
 case class BatchAddArgs(
     @description("List of numbers to sum") numbers: List[Double]
 ) derives ToolInput
 
-case class CalculatePromptArgs(
+@description("Perform a calculation")
+case class CalculateArgs(
     @description("The operation: add, subtract, multiply, or divide") operation: String,
     @description("First number") a: String,
     @description("Second number") b: String
@@ -50,20 +56,20 @@ case class CalculatePromptArgs(
 object CalculatorServer extends IOApp.Simple:
 
   val mathTools: Tools[IO] =
-    mcp.Tool[IO, AddArgs]("add", "Add two numbers") { args =>
-      ok(s"Result: ${args.a + args.b}").pure[IO]
+    mcp.Tool[IO, AddArgs] { args =>
+      IO.pure(ok(s"Result: ${args.a + args.b}"))
     } |+|
-    mcp.Tool[IO, SubtractArgs]("subtract", "Subtract two numbers") { args =>
-      ok(s"Result: ${args.a - args.b}").pure[IO]
+    mcp.Tool[IO, SubtractArgs] { args =>
+      IO.pure(ok(s"Result: ${args.a - args.b}"))
     } |+|
-    mcp.Tool[IO, MultiplyArgs]("multiply", "Multiply two numbers") { args =>
-      ok(s"Result: ${args.a * args.b}").pure[IO]
+    mcp.Tool[IO, MultiplyArgs] { args =>
+      IO.pure(ok(s"Result: ${args.a * args.b}"))
     } |+|
-    mcp.Tool[IO, DivideArgs]("divide", "Divide two numbers") { args =>
-      if args.b == 0 then error("Cannot divide by zero").pure[IO]
-      else ok(s"Result: ${args.a / args.b}").pure[IO]
+    mcp.Tool[IO, DivideArgs] { args =>
+      if args.b == 0 then IO.pure(error("Cannot divide by zero"))
+      else IO.pure(ok(s"Result: ${args.a / args.b}"))
     } |+|
-    mcp.Tool.withContext[IO, BatchAddArgs]("batch_add", "Sum a list of numbers with progress reporting") { (args, ctx) =>
+    mcp.Tool.withContext[IO, BatchAddArgs] { (args, ctx) =>
       import scala.concurrent.duration.*
       val total = args.numbers.length.toDouble
       args.numbers.zipWithIndex
@@ -89,10 +95,10 @@ object CalculatorServer extends IOApp.Simple:
     }
 
   val prompts: Prompts[IO] =
-    mcp.Prompt[IO, CalculatePromptArgs]("calculate", "Perform a calculation") { args =>
-      messages(s"Calculate ${args.a} ${args.operation} ${args.b}")(
+    mcp.Prompt[IO, CalculateArgs] { args =>
+      IO.pure(messages(s"Calculate ${args.a} ${args.operation} ${args.b}")(
         user(s"Please calculate: ${args.a} ${args.operation} ${args.b}")
-      ).pure[IO]
+      ))
     }
 
   val server: Server[IO] = Server
