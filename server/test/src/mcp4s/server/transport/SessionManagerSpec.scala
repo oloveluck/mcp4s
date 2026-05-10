@@ -119,7 +119,6 @@ class SessionManagerSpec extends CatsEffectSuite:
     assertEquals(config.timeout, 30.minutes)
     assertEquals(config.maxQueueSize, 1000)
     assertEquals(config.requestTimeout, 5.minutes)
-    assertEquals(config.cleanupInterval, 1.minute)
   }
 
   test("SessionManager with custom config uses that config") {

@@ -1,6 +1,6 @@
 package mcp4s.client.transport
 
-import cats.effect.{Async, Deferred, Ref, Resource as CatsResource, Temporal}
+import cats.effect.{Async, Deferred, Ref, Resource as CatsResource}
 import cats.effect.std.Queue
 import cats.effect.syntax.monadCancel.*
 import cats.syntax.all.*
@@ -15,7 +15,7 @@ import sttp.client4.httpclient.fs2.HttpClientFs2Backend
 import sttp.client4.ws.stream.*
 import sttp.ws.WebSocketFrame
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.client.{ClientDispatcher, McpClient, McpConnection, ResilienceConfig}
+import mcp4s.client.{ClientDispatcher, McpClient, McpConnection}
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 
@@ -46,13 +46,12 @@ object WebSocketClientTransport:
     */
   def connect[F[_]: Async](
       client: McpClient[F],
-      config: WebSocketClientConfig,
-      resilience: Option[ResilienceConfig] = None
+      config: WebSocketClientConfig
   )(using Tracer[F]): CatsResource[F, McpConnection[F]] =
     for
       backend <- HttpClientFs2Backend.resource[F]()
       clientDispatcher <- CatsResource.eval(ClientDispatcher[F](client))
-      connection <- establishConnection(client, backend, clientDispatcher, config, summon[Tracer[F]], resilience)
+      connection <- establishConnection(client, backend, clientDispatcher, config, summon[Tracer[F]])
     yield connection
 
   private def establishConnection[F[_]: Async](
@@ -60,8 +59,7 @@ object WebSocketClientTransport:
       backend: WebSocketStreamBackend[F, Fs2Streams[F]],
       clientDispatcher: ClientDispatcher[F],
       config: WebSocketClientConfig,
-      tracer: Tracer[F],
-      resilience: Option[ResilienceConfig]
+      tracer: Tracer[F]
   ): CatsResource[F, McpConnection[F]] =
     val wsUrl = s"${config.url}/${config.path}"
 
@@ -158,11 +156,6 @@ object WebSocketClientTransport:
           clientInfo = client.info
         ).asJson)
       )
-      // Wrap sendRequest with resilience if configured (init uses raw sendRequest)
-      wrappedSendRequest = resilience match
-        case Some(config) => ResilienceConfig.wrapSendRequest(sendRequest, config)(using Temporal[F])
-        case None         => sendRequest
-
       doInit = for
         initResult <- sendRequest(initRequest).flatMap { result =>
           result.as[InitializeResult].liftTo[F]
@@ -170,14 +163,14 @@ object WebSocketClientTransport:
         _ <- sendNotification(JsonRpcNotification(McpMethod.Initialized, None))
         conn <- McpConnection[F](
           initResult.serverInfo, initResult.capabilities,
-          wrappedSendRequest, sendNotification, tracer
+          sendRequest, sendNotification, tracer
         )
         _ <- progressHandlersRef.set(Some(conn.progressHandlers))
         _ <- connectionDeferred.complete(conn)
       yield ()
 
       // WebSocket frame processing pipe
-      wsPipe: Pipe[F, WebSocketFrame.Data[?], WebSocketFrame] = { incoming =>
+      wsPipe: Pipe[F, WebSocketFrame.Data[?], WebSocketFrame] = incoming =>
         // Outgoing frames from queue
         val outgoing = Stream.fromQueueUnterminated(outQueue)
 
@@ -192,7 +185,6 @@ object WebSocketClientTransport:
 
         // Merge all streams: signal ready, then process in/out concurrently
         signalReady ++ outgoing.mergeHaltBoth(incomingProcessed)
-      }
 
       // Start WebSocket connection in background with cleanup on termination
       _ <- CatsResource.make(

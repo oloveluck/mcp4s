@@ -67,9 +67,8 @@ object Dispatcher:
     def dispatch(message: JsonRpcMessage): F[Option[JsonRpcMessage]] =
       message match
         case req: JsonRpcRequest =>
-          tracer.span("mcp.request", Attribute("mcp.method", req.method), Attribute("mcp.request_id", req.id.toString)).use { span =>
+          tracer.span("mcp.request", Attribute("mcp.method", req.method), Attribute("mcp.request_id", req.id.toString)).use: span =>
             handleRequest(req, span).map(Some(_))
-          }
         case notif: JsonRpcNotification =>
           tracer.span("mcp.notification", Attribute("mcp.method", notif.method)).surround {
             handleNotification(notif).as(None)
@@ -130,9 +129,8 @@ object Dispatcher:
           Concurrent[F].pure(Json.obj())
 
         case McpMethod.ToolsList =>
-          requireInitialized *> server.listTools.map { tools =>
+          requireInitialized *> server.listTools.map: tools =>
             Json.obj("tools" -> tools.asJson)
-          }
 
         case McpMethod.ToolsCall =>
           requireInitialized *> {
@@ -151,14 +149,12 @@ object Dispatcher:
           }
 
         case McpMethod.ResourcesList =>
-          requireInitialized *> server.listResources.map { resources =>
+          requireInitialized *> server.listResources.map: resources =>
             Json.obj("resources" -> resources.asJson)
-          }
 
         case McpMethod.ResourcesTemplatesList =>
-          requireInitialized *> server.listResourceTemplates.map { templates =>
+          requireInitialized *> server.listResourceTemplates.map: templates =>
             Json.obj("resourceTemplates" -> templates.asJson)
-          }
 
         case McpMethod.ResourcesRead =>
           requireInitialized *> {
@@ -170,9 +166,8 @@ object Dispatcher:
           }
 
         case McpMethod.PromptsList =>
-          requireInitialized *> server.listPrompts.map { prompts =>
+          requireInitialized *> server.listPrompts.map: prompts =>
             Json.obj("prompts" -> prompts.asJson)
-          }
 
         case McpMethod.PromptsGet =>
           requireInitialized *> {
@@ -217,7 +212,7 @@ object Dispatcher:
           Concurrent[F].raiseError(McpError.MethodNotFound(other))
 
     private def handleInitialize(params: Json): F[Json] =
-      params.as[InitializeParams].liftTo[F].flatMap { initParams =>
+      params.as[InitializeParams].liftTo[F].flatMap: initParams =>
         // Accept any version and respond with our supported version.
         // Per MCP spec, server responds with the version it supports,
         // and the client decides whether to continue.
@@ -235,13 +230,11 @@ object Dispatcher:
           case _ =>
             (State.Initialized, Concurrent[F].raiseError[Json](McpError.AlreadyInitialized()))
         }.flatten
-      }
 
     private def requireInitialized: F[Unit] =
-      stateRef.get.flatMap {
+      stateRef.get.flatMap:
         case State.Initialized => Concurrent[F].unit
         case State.Uninitialized =>
           Concurrent[F].raiseError(McpError.NotInitialized())
         case State.ShuttingDown =>
           Concurrent[F].raiseError(McpError.InternalError("Server is shutting down"))
-      }

@@ -140,11 +140,10 @@ object ResourceSubscriptionManager:
       }
 
     def notifyChanged(uri: String): F[Unit] =
-      getSubscribers(uri).flatMap { subscribers =>
-        subscribers.toList.traverse_ { sessionId =>
+      getSubscribers(uri).flatMap: subscribers =>
+        subscribers.toList.traverse_(sessionId =>
           notificationQueue.offer((sessionId, uri))
-        }
-      }
+        )
 
     def getSubscribers(uri: String): F[Set[String]] =
       subscriptionsRef.get.map(_.getOrElse(uri, Set.empty))

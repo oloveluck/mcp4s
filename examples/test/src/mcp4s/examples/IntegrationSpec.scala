@@ -86,58 +86,51 @@ class IntegrationSpec extends CatsEffectSuite:
     HttpTransport.serve[IO](createTestServer, HttpConfig(port = port"0"))
 
   def connectedClient(serverPort: Int): Resource[IO, McpConnection[IO]] =
-    EmberClientBuilder.default[IO].build.flatMap{ httpClient =>
+    EmberClientBuilder.default[IO].build.flatMap: httpClient =>
       HttpClientTransport.connect[IO](
         testClient,
         HttpClientConfig[IO](s"http://localhost:$serverPort"),
         httpClient
       )
-    }
 
   // === Integration Tests ===
 
   test("client connects to server and receives server info") {
-    serverResource.use { server =>
+    serverResource.use: server =>
       val port = server.address.getPort
-      connectedClient(port).use { conn =>
+      connectedClient(port).use: conn =>
         IO {
           assertEquals(conn.serverInfo.name, "test-server")
           assertEquals(conn.serverInfo.version, "1.0.0")
         }
-      }
-    }
   }
 
   test("client receives server capabilities") {
-    serverResource.use { server =>
+    serverResource.use: server =>
       val port = server.address.getPort
-      connectedClient(port).use { conn =>
+      connectedClient(port).use: conn =>
         IO {
           assert(conn.serverCapabilities.tools.isDefined)
           assert(conn.serverCapabilities.resources.isDefined)
           assert(conn.serverCapabilities.prompts.isDefined)
         }
-      }
-    }
   }
 
   test("client lists tools from server") {
-    serverResource.use { server =>
+    serverResource.use: server =>
       val port = server.address.getPort
-      connectedClient(port).use { conn =>
+      connectedClient(port).use: conn =>
         for
           tools <- conn.listAllTools
         yield
           assertEquals(tools.length, 2)
           assert(tools.exists(_.name == "add"))
-      }
-    }
   }
 
   test("client calls tool and receives result") {
-    serverResource.use { server =>
+    serverResource.use: server =>
       val port = server.address.getPort
-      connectedClient(port).use { conn =>
+      connectedClient(port).use: conn =>
         for
           result <- conn.callTool("add", Json.obj(
             "a" -> Json.fromDouble(5.0).get,
@@ -151,64 +144,53 @@ class IntegrationSpec extends CatsEffectSuite:
               assertEquals(text, "8.0")
             case _ =>
               fail("Expected text content")
-      }
-    }
   }
 
   test("client handles tool error") {
-    serverResource.use { server =>
+    serverResource.use: server =>
       val port = server.address.getPort
-      connectedClient(port).use { conn =>
-        conn.callTool("nonexistent", Json.obj()).attempt.map { result =>
+      connectedClient(port).use: conn =>
+        conn.callTool("nonexistent", Json.obj()).attempt.map: result =>
           assert(result.isLeft)
-        }
-      }
-    }
   }
 
   test("client lists resources from server") {
-    serverResource.use { server =>
+    serverResource.use: server =>
       val port = server.address.getPort
-      connectedClient(port).use { conn =>
+      connectedClient(port).use: conn =>
         for
           resources <- conn.listAllResources
         yield
           assertEquals(resources.length, 1)
           assertEquals(resources.head.uri, "file:///test.txt")
-      }
-    }
   }
 
   test("client reads resource from server") {
-    serverResource.use { server =>
+    serverResource.use: server =>
       val port = server.address.getPort
-      connectedClient(port).use { conn =>
+      connectedClient(port).use: conn =>
         for
           content <- conn.readResource("file:///test.txt")
         yield
           assertEquals(content.uri, "file:///test.txt")
           assertEquals(content.text, Some("Test file content"))
-      }
-    }
   }
 
   test("client lists prompts from server") {
-    serverResource.use { server =>
+    serverResource.use: server =>
       val port = server.address.getPort
-      connectedClient(port).use { conn =>
+      connectedClient(port).use: conn =>
         for
           prompts <- conn.listAllPrompts
         yield
           assertEquals(prompts.length, 1)
           assertEquals(prompts.head.name, "greeting")
-      }
-    }
   }
 
   test("client gets prompt from server") {
-    serverResource.use { server =>
+    serverResource.use: server =>
       val port = server.address.getPort
-      connectedClient(port).use { conn =>
+      connectedClient(port).use: conn =>
         for
           result <- conn.getPrompt("greeting", Map("name" -> "Alice"))
         yield
@@ -219,36 +201,30 @@ class IntegrationSpec extends CatsEffectSuite:
               assertEquals(text, "Hello, Alice!")
             case _ =>
               fail("Expected text content")
-      }
-    }
   }
 
   test("client pings server") {
-    serverResource.use { server =>
+    serverResource.use: server =>
       val port = server.address.getPort
-      connectedClient(port).use { conn =>
+      connectedClient(port).use: conn =>
         for
           _ <- conn.ping
         yield ()
-      }
-    }
   }
 
   test("client shuts down gracefully") {
-    serverResource.use { server =>
+    serverResource.use: server =>
       val port = server.address.getPort
-      connectedClient(port).use { conn =>
+      connectedClient(port).use: conn =>
         for
           _ <- conn.shutdown
         yield ()
-      }
-    }
   }
 
   test("multiple concurrent tool calls") {
-    serverResource.use { server =>
+    serverResource.use: server =>
       val port = server.address.getPort
-      connectedClient(port).use { conn =>
+      connectedClient(port).use: conn =>
         val calls = List(
           conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(1))),
           conn.callTool("add", Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(2))),
@@ -260,14 +236,12 @@ class IntegrationSpec extends CatsEffectSuite:
         yield
           assertEquals(results.length, 3)
           assert(results.forall(!_.isError.getOrElse(false)))
-      }
-    }
   }
 
   test("client calls tool with progress and receives progress notifications") {
-    serverResource.use { server =>
+    serverResource.use: server =>
       val port = server.address.getPort
-      connectedClient(port).use { conn =>
+      connectedClient(port).use: conn =>
         for
           progressUpdates <- Ref.of[IO, List[ProgressParams]](Nil)
           result <- conn.callTool(
@@ -290,18 +264,16 @@ class IntegrationSpec extends CatsEffectSuite:
           assertEquals(updates.head.progress, 0.0)
           assertEquals(updates.last.progress, 3.0)
           assert(updates.forall(_.total == Some(3.0)))
-      }
-    }
   }
 
   test("server health endpoint works") {
-    serverResource.use { server =>
+    serverResource.use: server =>
       val port = server.address.getPort
       import org.http4s.ember.client.EmberClientBuilder
       import org.http4s.*
       import org.http4s.circe.*
 
-      EmberClientBuilder.default[IO].build.use { httpClient =>
+      EmberClientBuilder.default[IO].build.use: httpClient =>
         val request = Request[IO](
           method = Method.GET,
           uri = Uri.unsafeFromString(s"http://localhost:$port/health")
@@ -310,6 +282,4 @@ class IntegrationSpec extends CatsEffectSuite:
           response <- httpClient.expect[Json](request)
         yield
           assertEquals(response.hcursor.get[String]("status"), Right("ok"))
-      }
-    }
   }

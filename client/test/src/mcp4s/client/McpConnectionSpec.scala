@@ -70,18 +70,16 @@ class McpConnectionSpec extends CatsEffectSuite:
   // === Server Info Tests ===
 
   test("connection exposes server info") {
-    createConnection(_ => IO.pure(Json.obj())).map { conn =>
+    createConnection(_ => IO.pure(Json.obj())).map: conn =>
       assertEquals(conn.serverInfo.name, "test-server")
       assertEquals(conn.serverInfo.version, "1.0.0")
-    }
   }
 
   test("connection exposes server capabilities") {
-    createConnection(_ => IO.pure(Json.obj())).map { conn =>
+    createConnection(_ => IO.pure(Json.obj())).map: conn =>
       assert(conn.serverCapabilities.tools.isDefined)
       assert(conn.serverCapabilities.resources.isDefined)
       assert(conn.serverCapabilities.prompts.isDefined)
-    }
   }
 
   // === List Tools Tests ===
@@ -112,10 +110,9 @@ class McpConnectionSpec extends CatsEffectSuite:
     val response = ToolResult.text("42").asJson
 
     for
-      conn <- createConnection { req =>
+      conn <- createConnection: req =>
         capturedRequest = Some(req)
         IO.pure(response)
-      }
       _ <- conn.callTool("calculate", Map("expression" -> "1+1"))
     yield
       assert(capturedRequest.isDefined)
@@ -183,10 +180,9 @@ class McpConnectionSpec extends CatsEffectSuite:
     val response = Json.obj("contents" -> List(content).asJson)
 
     for
-      conn <- createConnection { req =>
+      conn <- createConnection: req =>
         capturedRequest = Some(req)
         IO.pure(response)
-      }
       _ <- conn.readResource("file:///data.json")
     yield
       assert(capturedRequest.isDefined)
@@ -230,10 +226,9 @@ class McpConnectionSpec extends CatsEffectSuite:
     ).asJson
 
     for
-      conn <- createConnection { req =>
+      conn <- createConnection: req =>
         capturedRequest = Some(req)
         IO.pure(response)
-      }
       _ <- conn.getPrompt("greeting", Map("name" -> "Alice"))
     yield
       assert(capturedRequest.isDefined)
@@ -260,10 +255,9 @@ class McpConnectionSpec extends CatsEffectSuite:
   test("ping sends request") {
     var pinged = false
     for
-      conn <- createConnection { _ =>
+      conn <- createConnection: _ =>
         pinged = true
         IO.pure(Json.obj())
-      }
       _ <- conn.ping
     yield assert(pinged)
   }
@@ -280,10 +274,9 @@ class McpConnectionSpec extends CatsEffectSuite:
   test("shutdown sends request") {
     var shutdownCalled = false
     for
-      conn <- createConnection { req =>
+      conn <- createConnection: req =>
         if req.method == McpMethod.Shutdown then shutdownCalled = true
         IO.pure(Json.obj())
-      }
       _ <- conn.shutdown
     yield assert(shutdownCalled)
   }
@@ -293,12 +286,11 @@ class McpConnectionSpec extends CatsEffectSuite:
   test("request IDs are incremented") {
     val ids = scala.collection.mutable.ArrayBuffer[Long]()
     for
-      conn <- createConnection { req =>
+      conn <- createConnection: req =>
         req.id match
           case RequestId.NumberId(n) => ids += n
           case _ => ()
         IO.pure(Json.obj("tools" -> Json.arr()))
-      }
       _ <- conn.listTools()
       _ <- conn.listTools()
       _ <- conn.listTools()
@@ -310,9 +302,8 @@ class McpConnectionSpec extends CatsEffectSuite:
 
   test("connection propagates transport errors") {
     for
-      conn <- createConnection { _ =>
+      conn <- createConnection: _ =>
         IO.raiseError(new RuntimeException("Transport error"))
-      }
       result <- conn.listTools().attempt
     yield
       assert(result.isLeft)
@@ -388,10 +379,9 @@ class McpConnectionSpec extends CatsEffectSuite:
     val response = ToolResult.text("done").asJson
 
     for
-      conn <- createConnection { req =>
+      conn <- createConnection: req =>
         capturedRequest = Some(req)
         IO.pure(response)
-      }
       _ <- conn.callTool("my-tool", Map.empty[String, String], _ => IO.unit)
     yield
       assert(capturedRequest.isDefined)
@@ -405,10 +395,9 @@ class McpConnectionSpec extends CatsEffectSuite:
     val response = ToolResult.text("done").asJson
 
     for
-      conn <- createConnection { req =>
+      conn <- createConnection: req =>
         capturedRequest = Some(req)
         IO.pure(response)
-      }
       _ <- conn.callTool("my-tool", Map.empty[String, String])
     yield
       assert(capturedRequest.isDefined)

@@ -21,9 +21,8 @@ case class Add(
 object SimpleServer extends IOApp.Simple:
 
   val tools: Tools[IO] =
-    mcp.Tool[IO, Add] { args =>
+    mcp.Tool[IO, Add]: args =>
       IO.pure(ok(s"Result: ${args.a + args.b}"))
-    }
 
   val resources: Resources[IO] =
     mcp.Resource.text[IO]("test://readme", "Test readme") {

@@ -17,8 +17,6 @@ final case class SessionConfig(
     maxQueueSize: Int = 1000,
     /** Request timeout for pending operations */
     requestTimeout: FiniteDuration = 5.minutes,
-    /** Interval between cleanup runs */
-    cleanupInterval: FiniteDuration = 1.minute,
     /** Maximum number of concurrent sessions. Rejects new sessions when at capacity. */
     maxSessions: Int = 1000
 )
@@ -62,9 +60,8 @@ object SessionManager:
       server: Server[F],
       config: SessionConfig = SessionConfig.default
   )(using Tracer[F]): F[SessionManager[F]] =
-    Ref.of[F, Map[String, HttpSession[F]]](Map.empty).map { sessionsRef =>
+    Ref.of[F, Map[String, HttpSession[F]]](Map.empty).map: sessionsRef =>
       new SessionManagerImpl(server, config, sessionsRef)
-    }
 
   /** Create a SessionManager as a Resource with automatic cleanup loop.
     *
@@ -79,11 +76,12 @@ object SessionManager:
       server: Server[F],
       config: SessionConfig = SessionConfig.default
   )(using Tracer[F]): CatsResource[F, SessionManager[F]] =
+    val cleanupInterval = (config.timeout / 30).max(10.seconds).min(5.minutes)
     for
       manager <- CatsResource.eval(apply[F](server, config))
       supervisor <- Supervisor[F]
       _ <- CatsResource.make(
-        supervisor.supervise(cleanupLoop(manager, config.cleanupInterval))
+        supervisor.supervise(cleanupLoop(manager, cleanupInterval))
       )(_.cancel)
     yield manager
 
@@ -106,14 +104,12 @@ object SessionManager:
       }
 
     def create: F[HttpSession[F]] =
-      sessionsRef.get.flatMap { sessions =>
+      sessionsRef.get.flatMap: sessions =>
         if sessions.size >= config.maxSessions then
           Async[F].raiseError(McpError.InternalError(s"Maximum session limit (${config.maxSessions}) reached"))
         else
-          HttpSession.create[F](server, config).flatMap { session =>
+          HttpSession.create[F](server, config).flatMap: session =>
             sessionsRef.update(_ + (session.id -> session)).as(session)
-          }
-      }
 
     def remove(sessionId: String): F[Unit] =
       sessionsRef.modify { sessions =>

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+  
+  <head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="Typelevel Laika + Helium Theme" />
+  <title>Contributing</title>
+  
+  
+  <meta name="description" content="MCP (Model Context Protocol) for Scala"/>
+  
+  
+  
+  
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Lato:400,700">
+  
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Fira+Mono:500">
+  
+  <link rel="stylesheet" type="text/css" href="../helium/site/icofont.min.css" />
+    <link rel="stylesheet" type="text/css" href="../helium/site/laika-helium.css" />
+  <script src="../helium/site/laika-helium.js"></script>
+  
+  
+  <script> /* for avoiding page load transitions */ </script>
+</head>
+
+  <body>
+
+    <header id="top-bar" class="light-default dark-default">
+
+  <div class="row">
+    <a id="nav-icon">
+      <i class="icofont-laika navigationMenu" title="Navigation">&#xefa2;</i>
+    </a>
+    
+    
+  </div>
+
+  <a class="icon-link glyph-link" href="../"><i class="icofont-laika home" title="Home">&#xef47;</i></a>
+
+  <div class="row links">
+    
+    <a class="icon-link svg-link" href="https://github.com/oloveluck/mcp4s"><span class="github" title="Source Code"><svg class="svg-icon" width="100%" height="100%" viewBox="0 0 100 100" version="1.1" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+  <g class="svg-shape">
+    <path d="M49.995,1c-27.609,-0 -49.995,22.386 -49.995,50.002c-0,22.09 14.325,40.83 34.194,47.444c2.501,0.458 3.413,-1.086 3.413,-2.412c0,-1.185 -0.043,-4.331 -0.067,-8.503c-13.908,3.021 -16.843,-6.704 -16.843,-6.704c-2.274,-5.773 -5.552,-7.311 -5.552,-7.311c-4.54,-3.103 0.344,-3.042 0.344,-3.042c5.018,0.356 7.658,5.154 7.658,5.154c4.46,7.64 11.704,5.433 14.552,4.156c0.454,-3.232 1.744,-5.436 3.174,-6.685c-11.102,-1.262 -22.775,-5.553 -22.775,-24.713c-0,-5.457 1.949,-9.92 5.147,-13.416c-0.516,-1.265 -2.231,-6.348 0.488,-13.233c0,0 4.199,-1.344 13.751,5.126c3.988,-1.108 8.266,-1.663 12.518,-1.682c4.245,0.019 8.523,0.574 12.517,1.682c9.546,-6.47 13.736,-5.126 13.736,-5.126c2.728,6.885 1.013,11.968 0.497,13.233c3.204,3.496 5.141,7.959 5.141,13.416c0,19.209 -11.691,23.436 -22.83,24.673c1.795,1.544 3.394,4.595 3.394,9.26c0,6.682 -0.061,12.076 -0.061,13.715c0,1.338 0.899,2.894 3.438,2.406c19.853,-6.627 34.166,-25.354 34.166,-47.438c-0,-27.616 -22.389,-50.002 -50.005,-50.002"/>
+  </g>
+</svg></span></a>
+    
+  </div>  
+
+</header>
+    
+    <nav id="sidebar">
+
+  <div class="row">
+    
+    <a class="icon-link svg-link" href="https://github.com/oloveluck/mcp4s"><span class="github" title="Source Code"><svg class="svg-icon" width="100%" height="100%" viewBox="0 0 100 100" version="1.1" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+  <g class="svg-shape">
+    <path d="M49.995,1c-27.609,-0 -49.995,22.386 -49.995,50.002c-0,22.09 14.325,40.83 34.194,47.444c2.501,0.458 3.413,-1.086 3.413,-2.412c0,-1.185 -0.043,-4.331 -0.067,-8.503c-13.908,3.021 -16.843,-6.704 -16.843,-6.704c-2.274,-5.773 -5.552,-7.311 -5.552,-7.311c-4.54,-3.103 0.344,-3.042 0.344,-3.042c5.018,0.356 7.658,5.154 7.658,5.154c4.46,7.64 11.704,5.433 14.552,4.156c0.454,-3.232 1.744,-5.436 3.174,-6.685c-11.102,-1.262 -22.775,-5.553 -22.775,-24.713c-0,-5.457 1.949,-9.92 5.147,-13.416c-0.516,-1.265 -2.231,-6.348 0.488,-13.233c0,0 4.199,-1.344 13.751,5.126c3.988,-1.108 8.266,-1.663 12.518,-1.682c4.245,0.019 8.523,0.574 12.517,1.682c9.546,-6.47 13.736,-5.126 13.736,-5.126c2.728,6.885 1.013,11.968 0.497,13.233c3.204,3.496 5.141,7.959 5.141,13.416c0,19.209 -11.691,23.436 -22.83,24.673c1.795,1.544 3.394,4.595 3.394,9.26c0,6.682 -0.061,12.076 -0.061,13.715c0,1.338 0.899,2.894 3.438,2.406c19.853,-6.627 34.166,-25.354 34.166,-47.438c-0,-27.616 -22.389,-50.002 -50.005,-50.002"/>
+  </g>
+</svg></span></a>
+    
+  </div>
+
+  <ul class="nav-list">
+    <li class="level1 nav-node"><a href="../getting-started/">Getting Started</a></li>
+    <li class="level2 nav-leaf"><a href="../getting-started/first-server.html">Build Your First Server</a></li>
+    <li class="level2 nav-leaf"><a href="../getting-started/first-client.html">Build Your First Client</a></li>
+    <li class="level1 nav-node"><a href="../server/">Server Guide</a></li>
+    <li class="level2 nav-leaf"><a href="../server/tools.html">Tools</a></li>
+    <li class="level2 nav-leaf"><a href="../server/resources.html">Resources</a></li>
+    <li class="level2 nav-leaf"><a href="../server/prompts.html">Prompts</a></li>
+    <li class="level2 nav-leaf"><a href="../server/auth.html">HTTP Security</a></li>
+    <li class="level1 nav-node"><a href="../client/">Client Guide</a></li>
+    <li class="level2 nav-leaf"><a href="../client/connection.html">McpConnection</a></li>
+    <li class="level1 nav-node"><a href="../transports/">Transports</a></li>
+    <li class="level2 nav-leaf"><a href="../transports/http.html">HTTP Transport</a></li>
+    <li class="level2 nav-leaf"><a href="../transports/websocket.html">WebSocket Transport</a></li>
+    <li class="level2 nav-leaf"><a href="../transports/stdio.html">Stdio Transport</a></li>
+    <li class="level1 nav-node"><a href="../advanced/">Advanced Topics</a></li>
+    <li class="level2 nav-leaf"><a href="../advanced/architecture.html">Architecture</a></li>
+    <li class="level2 nav-leaf"><a href="../advanced/tasks.html">Async Tasks</a></li>
+    <li class="level2 nav-leaf"><a href="../advanced/bidirectional.html">Bidirectional Communication</a></li>
+    <li class="level1 nav-node"><a href="../reference/">Reference</a></li>
+    <li class="level2 nav-leaf"><a href="../reference/protocol.html">Protocol Reference</a></li>
+    <li class="level2 nav-leaf"><a href="../reference/errors.html">Error Handling</a></li>
+    <li class="level2 nav-leaf"><a href="../reference/type-derivation.html">Type Derivation</a></li>
+    <li class="level2 nav-leaf"><a href="../reference/testing.html">Testing</a></li>
+    <li class="level1 nav-node"><a href="index.html">Project</a></li>
+    <li class="level2 active nav-leaf"><a href="#">Contributing</a></li>
+    <li class="level2 nav-leaf"><a href="changelog.html">Changelog</a></li>
+    <li class="level2 nav-leaf"><a href="version-support.html">Version Support</a></li>
+  </ul>
+
+</nav>
+
+    <div id="container">
+
+      
+<nav id="page-nav">
+  <p class="header"><a href="#">Contributing</a></p>
+
+  <ul class="nav-list">
+    <li class="level1 nav-node"><a href="#development-setup">Development Setup</a></li>
+    <li class="level2 nav-leaf"><a href="#prerequisites">Prerequisites</a></li>
+    <li class="level2 nav-leaf"><a href="#clone-and-build">Clone and Build</a></li>
+    <li class="level2 nav-leaf"><a href="#run-tests">Run Tests</a></li>
+    <li class="level2 nav-leaf"><a href="#build-the-docs-site">Build the Docs Site</a></li>
+    <li class="level1 nav-node"><a href="#code-style">Code Style</a></li>
+    <li class="level2 nav-leaf"><a href="#formatting">Formatting</a></li>
+    <li class="level1 nav-leaf"><a href="#cross-compilation">Cross-Compilation</a></li>
+    <li class="level1 nav-leaf"><a href="#project-structure">Project Structure</a></li>
+    <li class="level1 nav-node"><a href="#pull-request-process">Pull Request Process</a></li>
+    <li class="level2 nav-leaf"><a href="#pr-checklist">PR Checklist</a></li>
+    <li class="level1 nav-leaf"><a href="#reporting-issues">Reporting Issues</a></li>
+  </ul>
+
+  <p class="footer"></p>
+</nav>
+
+
+      <main class="content">
+
+        <h1 id="contributing" class="title">Contributing</h1>
+        <p>How to set up your development environment and contribute to mcp4s.</p>
+        
+        <h2 id="development-setup" class="section"><a class="anchor-link left" href="#development-setup"><i class="icofont-laika link">&#xef71;</i></a>Development Setup</h2>
+        
+        <h3 id="prerequisites" class="section"><a class="anchor-link left" href="#prerequisites"><i class="icofont-laika link">&#xef71;</i></a>Prerequisites</h3>
+        <ul>
+          <li><strong>Java 21+</strong> (GraalVM or Temurin recommended)</li>
+          <li><strong>Mill</strong> build tool (included via bootstrap script, or install globally)</li>
+        </ul>
+        
+        <h3 id="clone-and-build" class="section"><a class="anchor-link left" href="#clone-and-build"><i class="icofont-laika link">&#xef71;</i></a>Clone and Build</h3>
+        <pre class="keep-together pdf epub"><code class="nohighlight"><span>git clone https://github.com/oloveluck/mcp4s.git
+</span><span class="identifier">cd</span><span> mcp4s
+mill __.compile</span></code></pre>
+        
+        <h3 id="run-tests" class="section"><a class="anchor-link left" href="#run-tests"><i class="icofont-laika link">&#xef71;</i></a>Run Tests</h3>
+        <pre class="keep-together pdf epub"><code class="nohighlight"><span>mill __.test</span></code></pre>
+        
+        <h3 id="build-the-docs-site" class="section"><a class="anchor-link left" href="#build-the-docs-site"><i class="icofont-laika link">&#xef71;</i></a>Build the Docs Site</h3>
+        <pre class="keep-together pdf epub"><code class="nohighlight"><span>mill docs.run</span></code></pre>
+        <p>The output will be in <code>out/docs/site/</code>. Open <code>index.html</code> in a browser.</p>
+        
+        <h2 id="code-style" class="section"><a class="anchor-link left" href="#code-style"><i class="icofont-laika link">&#xef71;</i></a>Code Style</h2>
+        <p>mcp4s uses strict compiler settings:</p>
+        <ul>
+          <li><strong><code>-Xfatal-warnings</code></strong> — all warnings are treated as errors</li>
+          <li><strong><code>-Wunused:all</code></strong> — unused imports, parameters, and locals are flagged</li>
+        </ul>
+        <p>Make sure your code compiles cleanly before submitting a PR.</p>
+        
+        <h3 id="formatting" class="section"><a class="anchor-link left" href="#formatting"><i class="icofont-laika link">&#xef71;</i></a>Formatting</h3>
+        <p>The project uses scalafmt. Format your code before committing:</p>
+        <pre class="keep-together pdf epub"><code class="nohighlight"><span>mill mill.scalalib.scalafmt.ScalafmtModule/reformatAll __.sources</span></code></pre>
+        
+        <h2 id="cross-compilation" class="section"><a class="anchor-link left" href="#cross-compilation"><i class="icofont-laika link">&#xef71;</i></a>Cross-Compilation</h2>
+        <p>mcp4s is cross-compiled for two Scala versions:</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Version</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Scala 3.3.4</td>
+              <td>LTS — widest ecosystem compatibility</td>
+            </tr>
+            <tr>
+              <td>Scala 3.6.4</td>
+              <td>Latest — newer language features</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>Your code must compile on <strong>both</strong> versions. Avoid using features only available in Scala 3.5+.</p>
+        <p>See <a href="version-support.html">Version Support</a> for full dependency details.</p>
+        
+        <h2 id="project-structure" class="section"><a class="anchor-link left" href="#project-structure"><i class="icofont-laika link">&#xef71;</i></a>Project Structure</h2>
+        <pre><code>mcp4s/
+├── core/          # Protocol types, codec derivation
+├── server/        # Server DSL and runtime
+├── client/        # Client connection and resilience
+├── examples/      # Example servers and clients
+├── conformance/   # MCP protocol conformance tests
+├── docs/          # Documentation site (Laika)
+└── build.mill     # Build definition</code></pre>
+        
+        <h2 id="pull-request-process" class="section"><a class="anchor-link left" href="#pull-request-process"><i class="icofont-laika link">&#xef71;</i></a>Pull Request Process</h2>
+        <ol class="arabic">
+          <li><strong>Fork</strong> the repository and create a feature branch from <code>main</code></li>
+          <li><strong>Write tests</strong> for new functionality</li>
+          <li><strong>Ensure all tests pass</strong>: <code>mill __.test</code></li>
+          <li><strong>Ensure clean compilation</strong> on both Scala versions</li>
+          <li><strong>Keep commits focused</strong> — one logical change per commit</li>
+          <li><strong>Write a clear PR description</strong> explaining what and why</li>
+        </ol>
+        
+        <h3 id="pr-checklist" class="section"><a class="anchor-link left" href="#pr-checklist"><i class="icofont-laika link">&#xef71;</i></a>PR Checklist</h3>
+        <ul>
+          <li>Code compiles without warnings on both Scala 3.3.4 and 3.6.4</li>
+          <li>Tests pass</li>
+          <li>New functionality has test coverage</li>
+          <li>No unused imports or variables</li>
+        </ul>
+        
+        <h2 id="reporting-issues" class="section"><a class="anchor-link left" href="#reporting-issues"><i class="icofont-laika link">&#xef71;</i></a>Reporting Issues</h2>
+        <ul>
+          <li>Use <a href="https://github.com/oloveluck/mcp4s/issues">GitHub Issues</a> to report bugs</li>
+          <li>Include Scala version, JVM version, and a minimal reproducer</li>
+          <li>Check existing issues before filing a duplicate</li>
+        </ul>
+
+        
+<hr class="footer-rule"/>
+<footer>
+  Site generated by <a href="https://typelevel.org/Laika/">Laika</a> with the Helium theme.
+</footer>
+
+
+      </main>
+
+    </div>
+
+  </body>
+
+</html>

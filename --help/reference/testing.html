@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+  
+  <head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="generator" content="Typelevel Laika + Helium Theme" />
+  <title>Testing</title>
+  
+  
+  <meta name="description" content="MCP (Model Context Protocol) for Scala"/>
+  
+  
+  
+  
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Lato:400,700">
+  
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Fira+Mono:500">
+  
+  <link rel="stylesheet" type="text/css" href="../helium/site/icofont.min.css" />
+    <link rel="stylesheet" type="text/css" href="../helium/site/laika-helium.css" />
+  <script src="../helium/site/laika-helium.js"></script>
+  
+  
+  <script> /* for avoiding page load transitions */ </script>
+</head>
+
+  <body>
+
+    <header id="top-bar" class="light-default dark-default">
+
+  <div class="row">
+    <a id="nav-icon">
+      <i class="icofont-laika navigationMenu" title="Navigation">&#xefa2;</i>
+    </a>
+    
+    
+  </div>
+
+  <a class="icon-link glyph-link" href="../"><i class="icofont-laika home" title="Home">&#xef47;</i></a>
+
+  <div class="row links">
+    
+    <a class="icon-link svg-link" href="https://github.com/oloveluck/mcp4s"><span class="github" title="Source Code"><svg class="svg-icon" width="100%" height="100%" viewBox="0 0 100 100" version="1.1" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+  <g class="svg-shape">
+    <path d="M49.995,1c-27.609,-0 -49.995,22.386 -49.995,50.002c-0,22.09 14.325,40.83 34.194,47.444c2.501,0.458 3.413,-1.086 3.413,-2.412c0,-1.185 -0.043,-4.331 -0.067,-8.503c-13.908,3.021 -16.843,-6.704 -16.843,-6.704c-2.274,-5.773 -5.552,-7.311 -5.552,-7.311c-4.54,-3.103 0.344,-3.042 0.344,-3.042c5.018,0.356 7.658,5.154 7.658,5.154c4.46,7.64 11.704,5.433 14.552,4.156c0.454,-3.232 1.744,-5.436 3.174,-6.685c-11.102,-1.262 -22.775,-5.553 -22.775,-24.713c-0,-5.457 1.949,-9.92 5.147,-13.416c-0.516,-1.265 -2.231,-6.348 0.488,-13.233c0,0 4.199,-1.344 13.751,5.126c3.988,-1.108 8.266,-1.663 12.518,-1.682c4.245,0.019 8.523,0.574 12.517,1.682c9.546,-6.47 13.736,-5.126 13.736,-5.126c2.728,6.885 1.013,11.968 0.497,13.233c3.204,3.496 5.141,7.959 5.141,13.416c0,19.209 -11.691,23.436 -22.83,24.673c1.795,1.544 3.394,4.595 3.394,9.26c0,6.682 -0.061,12.076 -0.061,13.715c0,1.338 0.899,2.894 3.438,2.406c19.853,-6.627 34.166,-25.354 34.166,-47.438c-0,-27.616 -22.389,-50.002 -50.005,-50.002"/>
+  </g>
+</svg></span></a>
+    
+  </div>  
+
+</header>
+    
+    <nav id="sidebar">
+
+  <div class="row">
+    
+    <a class="icon-link svg-link" href="https://github.com/oloveluck/mcp4s"><span class="github" title="Source Code"><svg class="svg-icon" width="100%" height="100%" viewBox="0 0 100 100" version="1.1" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+  <g class="svg-shape">
+    <path d="M49.995,1c-27.609,-0 -49.995,22.386 -49.995,50.002c-0,22.09 14.325,40.83 34.194,47.444c2.501,0.458 3.413,-1.086 3.413,-2.412c0,-1.185 -0.043,-4.331 -0.067,-8.503c-13.908,3.021 -16.843,-6.704 -16.843,-6.704c-2.274,-5.773 -5.552,-7.311 -5.552,-7.311c-4.54,-3.103 0.344,-3.042 0.344,-3.042c5.018,0.356 7.658,5.154 7.658,5.154c4.46,7.64 11.704,5.433 14.552,4.156c0.454,-3.232 1.744,-5.436 3.174,-6.685c-11.102,-1.262 -22.775,-5.553 -22.775,-24.713c-0,-5.457 1.949,-9.92 5.147,-13.416c-0.516,-1.265 -2.231,-6.348 0.488,-13.233c0,0 4.199,-1.344 13.751,5.126c3.988,-1.108 8.266,-1.663 12.518,-1.682c4.245,0.019 8.523,0.574 12.517,1.682c9.546,-6.47 13.736,-5.126 13.736,-5.126c2.728,6.885 1.013,11.968 0.497,13.233c3.204,3.496 5.141,7.959 5.141,13.416c0,19.209 -11.691,23.436 -22.83,24.673c1.795,1.544 3.394,4.595 3.394,9.26c0,6.682 -0.061,12.076 -0.061,13.715c0,1.338 0.899,2.894 3.438,2.406c19.853,-6.627 34.166,-25.354 34.166,-47.438c-0,-27.616 -22.389,-50.002 -50.005,-50.002"/>
+  </g>
+</svg></span></a>
+    
+  </div>
+
+  <ul class="nav-list">
+    <li class="level1 nav-node"><a href="../getting-started/">Getting Started</a></li>
+    <li class="level2 nav-leaf"><a href="../getting-started/first-server.html">Build Your First Server</a></li>
+    <li class="level2 nav-leaf"><a href="../getting-started/first-client.html">Build Your First Client</a></li>
+    <li class="level1 nav-node"><a href="../server/">Server Guide</a></li>
+    <li class="level2 nav-leaf"><a href="../server/tools.html">Tools</a></li>
+    <li class="level2 nav-leaf"><a href="../server/resources.html">Resources</a></li>
+    <li class="level2 nav-leaf"><a href="../server/prompts.html">Prompts</a></li>
+    <li class="level2 nav-leaf"><a href="../server/auth.html">HTTP Security</a></li>
+    <li class="level1 nav-node"><a href="../client/">Client Guide</a></li>
+    <li class="level2 nav-leaf"><a href="../client/connection.html">McpConnection</a></li>
+    <li class="level1 nav-node"><a href="../transports/">Transports</a></li>
+    <li class="level2 nav-leaf"><a href="../transports/http.html">HTTP Transport</a></li>
+    <li class="level2 nav-leaf"><a href="../transports/websocket.html">WebSocket Transport</a></li>
+    <li class="level2 nav-leaf"><a href="../transports/stdio.html">Stdio Transport</a></li>
+    <li class="level1 nav-node"><a href="../advanced/">Advanced Topics</a></li>
+    <li class="level2 nav-leaf"><a href="../advanced/architecture.html">Architecture</a></li>
+    <li class="level2 nav-leaf"><a href="../advanced/tasks.html">Async Tasks</a></li>
+    <li class="level2 nav-leaf"><a href="../advanced/bidirectional.html">Bidirectional Communication</a></li>
+    <li class="level1 nav-node"><a href="index.html">Reference</a></li>
+    <li class="level2 nav-leaf"><a href="protocol.html">Protocol Reference</a></li>
+    <li class="level2 nav-leaf"><a href="errors.html">Error Handling</a></li>
+    <li class="level2 nav-leaf"><a href="type-derivation.html">Type Derivation</a></li>
+    <li class="level2 active nav-leaf"><a href="#">Testing</a></li>
+    <li class="level1 nav-node"><a href="../project/">Project</a></li>
+    <li class="level2 nav-leaf"><a href="../project/contributing.html">Contributing</a></li>
+    <li class="level2 nav-leaf"><a href="../project/changelog.html">Changelog</a></li>
+    <li class="level2 nav-leaf"><a href="../project/version-support.html">Version Support</a></li>
+  </ul>
+
+</nav>
+
+    <div id="container">
+
+      
+<nav id="page-nav">
+  <p class="header"><a href="#">Testing</a></p>
+
+  <ul class="nav-list">
+    <li class="level1 nav-node"><a href="#servertest">ServerTest</a></li>
+    <li class="level2 nav-leaf"><a href="#synchronous-variant">Synchronous Variant</a></li>
+    <li class="level2 nav-leaf"><a href="#available-operations">Available Operations</a></li>
+    <li class="level1 nav-node"><a href="#toolstest">ToolsTest</a></li>
+    <li class="level2 nav-leaf"><a href="#extension-methods">Extension Methods</a></li>
+    <li class="level1 nav-leaf"><a href="#args-helper">args Helper</a></li>
+    <li class="level1 nav-node"><a href="#patterns">Patterns</a></li>
+    <li class="level2 nav-leaf"><a href="#testing-error-cases">Testing Error Cases</a></li>
+    <li class="level2 nav-leaf"><a href="#testing-resources">Testing Resources</a></li>
+    <li class="level2 nav-leaf"><a href="#testing-prompts">Testing Prompts</a></li>
+  </ul>
+
+  <p class="footer"></p>
+</nav>
+
+
+      <main class="content">
+
+        <h1 id="testing" class="title">Testing</h1>
+        <p>MCP4S provides testing utilities for verifying servers and tools without running a transport.</p>
+        
+        <h2 id="servertest" class="section"><a class="anchor-link left" href="#servertest"><i class="icofont-laika link">&#xef71;</i></a>ServerTest</h2>
+        <p>Test a full server with an in-memory client:</p>
+        <pre><code class="nohighlight"><span class="keyword">import</span><span> </span><span class="identifier">cats</span><span>.</span><span class="identifier">effect</span><span>.</span><span class="type-name">IO</span><span>
+</span><span class="keyword">import</span><span> </span><span class="identifier">munit</span><span>.</span><span class="type-name">CatsEffectSuite</span><span>
+</span><span class="keyword">import</span><span> </span><span class="identifier">mcp4s</span><span>.</span><span class="identifier">server</span><span>.*
+</span><span class="keyword">import</span><span> </span><span class="identifier">mcp4s</span><span>.</span><span class="identifier">server</span><span>.</span><span class="identifier">testing</span><span>.*
+
+</span><span class="keyword">class</span><span> </span><span class="type-name">MyServerSuite</span><span> </span><span class="keyword">extends</span><span> </span><span class="type-name">CatsEffectSuite</span><span>:
+
+  </span><span class="keyword">val</span><span> </span><span class="identifier">server</span><span> = </span><span class="type-name">Server</span><span>.</span><span class="identifier">builder</span><span>[</span><span class="type-name">IO</span><span>]
+    .</span><span class="identifier">withInfo</span><span>(</span><span class="type-name">ServerInfo</span><span>(</span><span class="string-literal">&quot;test&quot;</span><span>, </span><span class="string-literal">&quot;1.0.0&quot;</span><span>))
+    .</span><span class="identifier">tool</span><span>[</span><span class="type-name">AddArgs</span><span>](</span><span class="string-literal">&quot;add&quot;</span><span>, </span><span class="string-literal">&quot;Add&quot;</span><span>) { </span><span class="identifier">args</span><span> =&gt; </span><span class="type-name">IO</span><span>.</span><span class="identifier">pure</span><span>(</span><span class="identifier">ok</span><span>(</span><span class="string-literal">s&quot;</span><span class="substitution">${args.a + args.b}</span><span class="string-literal">&quot;</span><span>)) }
+    .</span><span class="identifier">build</span><span>
+
+  </span><span class="identifier">test</span><span>(</span><span class="string-literal">&quot;add tool returns correct result&quot;</span><span>) {
+    </span><span class="type-name">ServerTest</span><span>(</span><span class="identifier">server</span><span>).</span><span class="identifier">use</span><span> { </span><span class="identifier">client</span><span> =&gt;
+      </span><span class="keyword">for</span><span>
+        </span><span class="identifier">result</span><span> &lt;- </span><span class="identifier">client</span><span>.</span><span class="identifier">callTool</span><span>(</span><span class="string-literal">&quot;add&quot;</span><span>, </span><span class="type-name">AddArgs</span><span>(</span><span class="number-literal">2.0</span><span>, </span><span class="number-literal">3.0</span><span>))
+      </span><span class="keyword">yield</span><span> </span><span class="identifier">assertEquals</span><span>(</span><span class="identifier">result</span><span>.</span><span class="identifier">textContent</span><span>, </span><span class="string-literal">&quot;5.0&quot;</span><span>)
+    }
+  }</span></code></pre>
+        
+        <h3 id="synchronous-variant" class="section"><a class="anchor-link left" href="#synchronous-variant"><i class="icofont-laika link">&#xef71;</i></a>Synchronous Variant</h3>
+        <p>For simpler tests that don&#39;t need Resource lifecycle:</p>
+        <pre class="keep-together pdf epub"><code class="nohighlight"><span class="identifier">test</span><span>(</span><span class="string-literal">&quot;sync test&quot;</span><span>) {
+  </span><span class="keyword">val</span><span> </span><span class="identifier">client</span><span> = </span><span class="type-name">ServerTest</span><span>.</span><span class="identifier">sync</span><span>(</span><span class="identifier">server</span><span>)
+  </span><span class="keyword">for</span><span>
+    </span><span class="identifier">result</span><span> &lt;- </span><span class="identifier">client</span><span>.</span><span class="identifier">callTool</span><span>(</span><span class="string-literal">&quot;add&quot;</span><span>, </span><span class="type-name">AddArgs</span><span>(</span><span class="number-literal">1.0</span><span>, </span><span class="number-literal">2.0</span><span>))
+  </span><span class="keyword">yield</span><span> </span><span class="identifier">assertEquals</span><span>(</span><span class="identifier">result</span><span>.</span><span class="identifier">textContent</span><span>, </span><span class="string-literal">&quot;3.0&quot;</span><span>)
+}</span></code></pre>
+        
+        <h3 id="available-operations" class="section"><a class="anchor-link left" href="#available-operations"><i class="icofont-laika link">&#xef71;</i></a>Available Operations</h3>
+        <pre class="keep-together pdf epub"><code class="nohighlight"><span class="identifier">client</span><span>.</span><span class="identifier">listTools</span><span>                           </span><span class="comment">// IO[List[Tool]]
+</span><span class="identifier">client</span><span>.</span><span class="identifier">callTool</span><span>(</span><span class="string-literal">&quot;name&quot;</span><span>, </span><span class="identifier">args</span><span>)             </span><span class="comment">// IO[ToolResult]
+</span><span class="identifier">client</span><span>.</span><span class="identifier">callToolJson</span><span>(</span><span class="string-literal">&quot;name&quot;</span><span>, </span><span class="identifier">json</span><span>)         </span><span class="comment">// IO[ToolResult]
+</span><span class="identifier">client</span><span>.</span><span class="identifier">listResources</span><span>                       </span><span class="comment">// IO[List[Resource]]
+</span><span class="identifier">client</span><span>.</span><span class="identifier">readResource</span><span>(</span><span class="string-literal">&quot;file:///path&quot;</span><span>)       </span><span class="comment">// IO[ResourceContent]
+</span><span class="identifier">client</span><span>.</span><span class="identifier">listPrompts</span><span>                         </span><span class="comment">// IO[List[Prompt]]
+</span><span class="identifier">client</span><span>.</span><span class="identifier">getPrompt</span><span>(</span><span class="string-literal">&quot;name&quot;</span><span>, </span><span class="identifier">args</span><span>)            </span><span class="comment">// IO[GetPromptResult]
+</span><span class="identifier">client</span><span>.</span><span class="identifier">getPromptMap</span><span>(</span><span class="string-literal">&quot;name&quot;</span><span>, </span><span class="type-name">Map</span><span>(</span><span class="string-literal">&quot;k&quot;</span><span> -&gt; </span><span class="string-literal">&quot;v&quot;</span><span>))  </span><span class="comment">// IO[GetPromptResult]</span></code></pre>
+        
+        <h2 id="toolstest" class="section"><a class="anchor-link left" href="#toolstest"><i class="icofont-laika link">&#xef71;</i></a>ToolsTest</h2>
+        <p>Test tools directly without building a full server:</p>
+        <pre><code class="nohighlight"><span class="keyword">import</span><span> </span><span class="identifier">mcp4s</span><span>.</span><span class="identifier">server</span><span>.</span><span class="identifier">testing</span><span>.*
+</span><span class="keyword">import</span><span> </span><span class="identifier">mcp4s</span><span>.</span><span class="identifier">server</span><span>.</span><span class="identifier">mcp</span><span>.*
+</span><span class="keyword">import</span><span> </span><span class="identifier">mcp4s</span><span>.</span><span class="identifier">protocol</span><span>.*
+
+</span><span class="annotation">@description</span><span>(</span><span class="string-literal">&quot;Add two numbers&quot;</span><span>)
+</span><span class="keyword">case</span><span> </span><span class="keyword">class</span><span> </span><span class="type-name">AddArgs</span><span>(</span><span class="identifier">a</span><span>: </span><span class="type-name">Double</span><span>, </span><span class="identifier">b</span><span>: </span><span class="type-name">Double</span><span>) </span><span class="identifier">derives</span><span> </span><span class="type-name">ToolInput</span><span>
+
+</span><span class="keyword">val</span><span> </span><span class="identifier">tools</span><span> = </span><span class="type-name">Tool</span><span>[</span><span class="type-name">IO</span><span>, </span><span class="type-name">AddArgs</span><span>] { </span><span class="identifier">args</span><span> =&gt;
+  </span><span class="type-name">IO</span><span>.</span><span class="identifier">pure</span><span>(</span><span class="type-name">ToolResult</span><span>.</span><span class="identifier">text</span><span>(</span><span class="string-literal">s&quot;</span><span class="substitution">${args.a + args.b}</span><span class="string-literal">&quot;</span><span>))
+}
+
+</span><span class="identifier">test</span><span>(</span><span class="string-literal">&quot;call tool directly&quot;</span><span>) {
+  </span><span class="keyword">for</span><span>
+    </span><span class="identifier">result</span><span> &lt;- </span><span class="identifier">tools</span><span>.</span><span class="identifier">testCall</span><span>(</span><span class="string-literal">&quot;add&quot;</span><span>, </span><span class="identifier">args</span><span>(</span><span class="string-literal">&quot;a&quot;</span><span> -&gt; </span><span class="number-literal">3.0</span><span>, </span><span class="string-literal">&quot;b&quot;</span><span> -&gt; </span><span class="number-literal">2.0</span><span>))
+  </span><span class="keyword">yield</span><span> </span><span class="identifier">assertEquals</span><span>(</span><span class="identifier">result</span><span>.</span><span class="identifier">textContent</span><span>, </span><span class="string-literal">&quot;5.0&quot;</span><span>)
+}
+
+</span><span class="identifier">test</span><span>(</span><span class="string-literal">&quot;tool exists&quot;</span><span>) {
+  </span><span class="keyword">for</span><span>
+    </span><span class="identifier">exists</span><span> &lt;- </span><span class="identifier">tools</span><span>.</span><span class="identifier">hasTool</span><span>(</span><span class="string-literal">&quot;add&quot;</span><span>)
+  </span><span class="keyword">yield</span><span> </span><span class="identifier">assert</span><span>(</span><span class="identifier">exists</span><span>)
+}
+
+</span><span class="identifier">test</span><span>(</span><span class="string-literal">&quot;get tool definition&quot;</span><span>) {
+  </span><span class="keyword">for</span><span>
+    </span><span class="identifier">tool</span><span> &lt;- </span><span class="identifier">tools</span><span>.</span><span class="identifier">assertTool</span><span>(</span><span class="string-literal">&quot;add&quot;</span><span>)
+  </span><span class="keyword">yield</span><span> </span><span class="identifier">assertEquals</span><span>(</span><span class="identifier">tool</span><span>.</span><span class="identifier">name</span><span>, </span><span class="string-literal">&quot;add&quot;</span><span>)
+}</span></code></pre>
+        
+        <h3 id="extension-methods" class="section"><a class="anchor-link left" href="#extension-methods"><i class="icofont-laika link">&#xef71;</i></a>Extension Methods</h3>
+        <pre class="keep-together pdf epub"><code class="nohighlight"><span class="identifier">tools</span><span>.</span><span class="identifier">testCall</span><span>(</span><span class="string-literal">&quot;name&quot;</span><span>, </span><span class="identifier">arguments</span><span>)   </span><span class="comment">// Call tool, raises McpError.ToolNotFound if missing
+</span><span class="identifier">tools</span><span>.</span><span class="identifier">testCallJson</span><span>(</span><span class="string-literal">&quot;name&quot;</span><span>, </span><span class="identifier">json</span><span>)    </span><span class="comment">// Call with raw JSON
+</span><span class="identifier">tools</span><span>.</span><span class="identifier">hasTool</span><span>(</span><span class="string-literal">&quot;name&quot;</span><span>)               </span><span class="comment">// IO[Boolean]
+</span><span class="identifier">tools</span><span>.</span><span class="identifier">getTool</span><span>(</span><span class="string-literal">&quot;name&quot;</span><span>)               </span><span class="comment">// IO[Option[Tool]]
+</span><span class="identifier">tools</span><span>.</span><span class="identifier">assertTool</span><span>(</span><span class="string-literal">&quot;name&quot;</span><span>)            </span><span class="comment">// IO[Tool], raises AssertionError if missing</span></code></pre>
+        
+        <h2 id="args-helper" class="section"><a class="anchor-link left" href="#args-helper"><i class="icofont-laika link">&#xef71;</i></a>args Helper</h2>
+        <p>Build JSON arguments concisely:</p>
+        <pre class="keep-together pdf epub"><code class="nohighlight"><span class="keyword">import</span><span> </span><span class="identifier">mcp4s</span><span>.</span><span class="identifier">server</span><span>.</span><span class="identifier">testing</span><span>.</span><span class="identifier">args</span><span>
+
+</span><span class="identifier">args</span><span>(</span><span class="string-literal">&quot;a&quot;</span><span> -&gt; </span><span class="number-literal">2.0</span><span>, </span><span class="string-literal">&quot;b&quot;</span><span> -&gt; </span><span class="number-literal">3.0</span><span>)              </span><span class="comment">// Json.obj(&quot;a&quot; -&gt; 2.0, &quot;b&quot; -&gt; 3.0)
+</span><span class="identifier">args</span><span>(</span><span class="string-literal">&quot;query&quot;</span><span> -&gt; </span><span class="string-literal">&quot;hello&quot;</span><span>, </span><span class="string-literal">&quot;limit&quot;</span><span> -&gt; </span><span class="number-literal">10</span><span>)    </span><span class="comment">// Json.obj(&quot;query&quot; -&gt; &quot;hello&quot;, &quot;limit&quot; -&gt; 10)
+</span><span class="identifier">args</span><span>(</span><span class="string-literal">&quot;name&quot;</span><span> -&gt; </span><span class="string-literal">&quot;Alice&quot;</span><span>)                    </span><span class="comment">// Json.obj(&quot;name&quot; -&gt; &quot;Alice&quot;)
+</span><span class="identifier">args</span><span>.</span><span class="identifier">empty</span><span>                                 </span><span class="comment">// Json.obj()</span></code></pre>
+        <p>Supports <code>String</code>, <code>Int</code>, <code>Double</code>, <code>Boolean</code>, and up to 4 key-value pairs.</p>
+        
+        <h2 id="patterns" class="section"><a class="anchor-link left" href="#patterns"><i class="icofont-laika link">&#xef71;</i></a>Patterns</h2>
+        
+        <h3 id="testing-error-cases" class="section"><a class="anchor-link left" href="#testing-error-cases"><i class="icofont-laika link">&#xef71;</i></a>Testing Error Cases</h3>
+        <pre class="keep-together pdf epub"><code class="nohighlight"><span class="identifier">test</span><span>(</span><span class="string-literal">&quot;unknown tool raises error&quot;</span><span>) {
+  </span><span class="identifier">tools</span><span>.</span><span class="identifier">testCall</span><span>(</span><span class="string-literal">&quot;nonexistent&quot;</span><span>, </span><span class="identifier">args</span><span>.</span><span class="identifier">empty</span><span>).</span><span class="identifier">intercept</span><span>[</span><span class="type-name">McpError</span><span>]
+}</span></code></pre>
+        
+        <h3 id="testing-resources" class="section"><a class="anchor-link left" href="#testing-resources"><i class="icofont-laika link">&#xef71;</i></a>Testing Resources</h3>
+        <pre class="keep-together pdf epub"><code class="nohighlight"><span class="identifier">test</span><span>(</span><span class="string-literal">&quot;read resource&quot;</span><span>) {
+  </span><span class="type-name">ServerTest</span><span>(</span><span class="identifier">server</span><span>).</span><span class="identifier">use</span><span> { </span><span class="identifier">client</span><span> =&gt;
+    </span><span class="keyword">for</span><span>
+      </span><span class="identifier">content</span><span> &lt;- </span><span class="identifier">client</span><span>.</span><span class="identifier">readResource</span><span>(</span><span class="string-literal">&quot;file:///readme&quot;</span><span>)
+    </span><span class="keyword">yield</span><span> </span><span class="identifier">assert</span><span>(</span><span class="identifier">content</span><span>.</span><span class="identifier">text</span><span>.</span><span class="identifier">exists</span><span>(</span><span class="identifier">_</span><span>.</span><span class="identifier">contains</span><span>(</span><span class="string-literal">&quot;Hello&quot;</span><span>)))
+  }
+}</span></code></pre>
+        
+        <h3 id="testing-prompts" class="section"><a class="anchor-link left" href="#testing-prompts"><i class="icofont-laika link">&#xef71;</i></a>Testing Prompts</h3>
+        <pre class="keep-together pdf epub"><code class="nohighlight"><span class="identifier">test</span><span>(</span><span class="string-literal">&quot;prompt generates messages&quot;</span><span>) {
+  </span><span class="type-name">ServerTest</span><span>(</span><span class="identifier">server</span><span>).</span><span class="identifier">use</span><span> { </span><span class="identifier">client</span><span> =&gt;
+    </span><span class="keyword">for</span><span>
+      </span><span class="identifier">result</span><span> &lt;- </span><span class="identifier">client</span><span>.</span><span class="identifier">getPromptMap</span><span>(</span><span class="string-literal">&quot;greet&quot;</span><span>, </span><span class="type-name">Map</span><span>(</span><span class="string-literal">&quot;name&quot;</span><span> -&gt; </span><span class="string-literal">&quot;Alice&quot;</span><span>))
+    </span><span class="keyword">yield</span><span> </span><span class="identifier">assert</span><span>(</span><span class="identifier">result</span><span>.</span><span class="identifier">messages</span><span>.</span><span class="identifier">nonEmpty</span><span>)
+  }
+}</span></code></pre>
+
+        
+<hr class="footer-rule"/>
+<footer>
+  Site generated by <a href="https://typelevel.org/Laika/">Laika</a> with the Helium theme.
+</footer>
+
+
+      </main>
+
+    </div>
+
+  </body>
+
+</html>

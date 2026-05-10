@@ -56,19 +56,19 @@ case class CalculateArgs(
 object CalculatorServer extends IOApp.Simple:
 
   val mathTools: Tools[IO] =
-    mcp.Tool[IO, AddArgs] { args =>
+    mcp.Tool[IO, AddArgs]: args =>
       IO.pure(ok(s"Result: ${args.a + args.b}"))
-    } |+|
-    mcp.Tool[IO, SubtractArgs] { args =>
+    |+|
+    mcp.Tool[IO, SubtractArgs]: args =>
       IO.pure(ok(s"Result: ${args.a - args.b}"))
-    } |+|
-    mcp.Tool[IO, MultiplyArgs] { args =>
+    |+|
+    mcp.Tool[IO, MultiplyArgs]: args =>
       IO.pure(ok(s"Result: ${args.a * args.b}"))
-    } |+|
-    mcp.Tool[IO, DivideArgs] { args =>
+    |+|
+    mcp.Tool[IO, DivideArgs]: args =>
       if args.b == 0 then IO.pure(error("Cannot divide by zero"))
       else IO.pure(ok(s"Result: ${args.a / args.b}"))
-    } |+|
+    |+|
     mcp.Tool.withContext[IO, BatchAddArgs] { (args, ctx) =>
       import scala.concurrent.duration.*
       val total = args.numbers.length.toDouble
@@ -80,10 +80,9 @@ object CalculatorServer extends IOApp.Simple:
             _ <- IO.sleep(50.millis)
           yield acc + n
         }
-        .flatMap { sum =>
+        .flatMap: sum =>
           ctx.progress(total, Some(total)) *>
             IO.pure(ok(s"Result: $sum"))
-        }
     }
 
   val resources: Resources[IO] =
@@ -95,11 +94,10 @@ object CalculatorServer extends IOApp.Simple:
     }
 
   val prompts: Prompts[IO] =
-    mcp.Prompt[IO, CalculateArgs] { args =>
+    mcp.Prompt[IO, CalculateArgs]: args =>
       IO.pure(messages(s"Calculate ${args.a} ${args.operation} ${args.b}")(
         user(s"Please calculate: ${args.a} ${args.operation} ${args.b}")
       ))
-    }
 
   val server: Server[IO] = Server
     .builder[IO]

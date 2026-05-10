@@ -5,7 +5,6 @@ import cats.syntax.all.*
 import com.comcast.ip4s.port
 import io.circe.Json
 import mcp4s.client.*
-import mcp4s.client.retry.*
 import mcp4s.client.transport.*
 import mcp4s.examples.fixtures.*
 import mcp4s.protocol.*
@@ -23,7 +22,6 @@ import scala.concurrent.duration.*
   *
   * Tests cover:
   * - Protocol compliance (lifecycle, tools, resources, prompts, bidirectional)
-  * - Network resilience (timeouts, retries, circuit breaker)
   * - Session & connectivity (multiple clients, transport equivalence)
   * - Edge cases & race conditions
   * - Multi-server topology
@@ -48,19 +46,34 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
 
   def httpConnection(
       client: McpClient[IO],
-      port: Int,
-      resilience: Option[ResilienceConfig] = None
+      port: Int
   ): Resource[IO, McpConnection[IO]] =
-    EmberClientBuilder.default[IO].build.flatMap { httpClient =>
-      HttpClientTransport.connect[IO](client, HttpClientConfig(s"http://localhost:$port"), httpClient, resilience)
-    }
+    EmberClientBuilder.default[IO].build.flatMap: httpClient =>
+      HttpClientTransport.connect[IO](client, HttpClientConfig(s"http://localhost:$port"), httpClient)
+
+  /** HTTP connection with http4s Retry middleware for high-load tests */
+  def resilientHttpConnection(
+      client: McpClient[IO],
+      port: Int
+  ): Resource[IO, McpConnection[IO]] =
+    import org.http4s.client.middleware.{Retry, RetryPolicy as Http4sRetryPolicy}
+    EmberClientBuilder.default[IO].build.flatMap: httpClient =>
+      val retryPolicy = Http4sRetryPolicy[IO](
+        backoff = Http4sRetryPolicy.exponentialBackoff(maxWait = 1.second, maxRetry = 5),
+        retriable = { (_, result) =>
+          result match
+            case Left(_: java.io.IOException) => true
+            case _                            => false
+        }
+      )
+      val resilientClient = Retry(retryPolicy)(httpClient)
+      HttpClientTransport.connect[IO](client, HttpClientConfig(s"http://localhost:$port"), resilientClient)
 
   def wsConnection(
       client: McpClient[IO],
-      port: Int,
-      resilience: Option[ResilienceConfig] = None
+      port: Int
   ): Resource[IO, McpConnection[IO]] =
-    WebSocketClientTransport.connect[IO](client, WebSocketClientConfig(s"ws://localhost:$port"), resilience)
+    WebSocketClientTransport.connect[IO](client, WebSocketClientConfig(s"ws://localhost:$port"))
 
   // ============================================================================
   // CATEGORY 1: PROTOCOL COMPLIANCE
@@ -69,8 +82,8 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   // --- Lifecycle Tests ---
 
   test("Protocol: initialize returns server info and capabilities") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         IO {
           assertEquals(conn.serverInfo.name, "test-server")
           assertEquals(conn.serverInfo.version, "1.0.0")
@@ -78,39 +91,31 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           assert(conn.serverCapabilities.resources.isDefined)
           assert(conn.serverCapabilities.prompts.isDefined)
         }
-      }
-    }
   }
 
   test("Protocol: ping succeeds after initialization") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         conn.ping.as(())
-      }
-    }
   }
 
   test("Protocol: shutdown completes gracefully") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         conn.shutdown.as(())
-      }
-    }
   }
 
   test("Protocol: multiple pings succeed") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         (1 to 5).toList.traverse_(_ => conn.ping)
-      }
-    }
   }
 
   // --- Tools Tests ---
 
   test("Protocol: tools/list returns all registered tools") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           tools <- conn.listAllTools
         yield
@@ -119,13 +124,11 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           assert(tools.exists(_.name == "slow_add"))
           assert(tools.exists(_.name == "echo"))
           assert(tools.exists(_.name == "fail"))
-      }
-    }
   }
 
   test("Protocol: tools/call with valid arguments succeeds") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           result <- conn.callTool("add", Json.obj("a" -> Json.fromDouble(5.0).get, "b" -> Json.fromDouble(3.0).get))
         yield
@@ -133,133 +136,106 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           result.content.head match
             case TextContent(text, _, _) => assertEquals(text, "8.0")
             case _ => fail("Expected text content")
-      }
-    }
   }
 
   test("Protocol: tools/call returns error for unknown tool") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
-        conn.callTool("nonexistent", Json.obj()).attempt.map { result =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
+        conn.callTool("nonexistent", Json.obj()).attempt.map: result =>
           assert(result.isLeft)
-        }
-      }
-    }
   }
 
   test("Protocol: tools/call returns error for tool that throws") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
-        conn.callTool("fail", Json.obj()).attempt.map { result =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
+        conn.callTool("fail", Json.obj()).attempt.map: result =>
           assert(result.isLeft)
-        }
-      }
-    }
   }
 
   test("Protocol: tools/call with invalid arguments returns error") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
-        conn.callTool("add", Json.obj("x" -> Json.fromInt(1))).attempt.map { result =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
+        conn.callTool("add", Json.obj("x" -> Json.fromInt(1))).attempt.map: result =>
           assert(result.isLeft)
-        }
-      }
-    }
   }
 
   test("Protocol: multiple concurrent tool calls succeed") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         val calls = (1 to 10).toList.map { i =>
           conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
         }
-        calls.parSequence.map { results =>
+        calls.parSequence.map: results =>
           assertEquals(results.length, 10)
           assert(results.forall(!_.isError.getOrElse(false)))
-        }
-      }
-    }
   }
 
   // --- Resources Tests ---
 
   test("Protocol: resources/list returns registered resources") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           resources <- conn.listAllResources
         yield
           assertEquals(resources.length, 2)
           assert(resources.exists(_.uri == "file:///test.txt"))
           assert(resources.exists(_.uri == "file:///binary.bin"))
-      }
-    }
   }
 
   test("Protocol: resources/read returns text content") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           content <- conn.readResource("file:///test.txt")
         yield
           assertEquals(content.uri, "file:///test.txt")
           assertEquals(content.text, Some("Hello, World!"))
-      }
-    }
   }
 
   test("Protocol: resources/read returns binary content (blob)") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           content <- conn.readResource("file:///binary.bin")
         yield
           assertEquals(content.uri, "file:///binary.bin")
           assert(content.blob.isDefined)
           assertEquals(content.mimeType, Some("application/octet-stream"))
-      }
-    }
   }
 
   test("Protocol: resources/read returns error for unknown resource") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
-        conn.readResource("file:///nonexistent.txt").attempt.map { result =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
+        conn.readResource("file:///nonexistent.txt").attempt.map: result =>
           assert(result.isLeft)
-        }
-      }
-    }
   }
 
   test("Protocol: resources/templates/list returns templates") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           templates <- conn.listAllResourceTemplates
         yield
           assertEquals(templates.length, 1)
           assertEquals(templates.head.uriTemplate, "file:///docs/{name}")
-      }
-    }
   }
 
   // --- Prompts Tests ---
 
   test("Protocol: prompts/list returns registered prompts") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           prompts <- conn.listAllPrompts
         yield
           assertEquals(prompts.length, 1)
           assertEquals(prompts.head.name, "greeting")
-      }
-    }
   }
 
   test("Protocol: prompts/get returns prompt with arguments") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           result <- conn.getPrompt("greeting", Map("name" -> "Alice"))
         yield
@@ -268,136 +244,25 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           result.messages.head.content match
             case TextContent(text, _, _) => assertEquals(text, "Hello, Alice!")
             case _ => fail("Expected text content")
-      }
-    }
   }
 
   test("Protocol: prompts/get returns error for unknown prompt") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           // Do a successful operation first to ensure connection is established
           _ <- conn.listAllPrompts
           result <- conn.getPrompt("nonexistent", Map.empty[String, String]).attempt
         yield
           assert(result.isLeft)
-      }
-    }
   }
 
   // ============================================================================
-  // CATEGORY 2: NETWORK RESILIENCE
-  // ============================================================================
-
-  // --- Timeout Tests ---
-
-  test("Resilience: request timeout fires for slow operations") {
-    val delayingServer = TestServers.delaying[IO](simpleServer, 500.millis)
-    val config = ResilienceConfig(retry = RetryPolicy.noRetry, timeout = Some(100.millis))
-    httpServerResource(delayingServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-        for
-          result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
-        yield
-          assert(result.isLeft)
-          assert(result.left.exists(_.isInstanceOf[java.util.concurrent.TimeoutException]))
-      }
-    }
-  }
-
-  test("Resilience: request succeeds within timeout") {
-    val config = ResilienceConfig(retry = RetryPolicy.noRetry, timeout = Some(5.seconds))
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-        for
-          result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
-        yield
-          assertEquals(result.isError.getOrElse(false), false)
-      }
-    }
-  }
-
-  test("Resilience: tool execution timeout for slow_add") {
-    val config = ResilienceConfig(retry = RetryPolicy.noRetry, timeout = Some(100.millis))
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-        for
-          result <- conn.callTool("slow_add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
-        yield
-          assert(result.isLeft)
-      }
-    }
-  }
-
-  // --- Retry Tests ---
-
-  test("Resilience: retry succeeds after transient failure") {
-    val config = ResilienceConfig(
-      retry = RetryPolicy.fixedDelay(maxRetries = 3, delay = 10.millis, retryOn = _ => true),
-      timeout = None
-    )
-    TestServers.failingAfter[IO](simpleServer, failAfter = 2, "Transient error").flatMap { case (failingServer, _) =>
-      httpServerResource(failingServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-          for
-            result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
-          yield
-            assertEquals(result.isError.getOrElse(false), false)
-        }
-      }
-    }
-  }
-
-  test("Resilience: retry gives up after max retries") {
-    val config = ResilienceConfig(
-      retry = RetryPolicy.fixedDelay(maxRetries = 2, delay = 10.millis, retryOn = _ => true),
-      timeout = None
-    )
-    TestServers.failingAfter[IO](simpleServer, failAfter = 0, "Always fails").flatMap { case (failingServer, _) =>
-      httpServerResource(failingServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-          for
-            result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
-          yield
-            assert(result.isLeft)
-        }
-      }
-    }
-  }
-
-  test("Resilience: exponential backoff increases delay") {
-    val policy = RetryPolicy.exponentialBackoff(
-      maxRetries = 3,
-      baseDelay = 10.millis,
-      maxDelay = 1.second,
-      jitterFactor = 0.0
-    )
-    assertEquals(policy.delay(1).toMillis, 10L)
-    assertEquals(policy.delay(2).toMillis, 20L)
-    assertEquals(policy.delay(3).toMillis, 40L)
-  }
-
-  test("Resilience: no retry policy means single attempt") {
-    val config = ResilienceConfig(retry = RetryPolicy.noRetry, timeout = None)
-    TestServers.failingAfter[IO](simpleServer, failAfter = 0, "Fails").flatMap { case (failingServer, getCount) =>
-      httpServerResource(failingServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-          for
-            _ <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
-            count <- getCount
-          yield
-            assertEquals(count, 1)
-        }
-      }
-    }
-  }
-
-  // ============================================================================
-  // CATEGORY 3: SESSION & CONNECTIVITY
+  // CATEGORY 2: SESSION & CONNECTIVITY
   // ============================================================================
 
   test("Sessions: multiple concurrent clients have isolated state") {
-    httpServerResource(simpleServer).use { server =>
+    httpServerResource(simpleServer).use: server =>
       val port = server.address.getPort
       val client1Res = httpConnection(simpleClient, port)
       val client2Res = httpConnection(simpleClient, port)
@@ -418,11 +283,10 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           assertEquals(tools2.length, 4)
           assertEquals(tools3.length, 4)
       }
-    }
   }
 
   test("Sessions: concurrent requests from different clients don't interfere") {
-    httpServerResource(simpleServer).use { server =>
+    httpServerResource(simpleServer).use: server =>
       val port = server.address.getPort
       (httpConnection(simpleClient, port), httpConnection(simpleClient, port)).tupled.use { case (conn1, conn2) =>
         val requests = List(
@@ -441,34 +305,29 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           assert(texts.contains("200.0"))
           assert(texts.contains("2000.0"))
       }
-    }
   }
 
   test("Sessions: rapid connect/disconnect cycle") {
-    httpServerResource(simpleServer).use { server =>
+    httpServerResource(simpleServer).use: server =>
       val port = server.address.getPort
       (1 to 5).toList.traverse_ { _ =>
-        httpConnection(simpleClient, port).use { conn =>
+        httpConnection(simpleClient, port).use: conn =>
           conn.listAllTools.map(tools => assertEquals(tools.length, 4))
-        } >> IO.sleep(10.millis)
+        >> IO.sleep(10.millis)
       }
-    }
   }
 
   test("Sessions: client reconnects after previous disconnects") {
-    httpServerResource(simpleServer).use { server =>
+    httpServerResource(simpleServer).use: server =>
       val port = server.address.getPort
       for
-        result1 <- httpConnection(simpleClient, port).use { conn =>
+        result1 <- httpConnection(simpleClient, port).use: conn =>
           conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(1)))
-        }
-        result2 <- httpConnection(simpleClient, port).use { conn =>
+        result2 <- httpConnection(simpleClient, port).use: conn =>
           conn.callTool("add", Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(2)))
-        }
       yield
         assertEquals(result1.isError.getOrElse(false), false)
         assertEquals(result2.isError.getOrElse(false), false)
-    }
   }
 
   // --- Transport Equivalence Tests ---
@@ -507,12 +366,12 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   }
 
   // ============================================================================
-  // CATEGORY 4: EDGE CASES & RACE CONDITIONS
+  // CATEGORY 3: EDGE CASES & RACE CONDITIONS
   // ============================================================================
 
   test("Edge: response for cancelled request is handled gracefully") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           fiber <- conn.callTool("slow_add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).start
           _ <- IO.sleep(50.millis)
@@ -522,27 +381,22 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(3), "b" -> Json.fromInt(4)))
         yield
           assertEquals(result.isError.getOrElse(false), false)
-      }
-    }
   }
 
   test("Edge: many concurrent requests complete correctly") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         val requests = (1 to 50).toList.map { i =>
           conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
         }
-        requests.parSequence.map { results =>
+        requests.parSequence.map: results =>
           assertEquals(results.length, 50)
           assert(results.forall(!_.isError.getOrElse(false)))
-        }
-      }
-    }
   }
 
   test("Edge: echo tool preserves message content") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         val testMessage = "Hello, World! Special chars: @#$%^&*(){}[]|\\:\";<>?,./`~"
         for
           result <- conn.callTool("echo", Json.obj("message" -> Json.fromString(testMessage)))
@@ -550,12 +404,10 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           result.content.head match
             case TextContent(text, _, _) => assertEquals(text, testMessage)
             case _ => fail("Expected text content")
-      }
-    }
   }
 
   // ============================================================================
-  // CATEGORY 5: MULTI-SERVER TOPOLOGY
+  // CATEGORY 4: MULTI-SERVER TOPOLOGY
   // ============================================================================
 
   test("MultiServer: client connects to two independent servers simultaneously") {
@@ -632,32 +484,13 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   }
 
   // ============================================================================
-  // CATEGORY 6: CHAOS TESTING
+  // CATEGORY 5: CHAOS TESTING
   // ============================================================================
 
-  test("Chaos: random failures with high retry count eventually succeed") {
-    // 30% failure rate, but with 10 retries we should succeed eventually
-    val config = ResilienceConfig(
-      retry = RetryPolicy.fixedDelay(maxRetries = 10, delay = 10.millis, retryOn = _ => true),
-      timeout = None
-    )
-    TestServers.chaotic[IO](simpleServer, failureRate = 0.3, seed = Some(42L)).flatMap { chaoticServer =>
-      httpServerResource(chaoticServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-          for
-            result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
-          yield
-            assertEquals(result.isError.getOrElse(false), false)
-        }
-      }
-    }
-  }
-
   test("Chaos: jittered delays complete within reasonable time") {
-    val config = ResilienceConfig(retry = RetryPolicy.noRetry, timeout = Some(5.seconds))
-    TestServers.jittered[IO](simpleServer, minDelay = 10.millis, maxDelay = 50.millis).flatMap { jitteredServer =>
-      httpServerResource(jitteredServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
+    TestServers.jittered[IO](simpleServer, minDelay = 10.millis, maxDelay = 50.millis).flatMap: jitteredServer =>
+      httpServerResource(jitteredServer).use: server =>
+        httpConnection(simpleClient, server.address.getPort).use: conn =>
           for
             results <- (1 to 5).toList.parTraverse { i =>
               conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
@@ -665,49 +498,36 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           yield
             assertEquals(results.length, 5)
             assert(results.forall(!_.isError.getOrElse(false)))
-        }
-      }
-    }
   }
 
   // ============================================================================
-  // CATEGORY 7: PERFORMANCE
+  // CATEGORY 6: PERFORMANCE
   // ============================================================================
 
   test("Performance: 100 sequential tool calls complete") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         (1 to 100).toList.traverse { i =>
           conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
-        }.map { results =>
+        }.map: results =>
           assertEquals(results.length, 100)
           assert(results.forall(!_.isError.getOrElse(false)))
-        }
-      }
-    }
   }
 
   test("Performance: 100 parallel tool calls complete") {
-    val config = ResilienceConfig(
-      retry = RetryPolicy.fixedDelay(maxRetries = 3, delay = 10.millis, retryOn = _ => true),
-      timeout = None
-    )
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      resilientHttpConnection(simpleClient, server.address.getPort).use: conn =>
         (1 to 100).toList.parTraverse { i =>
           conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
-        }.map { results =>
+        }.map: results =>
           assertEquals(results.length, 100)
           assert(results.forall(!_.isError.getOrElse(false)))
-        }
-      }
-    }
   }
 
   test("Performance: counting server tracks all calls accurately") {
     TestServers.counting[IO](simpleServer).flatMap { case (countingServer, getCounts) =>
-      httpServerResource(countingServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort).use { conn =>
+      httpServerResource(countingServer).use: server =>
+        httpConnection(simpleClient, server.address.getPort).use: conn =>
           for
             _ <- conn.listAllTools
             _ <- conn.listAllTools
@@ -725,8 +545,6 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
             assertEquals(counts.listPrompts, 1)
             assertEquals(counts.promptGets, 1)
             assertEquals(counts.total, 7)
-        }
-      }
     }
   }
 
@@ -735,104 +553,71 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   // ============================================================================
 
   test("Health: HTTP health endpoint returns ok") {
-    httpServerResource(simpleServer).use { server =>
+    httpServerResource(simpleServer).use: server =>
       val port = server.address.getPort
-      EmberClientBuilder.default[IO].build.use { httpClient =>
+      EmberClientBuilder.default[IO].build.use: httpClient =>
         val request = Request[IO](
           method = Method.GET,
           uri = Uri.unsafeFromString(s"http://localhost:$port/health")
         )
-        httpClient.expect[Json](request).map { response =>
+        httpClient.expect[Json](request).map: response =>
           assertEquals(response.hcursor.get[String]("status"), Right("ok"))
-        }
-      }
-    }
   }
 
   test("Health: WebSocket health endpoint returns ok") {
-    wsServerResource(simpleServer).use { server =>
+    wsServerResource(simpleServer).use: server =>
       val port = server.address.getPort
-      EmberClientBuilder.default[IO].build.use { httpClient =>
+      EmberClientBuilder.default[IO].build.use: httpClient =>
         val request = Request[IO](
           method = Method.GET,
           uri = Uri.unsafeFromString(s"http://localhost:$port/health")
         )
-        httpClient.expect[Json](request).map { response =>
+        httpClient.expect[Json](request).map: response =>
           assertEquals(response.hcursor.get[String]("status"), Right("ok"))
-        }
-      }
-    }
   }
 
   // ============================================================================
-  // CATEGORY 8: ADDITIONAL PROTOCOL COMPLIANCE
+  // CATEGORY 7: ADDITIONAL PROTOCOL COMPLIANCE
   // ============================================================================
 
   test("Protocol: callToolIfSupported returns Some for supported tool") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           result <- conn.callToolIfSupported(ToolName("add"), Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
         yield
           assert(result.isDefined)
           assertEquals(result.get.isError.getOrElse(false), false)
-      }
-    }
   }
 
   test("Protocol: readResourceIfSupported returns Some for supported resource") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           result <- conn.readResourceIfSupported(ResourceUri("file:///test.txt"))
         yield
           assert(result.isDefined)
           assertEquals(result.get.uri, "file:///test.txt")
-      }
-    }
   }
 
   test("Protocol: getPromptIfSupported returns Some for supported prompt") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           result <- conn.getPromptIfSupported(PromptName("greeting"), Map("name" -> "Test"))
         yield
           assert(result.isDefined)
-      }
-    }
   }
 
   test("Protocol: capability checks are accurate") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         IO {
           assert(conn.supportsTools)
           assert(conn.supportsResources)
           assert(conn.supportsPrompts)
           // Task support depends on server configuration
         }
-      }
-    }
-  }
-
-  // ============================================================================
-  // ADDITIONAL RESILIENCE TESTS
-  // ============================================================================
-
-  test("Resilience: full resilience config with retry and timeout") {
-    val config = ResilienceConfig(
-      retry = RetryPolicy.exponentialBackoff(maxRetries = 3),
-      timeout = Some(5.seconds)
-    )
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-        for
-          result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
-        yield
-          assertEquals(result.isError.getOrElse(false), false)
-      }
-    }
   }
 
   // ============================================================================
@@ -840,8 +625,8 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   // ============================================================================
 
   test("Edge: very long string argument is handled correctly") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         val longString = "x" * 10000
         for
           result <- conn.callTool("echo", Json.obj("message" -> Json.fromString(longString)))
@@ -849,13 +634,11 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           result.content.head match
             case TextContent(text, _, _) => assertEquals(text.length, 10000)
             case _ => fail("Expected text content")
-      }
-    }
   }
 
   test("Edge: unicode characters in arguments are preserved") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         val unicodeMessage = "Hello 世界! 🌍🎉 αβγδ ℃℉"
         for
           result <- conn.callTool("echo", Json.obj("message" -> Json.fromString(unicodeMessage)))
@@ -863,39 +646,33 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           result.content.head match
             case TextContent(text, _, _) => assertEquals(text, unicodeMessage)
             case _ => fail("Expected text content")
-      }
-    }
   }
 
   test("Edge: empty string argument is handled") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           result <- conn.callTool("echo", Json.obj("message" -> Json.fromString("")))
         yield
           result.content.head match
             case TextContent(text, _, _) => assertEquals(text, "")
             case _ => fail("Expected text content")
-      }
-    }
   }
 
   test("Edge: zero and negative numbers work correctly") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           result <- conn.callTool("add", Json.obj("a" -> Json.fromDouble(-5.5).get, "b" -> Json.fromDouble(0.0).get))
         yield
           result.content.head match
             case TextContent(text, _, _) => assertEquals(text, "-5.5")
             case _ => fail("Expected text content")
-      }
-    }
   }
 
   test("Edge: floating point precision is maintained") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           result <- conn.callTool("add", Json.obj("a" -> Json.fromDouble(0.1).get, "b" -> Json.fromDouble(0.2).get))
         yield
@@ -904,8 +681,6 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
               val value = text.toDouble
               assert(value > 0.29 && value < 0.31) // Account for floating point
             case _ => fail("Expected text content")
-      }
-    }
   }
 
   // ============================================================================
@@ -913,8 +688,8 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   // ============================================================================
 
   test("Sequence: full workflow - list, call, read, prompt") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           // List available capabilities
           tools <- conn.listAllTools
@@ -933,13 +708,11 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           assertEquals(toolResult.isError.getOrElse(false), false)
           assertEquals(resourceContent.text, Some("Hello, World!"))
           assertEquals(promptResult.messages.length, 1)
-      }
-    }
   }
 
   test("Sequence: repeated operations on same connection") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         for
           // Repeat the same operation multiple times
           r1 <- conn.listAllTools
@@ -952,8 +725,6 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           assertEquals(r1.length, r2.length)
           assertEquals(r2.length, r3.length)
           assert(!r4.isError.getOrElse(false) && !r5.isError.getOrElse(false) && !r6.isError.getOrElse(false))
-      }
-    }
   }
 
   // ============================================================================
@@ -961,7 +732,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   // ============================================================================
 
   test("WebSocket: multiple concurrent clients") {
-    wsServerResource(simpleServer).use { server =>
+    wsServerResource(simpleServer).use: server =>
       val port = server.address.getPort
       (wsConnection(simpleClient, port), wsConnection(simpleClient, port), wsConnection(simpleClient, port)).tupled
         .use { case (conn1, conn2, conn3) =>
@@ -974,66 +745,16 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
             assertEquals(t2.length, 4)
             assertEquals(t3.length, 4)
         }
-    }
   }
 
   test("WebSocket: rapid tool calls") {
-    wsServerResource(simpleServer).use { server =>
-      wsConnection(simpleClient, server.address.getPort).use { conn =>
+    wsServerResource(simpleServer).use: server =>
+      wsConnection(simpleClient, server.address.getPort).use: conn =>
         (1 to 20).toList.traverse { i =>
           conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
-        }.map { results =>
+        }.map: results =>
           assertEquals(results.length, 20)
           assert(results.forall(!_.isError.getOrElse(false)))
-        }
-      }
-    }
-  }
-
-  test("Resilience: WebSocket request timeout fires for slow operations") {
-    val delayingServer = TestServers.delaying[IO](simpleServer, 500.millis)
-    val config = ResilienceConfig(retry = RetryPolicy.noRetry, timeout = Some(100.millis))
-    wsServerResource(delayingServer).use { server =>
-      wsConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-        for
-          result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
-        yield
-          assert(result.isLeft)
-          assert(result.left.exists(_.isInstanceOf[java.util.concurrent.TimeoutException]))
-      }
-    }
-  }
-
-  test("Resilience: WebSocket retry succeeds after transient failure") {
-    val config = ResilienceConfig(
-      retry = RetryPolicy.fixedDelay(maxRetries = 3, delay = 10.millis, retryOn = _ => true),
-      timeout = None
-    )
-    TestServers.failingAfter[IO](simpleServer, failAfter = 2, "Transient error").flatMap { case (failingServer, _) =>
-      wsServerResource(failingServer).use { server =>
-        wsConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-          for
-            result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
-          yield
-            assertEquals(result.isError.getOrElse(false), false)
-        }
-      }
-    }
-  }
-
-  test("Resilience: WebSocket full resilience config") {
-    val config = ResilienceConfig(
-      retry = RetryPolicy.exponentialBackoff(maxRetries = 3),
-      timeout = Some(5.seconds)
-    )
-    wsServerResource(simpleServer).use { server =>
-      wsConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-        for
-          result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
-        yield
-          assertEquals(result.isError.getOrElse(false), false)
-      }
-    }
   }
 
   // ============================================================================
@@ -1041,20 +762,18 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   // ============================================================================
 
   test("Performance: large number of concurrent connections") {
-    httpServerResource(simpleServer).use { server =>
+    httpServerResource(simpleServer).use: server =>
       val port = server.address.getPort
       val connections = (1 to 10).toList.map(_ => httpConnection(simpleClient, port))
-      connections.sequence.use { conns =>
-        conns.parTraverse { conn =>
+      connections.sequence.use: conns =>
+        conns.parTraverse: conn =>
           conn.listAllTools.map(tools => assertEquals(tools.length, 4))
-        }.void
-      }
-    }
+        .void
   }
 
   test("Performance: mixed operations in parallel") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         val operations = List(
           conn.listAllTools,
           conn.listAllResources,
@@ -1063,20 +782,17 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
           conn.readResource("file:///test.txt").map(_ => List.empty[Tool]),
           conn.ping.map(_ => List.empty[Tool])
         )
-        operations.parSequence.map { results =>
+        operations.parSequence.map: results =>
           assertEquals(results.length, 6)
-        }
-      }
-    }
   }
 
   // ============================================================================
-  // CATEGORY 9: RIGOROUS PERFORMANCE TESTS
+  // CATEGORY 8: RIGOROUS PERFORMANCE TESTS
   // ============================================================================
 
   test("Performance: parallel is faster than sequential for slow operations") {
-    httpServerResource(simpleServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort).use { conn =>
+    httpServerResource(simpleServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
         val args = Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))
         for
           seqStart <- IO.monotonic
@@ -1092,18 +808,12 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
             parTime < seqTime / 2,
             s"Parallel time ($parTime) should be less than half of sequential time ($seqTime)"
           )
-      }
-    }
   }
 
   test("Performance: sustained parallel load loses no requests") {
     TestServers.counting[IO](simpleServer).flatMap { case (countingServer, getCounts) =>
-      val config = ResilienceConfig(
-        retry = RetryPolicy.fixedDelay(maxRetries = 3, delay = 10.millis, retryOn = _ => true),
-        timeout = None
-      )
-      httpServerResource(countingServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
+      httpServerResource(countingServer).use: server =>
+        resilientHttpConnection(simpleClient, server.address.getPort).use: conn =>
           for
             results <- (1 to 200).toList.parTraverse { i =>
               conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
@@ -1113,169 +823,63 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
             assertEquals(results.length, 200)
             assert(results.forall(!_.isError.getOrElse(false)), "All 200 results should be non-error")
             assertEquals(counts.toolCalls, 200)
-        }
-      }
     }
   }
 
   test("Performance: multi-connection parallel throughput") {
-    val config = ResilienceConfig(
-      retry = RetryPolicy.fixedDelay(maxRetries = 3, delay = 10.millis, retryOn = _ => true),
-      timeout = None
-    )
-    httpServerResource(simpleServer).use { server =>
+    httpServerResource(simpleServer).use: server =>
       val port = server.address.getPort
-      val connections = (1 to 5).toList.map(_ => httpConnection(simpleClient, port, Some(config)))
-      connections.sequence.use { conns =>
-        conns.parTraverse { conn =>
+      val connections = (1 to 5).toList.map(_ => resilientHttpConnection(simpleClient, port))
+      connections.sequence.use: conns =>
+        conns.parTraverse: conn =>
           (1 to 20).toList.parTraverse { i =>
             conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
           }
-        }.map { allResults =>
+        .map: allResults =>
           val flat = allResults.flatten
           assertEquals(flat.length, 100)
           assert(flat.forall(!_.isError.getOrElse(false)), "All 100 results should succeed")
           // Verify correct values
-          flat.foreach { result =>
+          flat.foreach: result =>
             result.content.head match
               case TextContent(text, _, _) =>
                 val value = text.toDouble
                 assert(value > 0, s"Expected positive result, got $value")
               case _ => fail("Expected text content")
-          }
-        }
-      }
-    }
   }
 
   // ============================================================================
-  // CATEGORY 10: RIGOROUS RESILIENCE TESTS
+  // HTTP4S MIDDLEWARE EXAMPLE
+  // Demonstrates using http4s Retry + Timeout middleware for resilience,
+  // instead of a built-in ResilienceConfig.
   // ============================================================================
 
-  test("Resilience: parallel chaos calls all succeed with retry") {
-    val config = ResilienceConfig(
-      retry = RetryPolicy.fixedDelay(maxRetries = 10, delay = 10.millis, retryOn = _ => true),
-      timeout = None
-    )
-    TestServers.chaotic[IO](simpleServer, failureRate = 0.3, seed = Some(42L)).flatMap { chaoticServer =>
-      httpServerResource(chaoticServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-          (1 to 20).toList.parTraverse { i =>
-            conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i)))
-          }.map { results =>
-            assertEquals(results.length, 20)
-            results.zipWithIndex.foreach { case (result, idx) =>
-              val i = idx + 1
-              assertEquals(result.isError.getOrElse(false), false, s"Call $i should succeed")
-              result.content.head match
-                case TextContent(text, _, _) => assertEquals(text, s"${(i * 2).toDouble}")
-                case _ => fail(s"Expected text content for call $i")
+  test("Middleware: http4s Retry middleware handles transient server failures") {
+    import org.http4s.client.middleware.{Retry, RetryPolicy as Http4sRetryPolicy}
+
+    TestServers.failingAfter[IO](simpleServer, failAfter = 2, "Transient error").flatMap { case (failingServer, _) =>
+      httpServerResource(failingServer).use: server =>
+        EmberClientBuilder.default[IO].build.use: rawHttpClient =>
+          // Compose http4s Retry middleware on the raw Client[F]
+          // Use a custom retriable that retries on connection-level exceptions (MCP uses POST)
+          val retryPolicy = Http4sRetryPolicy[IO](
+            backoff = Http4sRetryPolicy.exponentialBackoff(maxWait = 1.second, maxRetry = 5),
+            retriable = { (_, result) =>
+              result match
+                case Left(_: java.io.IOException) => true
+                case _                            => false
             }
-          }
-        }
-      }
-    }
-  }
+          )
+          val resilientClient = Retry(retryPolicy)(rawHttpClient)
 
-  test("Resilience: timeout fires under concurrent load") {
-    val delayingServer = TestServers.delaying[IO](simpleServer, 500.millis)
-    val config = ResilienceConfig(
-      retry = RetryPolicy.noRetry,
-      timeout = Some(100.millis)
-    )
-    httpServerResource(delayingServer).use { server =>
-      httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-        (1 to 5).toList.parTraverse { i =>
-          conn.callTool("add", Json.obj("a" -> Json.fromInt(i), "b" -> Json.fromInt(i))).attempt
-        }.map { results =>
-          assertEquals(results.length, 5)
-          results.foreach { result =>
-            assert(result.isLeft, "All calls should fail due to timeout")
-            assert(
-              result.left.exists(_.isInstanceOf[java.util.concurrent.TimeoutException]),
-              s"Expected TimeoutException, got: ${result.left.toOption}"
-            )
-          }
-        }
-      }
-    }
-  }
-
-  test("Resilience: retry exhaustion preserves the original error") {
-    val config = ResilienceConfig(
-      retry = RetryPolicy.fixedDelay(maxRetries = 2, delay = 10.millis, retryOn = _ => true),
-      timeout = None
-    )
-    TestServers.failingAfter[IO](simpleServer, failAfter = 0, "Server down").flatMap { case (failingServer, _) =>
-      httpServerResource(failingServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-          conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt.map { result =>
-            assert(result.isLeft, "Call should fail after retry exhaustion")
-            val errorMsg = result.left.toOption.get.getMessage
-            assert(
-              errorMsg.contains("Server down"),
-              s"Error message should contain 'Server down', got: $errorMsg"
-            )
-          }
-        }
-      }
-    }
-  }
-
-  test("Resilience: exponential backoff total time matches expected delays") {
-    val config = ResilienceConfig(
-      retry = RetryPolicy.exponentialBackoff(
-        maxRetries = 3,
-        baseDelay = 50.millis,
-        jitterFactor = 0.0,
-        retryOn = _ => true
-      ),
-      timeout = None
-    )
-    TestServers.failingAfter[IO](simpleServer, failAfter = 0, "Always fails").flatMap { case (failingServer, _) =>
-      httpServerResource(failingServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-          for
-            start <- IO.monotonic
-            _ <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
-            end <- IO.monotonic
-            elapsed = end - start
-          yield
-            // Expected delays: 50ms + 100ms + 200ms = 350ms
-            assert(
-              elapsed >= 300.millis && elapsed <= 500.millis,
-              s"Exponential backoff total time ($elapsed) should be between 300ms and 500ms"
-            )
-        }
-      }
-    }
-  }
-
-  test("Resilience: linear backoff timing is correct") {
-    val config = ResilienceConfig(
-      retry = RetryPolicy.linearBackoff(
-        maxRetries = 3,
-        initialDelay = 50.millis,
-        increment = 50.millis,
-        retryOn = _ => true
-      ),
-      timeout = None
-    )
-    TestServers.failingAfter[IO](simpleServer, failAfter = 0, "Always fails").flatMap { case (failingServer, _) =>
-      httpServerResource(failingServer).use { server =>
-        httpConnection(simpleClient, server.address.getPort, Some(config)).use { conn =>
-          for
-            start <- IO.monotonic
-            _ <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))).attempt
-            end <- IO.monotonic
-            elapsed = end - start
-          yield
-            // Expected delays: 50ms + 100ms + 150ms = 300ms
-            assert(
-              elapsed >= 250.millis && elapsed <= 450.millis,
-              s"Linear backoff total time ($elapsed) should be between 250ms and 450ms"
-            )
-        }
-      }
+          HttpClientTransport.connect[IO](
+            simpleClient,
+            HttpClientConfig(s"http://localhost:${server.address.getPort}"),
+            resilientClient
+          ).use: conn =>
+            for
+              result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
+            yield
+              assertEquals(result.isError.getOrElse(false), false)
     }
   }

@@ -74,9 +74,8 @@ class McpClientDslSpec extends CatsEffectSuite:
   // === Handler Constructor Tests ===
 
   test("Sampling creates composable handler") {
-    val sampling = Sampling[IO] { params =>
+    val sampling = Sampling[IO]: params =>
       IO.pure(message("Response", "test-model"))
-    }
 
     val params = CreateMessageParams(
       messages = List(SamplingMessage(Role.User, SamplingTextContent("Hello"))),
@@ -103,9 +102,8 @@ class McpClientDslSpec extends CatsEffectSuite:
   }
 
   test("Elicitation creates composable handler") {
-    val elicitation = Elicitation[IO] { params =>
+    val elicitation = Elicitation[IO]: params =>
       IO.pure(accept(Map("confirmed" -> Json.fromBoolean(true))))
-    }
 
     val params = ElicitFormParams(
       message = "Confirm?",
@@ -185,17 +183,15 @@ class McpClientDslSpec extends CatsEffectSuite:
     val special = new Samplings[IO]:
       import cats.data.OptionT
       def handle(params: CreateMessageParams): OptionT[IO, CreateMessageResult] =
-        val hasSpecial = params.messages.exists { msg =>
+        val hasSpecial = params.messages.exists: msg =>
           msg.content match
             case SamplingTextContent(text) => text.contains("special")
             case _                         => false
-        }
         if hasSpecial then OptionT.liftF(IO.pure(message("Special response", "special")))
         else OptionT.none
 
-    val fallback = Sampling[IO] { _ =>
+    val fallback = Sampling[IO]: _ =>
       IO.pure(message("Fallback response", "fallback"))
-    }
 
     val combined = special |+| fallback
 
@@ -241,9 +237,8 @@ class McpClientDslSpec extends CatsEffectSuite:
   // === McpClient.from Tests ===
 
   test("McpClient.from works with composed handlers") {
-    val sampling = Sampling[IO] { _ =>
+    val sampling = Sampling[IO]: _ =>
       IO.pure(message("Hello", "test"))
-    }
     val roots = Roots[IO]("file:///workspace", "Workspace")
 
     val client = McpClient.from[IO](
@@ -259,9 +254,8 @@ class McpClientDslSpec extends CatsEffectSuite:
   }
 
   test("McpClient.from with sampling handles requests") {
-    val sampling = Sampling[IO] { _ =>
+    val sampling = Sampling[IO]: _ =>
       IO.pure(message("Response", "test-model"))
-    }
 
     val client = McpClient.from[IO](
       info = ClientInfo("test", "1.0.0"),
@@ -298,9 +292,8 @@ class McpClientDslSpec extends CatsEffectSuite:
   }
 
   test("McpClient.from with elicitation handles requests") {
-    val elicitation = Elicitation[IO] { _ =>
+    val elicitation = Elicitation[IO]: _ =>
       IO.pure(accept(Map("confirmed" -> Json.fromBoolean(true))))
-    }
 
     val client = McpClient.from[IO](
       info = ClientInfo("test", "1.0.0"),
@@ -337,22 +330,20 @@ class McpClientDslSpec extends CatsEffectSuite:
       maxTokens = 100
     )
 
-    client.createMessage(params).attempt.map { result =>
+    client.createMessage(params).attempt.map: result =>
       assert(result.isLeft)
       result.left.toOption.get match
         case McpError.MethodNotSupported(method) =>
           assertEquals(method, "sampling/createMessage")
         case other =>
           fail(s"Expected MethodNotSupported, got $other")
-    }
   }
 
   // === Builder Integration Tests ===
 
   test("builder.withSampling accepts composed handler") {
-    val sampling = Sampling[IO] { _ =>
+    val sampling = Sampling[IO]: _ =>
       IO.pure(message("Hello", "test"))
-    }
 
     val client = McpClient.builder[IO]
       .withInfo(ClientInfo("test", "1.0.0"))
@@ -372,9 +363,8 @@ class McpClientDslSpec extends CatsEffectSuite:
   }
 
   test("builder.withElicitation accepts composed handler") {
-    val elicitation = Elicitation[IO] { _ =>
+    val elicitation = Elicitation[IO]: _ =>
       IO.pure(accept)
-    }
 
     val client = McpClient.builder[IO]
       .withInfo(ClientInfo("test", "1.0.0"))

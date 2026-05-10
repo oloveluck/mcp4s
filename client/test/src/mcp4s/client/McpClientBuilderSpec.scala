@@ -137,14 +137,13 @@ class McpClientBuilderSpec extends CatsEffectSuite:
       maxTokens = 100
     )
 
-    client.createMessage(params).attempt.map { result =>
+    client.createMessage(params).attempt.map: result =>
       assert(result.isLeft)
       result.left.toOption.get match
         case McpError.MethodNotSupported(method) =>
           assertEquals(method, "sampling/createMessage")
         case other =>
           fail(s"Expected MethodNotSupported, got $other")
-    }
   }
 
   // === Elicitation Capability Tests ===
@@ -187,14 +186,13 @@ class McpClientBuilderSpec extends CatsEffectSuite:
       requestedSchema = JsonSchema.obj(Map.empty, Nil)
     )
 
-    client.elicit(params).attempt.map { result =>
+    client.elicit(params).attempt.map: result =>
       assert(result.isLeft)
       result.left.toOption.get match
         case McpError.MethodNotSupported(method) =>
           assertEquals(method, "elicitation/create")
         case other =>
           fail(s"Expected MethodNotSupported, got $other")
-    }
   }
 
   // === Combined Capabilities Tests ===

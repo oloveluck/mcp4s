@@ -80,4 +80,4 @@ conn.cancel(requestId)  // IO[Unit]
 ```
 
 ---
-**Next:** [Resilience Patterns](resilience.md)
+**Next:** [Transports](../transports/README.md)

@@ -35,13 +35,12 @@ class LifecycleSpec extends CatsEffectSuite:
         "increment",
         "Increment counter",
         managedResource
-      ) { (args, counter) =>
+      ): (args, counter) =>
         counter.update(_ + args.increment) *>
           counter.get.map(v => ToolResult.text(s"Counter: $v"))
-      }
 
       // Use the tool within the resource scope
-      result <- toolResource.use { tools =>
+      result <- toolResource.use: tools =>
         for
           acquired <- acquiredRef.get
           _ = assert(acquired, "Resource should be acquired")
@@ -50,7 +49,6 @@ class LifecycleSpec extends CatsEffectSuite:
           _ = assertEquals(result1.map(_.textContent), Some("Counter: 5"))
           _ = assertEquals(result2.map(_.textContent), Some("Counter: 8"))
         yield ()
-      }
 
       // Verify resource was released
       released <- releasedRef.get
@@ -71,18 +69,16 @@ class LifecycleSpec extends CatsEffectSuite:
         "getValue",
         "Get current value",
         managedResource
-      ) { counter =>
+      ): counter =>
         counter.get.map(v => ToolResult.text(s"Value: $v"))
-      }
 
-      _ <- toolResource.use { tools =>
+      _ <- toolResource.use: tools =>
         for
           acquired <- acquiredRef.get
           _ = assert(acquired)
           result <- tools.call("getValue", Json.obj(), minimalCtx).value
           _ = assertEquals(result.map(_.textContent), Some("Value: 42"))
         yield ()
-      }
     yield ()
   }
 
@@ -100,21 +96,19 @@ class LifecycleSpec extends CatsEffectSuite:
       tool1 = McpLifecycleTool[IO, IncrementArgs, Ref[IO, Int]](
         "increment", "Increment",
         counterResource
-      ) { (args, counter) =>
+      ): (args, counter) =>
         counter.update(_ + args.value) *>
           counter.get.map(v => ToolResult.text(s"$v"))
-      }
 
       tool2 = McpLifecycleTool[IO, MultiplyArgs, Ref[IO, Int]](
         "multiply", "Multiply",
         multiplierResource
-      ) { (args, mult) =>
+      ): (args, mult) =>
         mult.get.map(m => ToolResult.text(s"${args.value * m}"))
-      }
 
       combined = McpLifecycleTool.combine[IO](tool1, tool2)
 
-      _ <- combined.use { tools =>
+      _ <- combined.use: tools =>
         for
           toolList <- tools.list
           _ = assertEquals(toolList.map(_.name).toSet, Set("increment", "multiply"))
@@ -123,7 +117,6 @@ class LifecycleSpec extends CatsEffectSuite:
           _ = assertEquals(r1.map(_.textContent), Some("5"))
           _ = assertEquals(r2.map(_.textContent), Some("14"))
         yield ()
-      }
     yield ()
   }
 
@@ -137,10 +130,9 @@ class LifecycleSpec extends CatsEffectSuite:
       lifecycleTool = McpLifecycleTool[IO, IncrementArgs, Ref[IO, Int]](
         "increment", "Increment counter",
         counterResource
-      ) { (args, counter) =>
+      ): (args, counter) =>
         counter.update(_ + args.value) *>
           counter.get.map(v => ToolResult.text(s"$v"))
-      }
 
       staticTool = McpTool.pureText[IO, CalcArgs]("add", "Add numbers") { args =>
         s"${args.a + args.b}"
@@ -148,7 +140,7 @@ class LifecycleSpec extends CatsEffectSuite:
 
       combined = McpLifecycleTool.combineWith[IO](lifecycleTool, staticTool)
 
-      _ <- combined.use { tools =>
+      _ <- combined.use: tools =>
         for
           toolList <- tools.list
           _ = assertEquals(toolList.map(_.name).toSet, Set("increment", "add"))
@@ -157,7 +149,6 @@ class LifecycleSpec extends CatsEffectSuite:
           _ = assertEquals(r1.map(_.textContent), Some("5"))
           _ = assertEquals(r2.map(_.textContent), Some("5.0"))
         yield ()
-      }
     yield ()
   }
 
@@ -179,7 +170,7 @@ class LifecycleSpec extends CatsEffectSuite:
         toolResource
       )
 
-      _ <- serverResource.use { server =>
+      _ <- serverResource.use: server =>
         for
           acquired <- acquiredRef.get
           _ = assert(acquired, "Tool resource should be acquired")
@@ -188,7 +179,6 @@ class LifecycleSpec extends CatsEffectSuite:
           result <- server.callTool("test", Json.obj())
           _ = assertEquals(result.textContent, "result")
         yield ()
-      }
 
       released <- releasedRef.get
       _ = assert(released, "Tool resource should be released")
@@ -215,12 +205,11 @@ class LifecycleSpec extends CatsEffectSuite:
 
       lifecycle = McpLifecycle.fromResource(resource)
 
-      _ <- lifecycle.initialize.use { _ =>
+      _ <- lifecycle.initialize.use: _ =>
         for
           executed <- executedRef.get
           _ = assert(executed, "Initialize should have run")
         yield ()
-      }
 
       released <- releasedRef.get
       _ = assert(released, "Resource should be released")
@@ -235,10 +224,9 @@ class LifecycleSpec extends CatsEffectSuite:
       McpTool.pureTextNoArgs[IO]("test", "Test")("result")
     )
 
-    server.asResource.use { s =>
+    server.asResource.use: s =>
       for
         tools <- s.listTools
         _ = assertEquals(tools.map(_.name), List("test"))
       yield ()
-    }
   }

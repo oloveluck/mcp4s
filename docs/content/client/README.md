@@ -33,7 +33,7 @@ The `Tracer[IO]` is required for [OpenTelemetry](https://opentelemetry.io/) trac
 import mcp4s.client.transport.*
 
 // HTTP
-HttpClientTransport.connect[IO](client, HttpClientConfig("http://localhost:3000")).use { conn =>
+HttpClientTransport.connect[IO](client, HttpClientConfig("http://localhost:3000"), httpClient).use { conn =>
   conn.callTool("add", args)
 }
 
@@ -45,28 +45,27 @@ WebSocketClientTransport.connect[IO](client, WebSocketClientConfig("ws://localho
 
 The connection is a `Resource` — it handles initialization, capability negotiation, and cleanup automatically.
 
-## Resilience
+## Retry & Timeout
 
-Production clients should configure resilience at transport connect time for retry and timeout protection:
+For HTTP transport, compose standard http4s middleware on your `Client[F]` before passing it to the transport:
 
 ```scala
-import mcp4s.client.*
-import mcp4s.client.retry.*
+import org.http4s.client.middleware.{Retry, RetryPolicy, Timeout}
+import scala.concurrent.duration.*
 
-HttpClientTransport.connect(client, config, httpClient,
-  resilience = Some(ResilienceConfig(
-    retry = RetryPolicy.exponentialBackoff(maxRetries = 5),
-    timeout = Some(30.seconds)
-  ))
-).use { conn =>
-  conn.callTool("operation", args)  // already resilient
+val retryPolicy = RetryPolicy[IO](RetryPolicy.exponentialBackoff(maxWait = 10.seconds, maxRetry = 3))
+val resilientClient = Timeout(30.seconds)(Retry(retryPolicy)(rawHttpClient))
+
+HttpClientTransport.connect[IO](client, config, resilientClient).use { conn =>
+  conn.callTool("operation", args)
 }
 ```
+
+For WebSocket/Stdio transports, reconnection (re-establishing the transport) is the appropriate strategy for connection failures rather than per-message retry.
 
 ## Guide Contents
 
 - [Connection Operations](connection.md) — Full McpConnection API
-- [Resilience Patterns](resilience.md) — Retry, timeout
 
 ---
 **Next:** [Connection Operations](connection.md)
