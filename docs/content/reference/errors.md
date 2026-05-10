@@ -1,6 +1,6 @@
 # Error Handling
 
-MCP uses JSON-RPC error codes to communicate failures. Errors are structured values — you can pattern match on them, wrap them with retry logic, or handle them per-tool.
+MCP uses JSON-RPC error codes to communicate failures. Errors are structured values — you can pattern match on them or handle them per-tool.
 
 > For the full protocol specification, see [spec.modelcontextprotocol.io](https://spec.modelcontextprotocol.io/specification/2025-03-26/).
 
@@ -46,36 +46,18 @@ conn.callTool("tool", args).attempt.flatMap {
 }
 ```
 
-## With Resilience
+## With http4s Middleware
 
-Automatic retry on transient errors — configure at transport connect time:
-
-```scala
-HttpClientTransport.connect(client, config, httpClient,
-  resilience = Some(ResilienceConfig.default)
-).use { conn =>
-  conn.callTool("tool", args)
-}
-```
-
-Use `retryOn` to control which errors are retried:
+For HTTP transport, compose retry and timeout middleware on your `Client[F]`:
 
 ```scala
-import mcp4s.client.*
-import mcp4s.client.retry.*
+import org.http4s.client.middleware.{Retry, RetryPolicy, Timeout}
+import scala.concurrent.duration.*
 
-// Only retry on connection errors, not application errors
-HttpClientTransport.connect(client, config, httpClient,
-  resilience = Some(ResilienceConfig(
-    retry = RetryPolicy.fixedDelay(
-      maxRetries = 3,
-      retryOn = {
-        case _: java.io.IOException => true
-        case _ => false
-      }
-    )
-  ))
-).use { conn =>
+val retryPolicy = RetryPolicy[IO](RetryPolicy.exponentialBackoff(maxWait = 10.seconds, maxRetry = 3))
+val resilientClient = Timeout(30.seconds)(Retry(retryPolicy)(rawHttpClient))
+
+HttpClientTransport.connect[IO](client, config, resilientClient).use { conn =>
   conn.callTool("tool", args)
 }
 ```

@@ -214,7 +214,7 @@ object McpConnection:
       yield ()
 
     private def request[A](method: String, params: Json, decode: Json => F[A], onProgress: Option[ProgressParams => F[Unit]] = None): F[A] =
-      tracer.span(s"mcp.client.$method").use { span =>
+      tracer.span(s"mcp.client.$method").use: span =>
         for
           reqId <- nextId
           _ <- span.addAttribute(Attribute("mcp.request_id", reqId.toString))
@@ -239,14 +239,12 @@ object McpConnection:
             inFlightRequests.update(_ - reqId) *>
               progressHandlers.update(_ - reqId)
           ).onCancel(cancelAndNotify(reqId))
-            .handleErrorWith { err =>
+            .handleErrorWith: err =>
               span.addAttribute(Attribute("error", true)) *>
                 span.addAttribute(Attribute("error.type", err.getClass.getSimpleName)) *>
                 span.addAttribute(Attribute("error.message", err.getMessage)) *>
                 Concurrent[F].raiseError(err)
-            }
         yield result
-      }
 
     private def requestJson(method: String, params: Json = Json.obj()): F[Json] =
       request(method, params, Concurrent[F].pure)
@@ -258,12 +256,11 @@ object McpConnection:
 
     private def paginate[A](fetch: Option[String] => F[(List[A], Option[String])]): F[List[A]] =
       def loop(cursor: Option[String], acc: List[A]): F[List[A]] =
-        fetch(cursor).flatMap { (items, nextCursor) =>
+        fetch(cursor).flatMap: (items, nextCursor) =>
           val combined = acc ++ items
           nextCursor match
             case Some(c) => loop(Some(c), combined)
             case None    => Concurrent[F].pure(combined)
-        }
       loop(None, Nil)
 
     def listTools(cursor: Option[String] = None): F[(List[Tool], Option[String])] =

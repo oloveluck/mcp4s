@@ -26,12 +26,12 @@ object CalculatorClient extends IOApp.Simple:
   def run: IO[Unit] =
     given Tracer[IO] = Tracer.noop[IO]
     IO.println("Connecting to Calculator MCP Server...") *>
-      EmberClientBuilder.default[IO].build.use{ httpClient =>
+      EmberClientBuilder.default[IO].build.use: httpClient =>
          HttpClientTransport.connect[IO](
           client,
           HttpClientConfig[IO]("http://localhost:3000"),
           httpClient
-        ).use { conn =>
+        ).use: conn =>
           for
             _ <- IO.println(s"Connected to: ${conn.serverInfo.name} v${conn.serverInfo.version}")
             _ <- IO.println("")
@@ -101,8 +101,6 @@ object CalculatorClient extends IOApp.Simple:
 
             _ <- conn.shutdown
           yield ()
-        }
-      }
 
   private def formatResult(result: ToolResult): String =
     result.content.headOption match

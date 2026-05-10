@@ -105,12 +105,11 @@ object ConformanceServer extends IOApp.Simple:
               maxTokens = 100
             )
           )
-          .map { result =>
+          .map: result =>
             val responseText = result.content match
               case SamplingTextContent(text) => text
               case _                         => "Unexpected response type"
             ok(s"LLM response: $responseText")
-          }
           .handleError { err =>
             ok(s"Sampling error: ${err.getMessage}")
           }
@@ -123,12 +122,11 @@ object ConformanceServer extends IOApp.Simple:
             requestedSchema = JsonSchema.obj("confirmation" -> JsonSchema.boolean("Confirm action"))
           )
         )
-        .map { result =>
+        .map: result =>
           result.action match
             case ElicitAction.Accept  => ok(s"User accepted: ${result.content.getOrElse(Map.empty)}")
             case ElicitAction.Decline => ok("User declined")
             case ElicitAction.Cancel  => ok("User cancelled")
-        }
         .handleError { err =>
           ok(s"Elicitation error: ${err.getMessage}")
         }
@@ -219,12 +217,12 @@ object ConformanceServer extends IOApp.Simple:
     )
 
   val argPrompts: Prompts[IO] =
-    mcp.Prompt[IO, PromptWithArgsInput]("test_prompt_with_arguments", "A prompt with required arguments") { args =>
+    mcp.Prompt[IO, PromptWithArgsInput]("test_prompt_with_arguments", "A prompt with required arguments"): args =>
       messages("Prompt with arguments")(
         user(s"Prompt with arguments: arg1='${args.arg1}', arg2='${args.arg2}'")
       ).pure[IO]
-    } |+|
-    mcp.Prompt[IO, EmbeddedResourcePromptInput]("test_prompt_with_embedded_resource", "A prompt that includes an embedded resource") { args =>
+    |+|
+    mcp.Prompt[IO, EmbeddedResourcePromptInput]("test_prompt_with_embedded_resource", "A prompt that includes an embedded resource"): args =>
       GetPromptResult(
         description = Some("Prompt with embedded resource"),
         messages = List(
@@ -235,7 +233,6 @@ object ConformanceServer extends IOApp.Simple:
           PromptMessage(Role.User, textContent("Please process the embedded resource above."))
         )
       ).pure[IO]
-    }
 
   val allPrompts: Prompts[IO] = simplePrompts |+| argPrompts
 

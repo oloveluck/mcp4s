@@ -74,18 +74,16 @@ object ServerLifecycle:
       resources: Resources[F],
       prompts: Prompts[F]
   ): CatsResource[F, Server[F]] =
-    tools.map { managedTools =>
+    tools.map: managedTools =>
       Server.from[F](info, managedTools, resources, prompts)
-    }
 
   /** Create a server with lifecycle-managed tools and empty resources/prompts. */
   def withLifecycleToolsOnly[F[_]: Concurrent](
       info: ServerInfo,
       tools: CatsResource[F, Tools[F]]
   ): CatsResource[F, Server[F]] =
-    tools.map { managedTools =>
+    tools.map: managedTools =>
       Server.from[F](info, managedTools, Resources.empty[F], Prompts.empty[F])
-    }
 
 /** Namespace for lifecycle-aware tool creation */
 object McpLifecycleTool:
@@ -120,11 +118,9 @@ object McpLifecycleTool:
       description: String,
       acquire: CatsResource[F, R]
   )(handler: (A, R) => F[ToolResult]): CatsResource[F, Tools[F]] =
-    acquire.map { resource =>
-      McpTool[F, A](name, description) { args =>
+    acquire.map: resource =>
+      McpTool[F, A](name, description): args =>
         handler(args, resource)
-      }
-    }
 
   /** Create a no-args tool with an acquired resource.
     *
@@ -144,11 +140,9 @@ object McpLifecycleTool:
       description: String,
       acquire: CatsResource[F, R]
   )(handler: R => F[ToolResult]): CatsResource[F, Tools[F]] =
-    acquire.map { resource =>
-      McpTool.noArgs[F](name, description) {
+    acquire.map: resource =>
+      McpTool.noArgs[F](name, description):
         handler(resource)
-      }
-    }
 
   /** Create a context-aware tool with an acquired resource.
     *
@@ -160,11 +154,9 @@ object McpLifecycleTool:
       description: String,
       acquire: CatsResource[F, R]
   )(handler: (A, R, ToolContext[F]) => F[ToolResult]): CatsResource[F, Tools[F]] =
-    acquire.map { resource =>
-      McpTool.withContext[F, A](name, description) { (args, ctx) =>
+    acquire.map: resource =>
+      McpTool.withContext[F, A](name, description): (args, ctx) =>
         handler(args, resource, ctx)
-      }
-    }
 
   /** Combine multiple lifecycle tools into a single resource.
     *
@@ -182,9 +174,8 @@ object McpLifecycleTool:
   def combine[F[_]: Concurrent](
       tools: CatsResource[F, Tools[F]]*
   ): CatsResource[F, Tools[F]] =
-    tools.toList.sequence.map { toolsList =>
-      toolsList.foldLeft(Tools.empty[F])(_ |+| _)
-    }
+      tools.toList.sequence.map: toolsList =>
+        toolsList.foldLeft(Tools.empty[F])(_ |+| _)
 
   /** Combine a lifecycle tool with a static tool.
     *
@@ -200,4 +191,4 @@ object McpLifecycleTool:
       lifecycle: CatsResource[F, Tools[F]],
       static: Tools[F]
   ): CatsResource[F, Tools[F]] =
-    lifecycle.map(_ |+| static)
+      lifecycle.map(_ |+| static)

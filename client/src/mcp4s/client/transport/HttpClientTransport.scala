@@ -1,6 +1,6 @@
 package mcp4s.client.transport
 
-import cats.effect.{Async, Ref, Resource as CatsResource, Temporal}
+import cats.effect.{Async, Ref, Resource as CatsResource}
 import cats.syntax.all.*
 import fs2.io.net.Network
 import io.circe.*
@@ -12,7 +12,7 @@ import org.http4s.headers.`Content-Type`
 import org.typelevel.ci.CIString
 import org.typelevel.otel4s.context.propagation.TextMapUpdater
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.client.{McpClient, McpConnection, ResilienceConfig}
+import mcp4s.client.{McpClient, McpConnection}
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 
@@ -52,11 +52,10 @@ object HttpClientTransport:
   def connect[F[_]: Async: Network](
       client: McpClient[F],
       config: HttpClientConfig[F],
-      httpClient: Client[F],
-      resilience: Option[ResilienceConfig] = None
+      httpClient: Client[F]
   )(using Tracer[F]): CatsResource[F, McpConnection[F]] =
     for
-      connection <- CatsResource.eval(establishConnection(client, httpClient, config, summon[Tracer[F]], resilience))
+      connection <- CatsResource.eval(establishConnection(client, httpClient, config, summon[Tracer[F]]))
     yield connection
 
   /** Session header name (case-insensitive per MCP spec) */
@@ -66,8 +65,7 @@ object HttpClientTransport:
       client: McpClient[F],
       httpClient: Client[F],
       config: HttpClientConfig[F],
-      tracer: Tracer[F],
-      resilience: Option[ResilienceConfig]
+      tracer: Tracer[F]
   ): F[McpConnection[F]] =
     val endpointUri = Uri.unsafeFromString(s"${config.baseUrl}${config.endpoint}")
 
@@ -99,15 +97,10 @@ object HttpClientTransport:
       // Send initialized notification (now with session ID)
       _ <- sendNotification(JsonRpcNotification(McpMethod.Initialized, None))
 
-      // Wrap sendRequest with resilience if configured
-      wrappedSendRequest = resilience match
-        case Some(config) => ResilienceConfig.wrapSendRequest(sendRequest, config)(using Temporal[F])
-        case None         => sendRequest
-
       // Create connection via factory
       conn <- McpConnection[F](
         initResult.serverInfo, initResult.capabilities,
-        wrappedSendRequest, sendNotification, tracer
+        sendRequest, sendNotification, tracer
       )
 
       // Wire up progress handlers so SSE routing can find them
@@ -133,11 +126,11 @@ object HttpClientTransport:
       config: HttpClientConfig[F],
       tracer: Tracer[F]
   ): F[InitializeResult] =
-    tracer.propagate(Headers.empty).flatMap { traceHeaders =>
+    tracer.propagate(Headers.empty).flatMap: traceHeaders =>
       withAuth(
         traceHeaders.put(Header.Raw(CIString("Accept"), "application/json, text/event-stream")),
         config
-      ).flatMap { authedHeaders =>
+      ).flatMap: authedHeaders =>
         val request = Request[F](
           method = Method.POST,
           uri = endpointUri,
@@ -148,7 +141,7 @@ object HttpClientTransport:
         runRequestToJson(httpClient, request).flatMap { case (headers, responseJson) =>
           // Extract session ID from response header
           val sessionIdOpt = headers.get(SessionHeaderName).map(_.head.value)
-          sessionIdRef.set(sessionIdOpt).flatMap { _ =>
+          sessionIdRef.set(sessionIdOpt).flatMap: _ =>
             responseJson.as[JsonRpcMessage] match
               case Right(JsonRpcResponse(_, result)) =>
                 result.as[InitializeResult].liftTo[F]
@@ -159,24 +152,20 @@ object HttpClientTransport:
               case Left(err) =>
                 Async[F]
                   .raiseError(McpError.InternalError(s"Failed to parse response: ${err.getMessage}"))
-          }
-
         }
-      }
-    }
 
   private def runRequestToJson[F[_]: Async](
       httpClient: Client[F],
       request: Request[F],
       progressHandlers: Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]] = None
   ) =
-    httpClient.run(request).use { response =>
+    httpClient.run(request).use: response =>
       val sse = response.headers
         .get(CIString("Content-Type"))
         .exists(_.exists(_.value == "text/event-stream"))
-      val parsedJson = if (!sse) {
+      val parsedJson = if !sse then
         response.asJson
-      } else {
+      else
         response.body.through(org.http4s.ServerSentEvent.decoder[F])
           .evalMap {
             case ServerSentEvent(data, eventType, id, retry, comment) =>
@@ -209,9 +198,7 @@ object HttpClientTransport:
           .take(1)
           .compile
           .lastOrError
-      }
       parsedJson.map(js => response.headers -> js)
-    }
 
   /** Create a request sender function that includes session ID */
   private def createRequestSender[F[_]: Async](
@@ -221,7 +208,7 @@ object HttpClientTransport:
       progressHandlersRef: Ref[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]],
       config: HttpClientConfig[F],
       tracer: Tracer[F]
-  ): JsonRpcRequest => F[Json] = { req =>
+  ): JsonRpcRequest => F[Json] = req =>
     for
       sessionIdOpt <- sessionIdRef.get
       traceHeaders <- tracer.propagate(Headers.empty)
@@ -258,7 +245,6 @@ object HttpClientTransport:
               McpError.InternalError(s"Failed to parse response: ${err.getMessage}")
             )
     yield result
-  }
 
   /** Create a notification sender function that includes session ID */
   private def createNotificationSender[F[_]: Async](
@@ -267,7 +253,7 @@ object HttpClientTransport:
       sessionIdRef: Ref[F, Option[String]],
       config: HttpClientConfig[F],
       tracer: Tracer[F]
-  ): JsonRpcNotification => F[Unit] = { notif =>
+  ): JsonRpcNotification => F[Unit] = notif =>
     for
       sessionIdOpt <- sessionIdRef.get
       traceHeaders <- tracer.propagate(Headers.empty)
@@ -288,4 +274,3 @@ object HttpClientTransport:
         .withContentType(`Content-Type`(MediaType.application.json))
       _ <- httpClient.status(request)
     yield ()
-  }

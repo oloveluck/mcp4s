@@ -64,15 +64,16 @@ HttpClientTransport.connect[IO](client, HttpClientConfig(
   endpoint = "/mcp"
 ), httpClient).use { conn => ... }
 
-// With resilience
-import mcp4s.client.*
+// With retry/timeout via http4s middleware
+import org.http4s.client.middleware.{Retry, RetryPolicy, Timeout}
+
+val retryPolicy = RetryPolicy[IO](RetryPolicy.exponentialBackoff(maxWait = 10.seconds, maxRetry = 3))
+val resilientClient = Timeout(30.seconds)(Retry(retryPolicy)(httpClient))
 
 HttpClientTransport.connect[IO](client, HttpClientConfig(
   baseUrl = "http://localhost:3000",
   endpoint = "/mcp"
-), httpClient,
-  resilience = Some(ResilienceConfig.default)
-).use { conn => ... }
+), resilientClient).use { conn => ... }
 ```
 
 ## Features

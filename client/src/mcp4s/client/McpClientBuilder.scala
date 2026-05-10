@@ -80,11 +80,10 @@ final class McpClientBuilder[F[_]: Concurrent] private (
     // Merge raw handlers with composed handlers (composed handlers take precedence)
     val effectiveSampling = state.sampling.orElse(state.samplingHandler.map(Samplings.apply[F]))
     val effectiveElicitation = state.elicitation.orElse(
-      state.elicitationHandler.map { handler =>
+      state.elicitationHandler.map: handler =>
         state.elicitationCompleteHandler match
           case Some(complete) => Elicitations.withComplete[F](handler, complete)
           case None           => Elicitations[F](handler)
-      }
     )
 
     val hasRoots = state.roots.nonEmpty || state.mcpRoots.isDefined
@@ -108,9 +107,8 @@ private[client] final class ComposedMcpClient[F[_]: Concurrent](
   def listRoots: F[ListRootsResult] =
     mcpRoots match
       case Some(roots) =>
-        roots.list.map { dynamic =>
+        roots.list.map: dynamic =>
           ListRootsResult(staticRoots ++ dynamic)
-        }
       case None =>
         Applicative[F].pure(ListRootsResult(staticRoots))
 

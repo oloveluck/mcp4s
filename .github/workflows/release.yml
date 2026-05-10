@@ -68,7 +68,7 @@ jobs:
       - name: Publish to Maven Central
         if: steps.version.outputs.changed == 'true'
         run: |
-          ./mill __.publishAll \
+          ./mill mill.scalalib.PublishModule/publishAll \
             --sonatypeUri https://central.sonatype.com/api/v1/publisher \
             --sonatypeSnapshotUri https://central.sonatype.com/api/v1/publisher \
             --sonatypeCreds "${{ secrets.SONATYPE_USERNAME }}:${{ secrets.SONATYPE_PASSWORD }}" \

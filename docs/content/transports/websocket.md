@@ -44,7 +44,7 @@ WebSocketClientTransport.connect[IO](client, WebSocketClientConfig(
 
 ## Reconnection
 
-The WebSocket client transport handles connection lifecycle within the `Resource`. If the connection drops, the resource is released and must be re-acquired. For automatic reconnection, combine with the [resilience](../client/resilience.md) patterns.
+The WebSocket client transport handles connection lifecycle within the `Resource`. If the connection drops, the resource is released and must be re-acquired. For automatic reconnection, re-acquire the resource (e.g. with a retry loop around the `.use` block).
 
 ## When to Use
 

@@ -11,17 +11,15 @@ object Codecs:
 
   // === RequestId ===
 
-  given Encoder[RequestId] = Encoder.instance {
+  given Encoder[RequestId] = Encoder.instance:
     case RequestId.StringId(s) => Json.fromString(s)
     case RequestId.NumberId(n) => Json.fromLong(n)
     case RequestId.NullId      => Json.Null
-  }
 
-  given Decoder[RequestId] = Decoder.instance { cursor =>
+  given Decoder[RequestId] = Decoder.instance: cursor =>
     cursor.as[String].map(RequestId.StringId(_))
       .orElse(cursor.as[Long].map(RequestId.NumberId(_)))
       .orElse(cursor.as[Option[Unit]].map(_ => RequestId.NullId))
-  }
 
   // === Opaque Types ===
 
@@ -41,76 +39,67 @@ object Codecs:
 
   // === JSON-RPC Messages ===
 
-  given Encoder[JsonRpcRequest] = Encoder.instance { req =>
+  given Encoder[JsonRpcRequest] = Encoder.instance: req =>
     Json.obj(
       "jsonrpc" -> Json.fromString(req.jsonrpc),
       "id" -> req.id.asJson,
       "method" -> Json.fromString(req.method),
       "params" -> req.params.getOrElse(Json.Null)
     ).dropNullValues
-  }
 
-  given Decoder[JsonRpcRequest] = Decoder.instance { cursor =>
+  given Decoder[JsonRpcRequest] = Decoder.instance: cursor =>
     for
       id <- cursor.get[RequestId]("id")
       method <- cursor.get[String]("method")
       params <- cursor.get[Option[Json]]("params")
     yield JsonRpcRequest(id, method, params)
-  }
 
-  given Encoder[JsonRpcNotification] = Encoder.instance { notif =>
+  given Encoder[JsonRpcNotification] = Encoder.instance: notif =>
     Json.obj(
       "jsonrpc" -> Json.fromString(notif.jsonrpc),
       "method" -> Json.fromString(notif.method),
       "params" -> notif.params.getOrElse(Json.Null)
     ).dropNullValues
-  }
 
-  given Decoder[JsonRpcNotification] = Decoder.instance { cursor =>
+  given Decoder[JsonRpcNotification] = Decoder.instance: cursor =>
     for
       method <- cursor.get[String]("method")
       params <- cursor.get[Option[Json]]("params")
     yield JsonRpcNotification(method, params)
-  }
 
-  given Encoder[JsonRpcResponse] = Encoder.instance { resp =>
+  given Encoder[JsonRpcResponse] = Encoder.instance: resp =>
     Json.obj(
       "jsonrpc" -> Json.fromString(resp.jsonrpc),
       "id" -> resp.id.asJson,
       "result" -> resp.result
     )
-  }
 
-  given Decoder[JsonRpcResponse] = Decoder.instance { cursor =>
+  given Decoder[JsonRpcResponse] = Decoder.instance: cursor =>
     for
       id <- cursor.get[RequestId]("id")
       result <- cursor.get[Json]("result")
     yield JsonRpcResponse(id, result)
-  }
 
-  given Encoder[JsonRpcErrorResponse] = Encoder.instance { resp =>
+  given Encoder[JsonRpcErrorResponse] = Encoder.instance: resp =>
     Json.obj(
       "jsonrpc" -> Json.fromString(resp.jsonrpc),
       "id" -> resp.id.asJson,
       "error" -> resp.error.asJson
     )
-  }
 
-  given Decoder[JsonRpcErrorResponse] = Decoder.instance { cursor =>
+  given Decoder[JsonRpcErrorResponse] = Decoder.instance: cursor =>
     for
       id <- cursor.get[RequestId]("id")
       error <- cursor.get[JsonRpcError]("error")
     yield JsonRpcErrorResponse(id, error)
-  }
 
-  given Encoder[JsonRpcMessage] = Encoder.instance {
+  given Encoder[JsonRpcMessage] = Encoder.instance:
     case r: JsonRpcRequest       => r.asJson
     case n: JsonRpcNotification  => n.asJson
     case r: JsonRpcResponse      => r.asJson
     case e: JsonRpcErrorResponse => e.asJson
-  }
 
-  given Decoder[JsonRpcMessage] = Decoder.instance { cursor =>
+  given Decoder[JsonRpcMessage] = Decoder.instance: cursor =>
     val hasId = cursor.downField("id").succeeded
     val hasMethod = cursor.downField("method").succeeded
     val hasResult = cursor.downField("result").succeeded
@@ -123,7 +112,6 @@ object Codecs:
       case (true, false, false, true)  => cursor.as[JsonRpcErrorResponse]
       case _ =>
         Left(DecodingFailure("Invalid JSON-RPC message structure", cursor.history))
-  }
 
   // === Common Types ===
 
@@ -212,18 +200,16 @@ object Codecs:
   given Encoder[ToolAnnotations] = deriveEncoder[ToolAnnotations].mapJson(_.dropNullValues)
   given Decoder[ToolAnnotations] = deriveDecoder
 
-  given Encoder[TaskSupport] = Encoder.encodeString.contramap {
+  given Encoder[TaskSupport] = Encoder.encodeString.contramap:
     case TaskSupport.Forbidden => "forbidden"
     case TaskSupport.Optional  => "optional"
     case TaskSupport.Required  => "required"
-  }
 
-  given Decoder[TaskSupport] = Decoder.decodeString.emap {
+  given Decoder[TaskSupport] = Decoder.decodeString.emap:
     case "forbidden" => Right(TaskSupport.Forbidden)
     case "optional"  => Right(TaskSupport.Optional)
     case "required"  => Right(TaskSupport.Required)
     case other       => Left(s"Unknown task support: $other")
-  }
 
   given Encoder[ToolExecution] = deriveEncoder[ToolExecution].mapJson(_.dropNullValues)
   given Decoder[ToolExecution] = deriveDecoder
@@ -233,33 +219,30 @@ object Codecs:
 
   // === Content Types ===
 
-  given Encoder[ContentType] = Encoder.encodeString.contramap {
+  given Encoder[ContentType] = Encoder.encodeString.contramap:
     case ContentType.Text         => "text"
     case ContentType.Image        => "image"
     case ContentType.Audio        => "audio"
     case ContentType.Resource     => "resource"
     case ContentType.ResourceLink => "resource_link"
-  }
 
-  given Decoder[ContentType] = Decoder.decodeString.emap {
+  given Decoder[ContentType] = Decoder.decodeString.emap:
     case "text"          => Right(ContentType.Text)
     case "image"         => Right(ContentType.Image)
     case "audio"         => Right(ContentType.Audio)
     case "resource"      => Right(ContentType.Resource)
     case "resource_link" => Right(ContentType.ResourceLink)
     case other           => Left(s"Unknown content type: $other")
-  }
 
-  given Encoder[TextContent] = Encoder.instance { tc =>
+  given Encoder[TextContent] = Encoder.instance: tc =>
     Json.obj(
       "type" -> Json.fromString("text"),
       "text" -> Json.fromString(tc.text),
       "annotations" -> tc.annotations.asJson,
       "_meta" -> tc._meta.asJson
     ).dropNullValues
-  }
 
-  given Encoder[ImageContent] = Encoder.instance { ic =>
+  given Encoder[ImageContent] = Encoder.instance: ic =>
     Json.obj(
       "type" -> Json.fromString("image"),
       "data" -> Json.fromString(ic.data),
@@ -267,9 +250,8 @@ object Codecs:
       "annotations" -> ic.annotations.asJson,
       "_meta" -> ic._meta.asJson
     ).dropNullValues
-  }
 
-  given Encoder[AudioContent] = Encoder.instance { ac =>
+  given Encoder[AudioContent] = Encoder.instance: ac =>
     Json.obj(
       "type" -> Json.fromString("audio"),
       "data" -> Json.fromString(ac.data),
@@ -277,9 +259,8 @@ object Codecs:
       "annotations" -> ac.annotations.asJson,
       "_meta" -> ac._meta.asJson
     ).dropNullValues
-  }
 
-  given Encoder[ResourceContentRef] = Encoder.instance { rc =>
+  given Encoder[ResourceContentRef] = Encoder.instance: rc =>
     Json.obj(
       "type" -> Json.fromString("resource"),
       "resource" -> Json.obj(
@@ -290,9 +271,8 @@ object Codecs:
       "annotations" -> rc.annotations.asJson,
       "_meta" -> rc._meta.asJson
     ).dropNullValues
-  }
 
-  given Encoder[ResourceLinkContent] = Encoder.instance { rl =>
+  given Encoder[ResourceLinkContent] = Encoder.instance: rl =>
     Json.obj(
       "type" -> Json.fromString("resource_link"),
       "uri" -> Json.fromString(rl.uri),
@@ -304,18 +284,16 @@ object Codecs:
       "size" -> rl.size.asJson,
       "icons" -> rl.icons.asJson
     ).dropNullValues
-  }
 
-  given Encoder[Content] = Encoder.instance {
+  given Encoder[Content] = Encoder.instance:
     case tc: TextContent        => tc.asJson
     case ic: ImageContent       => ic.asJson
     case ac: AudioContent       => ac.asJson
     case rc: ResourceContentRef => rc.asJson
     case rl: ResourceLinkContent => rl.asJson
-  }
 
-  given Decoder[Content] = Decoder.instance { cursor =>
-    cursor.get[String]("type").flatMap {
+  given Decoder[Content] = Decoder.instance: cursor =>
+    cursor.get[String]("type").flatMap:
       case "text" =>
         for
           text <- cursor.get[String]("text")
@@ -363,8 +341,6 @@ object Codecs:
 
       case other =>
         Left(DecodingFailure(s"Unknown content type: $other", cursor.history))
-    }
-  }
 
   given Encoder[ToolResult] = deriveEncoder[ToolResult].mapJson(_.dropNullValues)
   given Decoder[ToolResult] = deriveDecoder
@@ -388,16 +364,14 @@ object Codecs:
   given Encoder[Prompt] = deriveEncoder[Prompt].mapJson(_.dropNullValues)
   given Decoder[Prompt] = deriveDecoder
 
-  given Encoder[Role] = Encoder.encodeString.contramap {
+  given Encoder[Role] = Encoder.encodeString.contramap:
     case Role.User      => "user"
     case Role.Assistant => "assistant"
-  }
 
-  given Decoder[Role] = Decoder.decodeString.emap {
+  given Decoder[Role] = Decoder.decodeString.emap:
     case "user"      => Right(Role.User)
     case "assistant" => Right(Role.Assistant)
     case other       => Left(s"Unknown role: $other")
-  }
 
   given Encoder[PromptMessage] = deriveEncoder[PromptMessage].mapJson(_.dropNullValues)
   given Decoder[PromptMessage] = deriveDecoder
@@ -415,7 +389,7 @@ object Codecs:
 
   // === Logging ===
 
-  given Encoder[LogLevel] = Encoder.encodeString.contramap {
+  given Encoder[LogLevel] = Encoder.encodeString.contramap:
     case LogLevel.Debug     => "debug"
     case LogLevel.Info      => "info"
     case LogLevel.Notice    => "notice"
@@ -424,9 +398,8 @@ object Codecs:
     case LogLevel.Critical  => "critical"
     case LogLevel.Alert     => "alert"
     case LogLevel.Emergency => "emergency"
-  }
 
-  given Decoder[LogLevel] = Decoder.decodeString.emap {
+  given Decoder[LogLevel] = Decoder.decodeString.emap:
     case "debug"     => Right(LogLevel.Debug)
     case "info"      => Right(LogLevel.Info)
     case "notice"    => Right(LogLevel.Notice)
@@ -436,7 +409,6 @@ object Codecs:
     case "alert"     => Right(LogLevel.Alert)
     case "emergency" => Right(LogLevel.Emergency)
     case other       => Left(s"Unknown log level: $other")
-  }
 
   given Encoder[LogMessage] = deriveEncoder[LogMessage].mapJson(_.dropNullValues)
   given Decoder[LogMessage] = deriveDecoder
@@ -464,57 +436,51 @@ object Codecs:
 
   // === Sampling (Client Feature) ===
 
-  given Encoder[SamplingTextContent] = Encoder.instance { stc =>
+  given Encoder[SamplingTextContent] = Encoder.instance: stc =>
     Json.obj(
       "type" -> Json.fromString("text"),
       "text" -> Json.fromString(stc.text)
     )
-  }
 
-  given Encoder[SamplingImageContent] = Encoder.instance { sic =>
+  given Encoder[SamplingImageContent] = Encoder.instance: sic =>
     Json.obj(
       "type" -> Json.fromString("image"),
       "data" -> Json.fromString(sic.data),
       "mimeType" -> Json.fromString(sic.mimeType)
     )
-  }
 
-  given Encoder[SamplingAudioContent] = Encoder.instance { sac =>
+  given Encoder[SamplingAudioContent] = Encoder.instance: sac =>
     Json.obj(
       "type" -> Json.fromString("audio"),
       "data" -> Json.fromString(sac.data),
       "mimeType" -> Json.fromString(sac.mimeType)
     )
-  }
 
-  given Encoder[ToolUseContent] = Encoder.instance { tuc =>
+  given Encoder[ToolUseContent] = Encoder.instance: tuc =>
     Json.obj(
       "type" -> Json.fromString("tool_use"),
       "id" -> Json.fromString(tuc.id),
       "name" -> Json.fromString(tuc.name),
       "input" -> tuc.input
     )
-  }
 
-  given Encoder[ToolResultContent] = Encoder.instance { trc =>
+  given Encoder[ToolResultContent] = Encoder.instance: trc =>
     Json.obj(
       "type" -> Json.fromString("tool_result"),
       "toolUseId" -> Json.fromString(trc.toolUseId),
       "content" -> trc.content.asJson,
       "isError" -> Json.fromBoolean(trc.isError)
     ).dropNullValues
-  }
 
-  given Encoder[SamplingContent] = Encoder.instance {
+  given Encoder[SamplingContent] = Encoder.instance:
     case stc: SamplingTextContent  => stc.asJson
     case sic: SamplingImageContent => sic.asJson
     case sac: SamplingAudioContent => sac.asJson
     case tuc: ToolUseContent       => tuc.asJson
     case trc: ToolResultContent    => trc.asJson
-  }
 
-  given Decoder[SamplingContent] = Decoder.instance { cursor =>
-    cursor.get[String]("type").flatMap {
+  given Decoder[SamplingContent] = Decoder.instance: cursor =>
+    cursor.get[String]("type").flatMap:
       case "text" =>
         cursor.get[String]("text").map(SamplingTextContent(_))
       case "image" =>
@@ -541,24 +507,20 @@ object Codecs:
         yield ToolResultContent(toolUseId, content, isError)
       case other =>
         Left(DecodingFailure(s"Unknown sampling content type: $other", cursor.history))
-    }
-  }
 
-  given Encoder[SamplingMessage] = Encoder.instance { sm =>
+  given Encoder[SamplingMessage] = Encoder.instance: sm =>
     Json.obj(
       "role" -> sm.role.asJson,
       "content" -> sm.content.asJson,
       "_meta" -> sm._meta.asJson
     ).dropNullValues
-  }
 
-  given Decoder[SamplingMessage] = Decoder.instance { cursor =>
+  given Decoder[SamplingMessage] = Decoder.instance: cursor =>
     for
       role <- cursor.get[Role]("role")
       content <- cursor.get[SamplingContent]("content")
       meta <- cursor.get[Option[Json]]("_meta")
     yield SamplingMessage(role, content, meta)
-  }
 
   given Encoder[ModelHint] = deriveEncoder[ModelHint].mapJson(_.dropNullValues)
   given Decoder[ModelHint] = deriveDecoder
@@ -566,25 +528,22 @@ object Codecs:
   given Encoder[ModelPreferences] = deriveEncoder[ModelPreferences].mapJson(_.dropNullValues)
   given Decoder[ModelPreferences] = deriveDecoder
 
-  given Encoder[ToolChoice] = Encoder.instance {
+  given Encoder[ToolChoice] = Encoder.instance:
     case ToolChoice.Auto            => Json.obj("type" -> Json.fromString("auto"))
     case ToolChoice.None            => Json.obj("type" -> Json.fromString("none"))
     case ToolChoice.Specific(name)  => Json.obj("type" -> Json.fromString("tool"), "name" -> Json.fromString(name))
-  }
 
-  given Decoder[ToolChoice] = Decoder.instance { cursor =>
-    cursor.get[String]("type").flatMap {
+  given Decoder[ToolChoice] = Decoder.instance: cursor =>
+    cursor.get[String]("type").flatMap:
       case "auto" => Right(ToolChoice.Auto)
       case "none" => Right(ToolChoice.None)
       case "tool" => cursor.get[String]("name").map(ToolChoice.Specific(_))
       case other  => Left(DecodingFailure(s"Unknown tool choice type: $other", cursor.history))
-    }
-  }
 
   given Encoder[CreateMessageParams] = deriveEncoder[CreateMessageParams].mapJson(_.dropNullValues)
   given Decoder[CreateMessageParams] = deriveDecoder
 
-  given Encoder[CreateMessageResult] = Encoder.instance { cmr =>
+  given Encoder[CreateMessageResult] = Encoder.instance: cmr =>
     Json.obj(
       "role" -> cmr.role.asJson,
       "content" -> cmr.content.asJson,
@@ -592,9 +551,8 @@ object Codecs:
       "stopReason" -> cmr.stopReason.asJson,
       "_meta" -> cmr._meta.asJson
     ).dropNullValues
-  }
 
-  given Decoder[CreateMessageResult] = Decoder.instance { cursor =>
+  given Decoder[CreateMessageResult] = Decoder.instance: cursor =>
     for
       role <- cursor.get[Role]("role")
       content <- cursor.get[SamplingContent]("content")
@@ -602,34 +560,30 @@ object Codecs:
       stopReason <- cursor.get[Option[String]]("stopReason")
       meta <- cursor.get[Option[Json]]("_meta")
     yield CreateMessageResult(role, content, model, stopReason, meta)
-  }
 
   // === Elicitation (Client Feature) ===
 
-  given Encoder[ElicitFormParams] = Encoder.instance { efp =>
+  given Encoder[ElicitFormParams] = Encoder.instance: efp =>
     Json.obj(
       "mode" -> Json.fromString("form"),
       "message" -> Json.fromString(efp.message),
       "requestedSchema" -> efp.requestedSchema.asJson
     )
-  }
 
-  given Encoder[ElicitUrlParams] = Encoder.instance { eup =>
+  given Encoder[ElicitUrlParams] = Encoder.instance: eup =>
     Json.obj(
       "mode" -> Json.fromString("url"),
       "message" -> Json.fromString(eup.message),
       "elicitationId" -> Json.fromString(eup.elicitationId),
       "url" -> Json.fromString(eup.url)
     )
-  }
 
-  given Encoder[ElicitParams] = Encoder.instance {
+  given Encoder[ElicitParams] = Encoder.instance:
     case efp: ElicitFormParams => efp.asJson
     case eup: ElicitUrlParams  => eup.asJson
-  }
 
-  given Decoder[ElicitParams] = Decoder.instance { cursor =>
-    cursor.get[Option[String]]("mode").flatMap {
+  given Decoder[ElicitParams] = Decoder.instance: cursor =>
+    cursor.get[Option[String]]("mode").flatMap:
       case Some("url") =>
         for
           message <- cursor.get[String]("message")
@@ -642,47 +596,39 @@ object Codecs:
           schema <- cursor.get[JsonSchema]("requestedSchema")
           mode <- cursor.get[Option[String]]("mode")
         yield ElicitFormParams(message, schema, mode)
-    }
-  }
 
-  given Encoder[ElicitAction] = Encoder.encodeString.contramap {
+  given Encoder[ElicitAction] = Encoder.encodeString.contramap:
     case ElicitAction.Accept  => "accept"
     case ElicitAction.Decline => "decline"
     case ElicitAction.Cancel  => "cancel"
-  }
 
-  given Decoder[ElicitAction] = Decoder.decodeString.emap {
+  given Decoder[ElicitAction] = Decoder.decodeString.emap:
     case "accept"  => Right(ElicitAction.Accept)
     case "decline" => Right(ElicitAction.Decline)
     case "cancel"  => Right(ElicitAction.Cancel)
     case other     => Left(s"Unknown elicit action: $other")
-  }
 
-  given Encoder[ElicitResult] = Encoder.instance { er =>
+  given Encoder[ElicitResult] = Encoder.instance: er =>
     Json.obj(
       "action" -> er.action.asJson,
       "content" -> er.content.map(_.asJson).getOrElse(Json.Null)
     ).dropNullValues
-  }
 
-  given Decoder[ElicitResult] = Decoder.instance { cursor =>
+  given Decoder[ElicitResult] = Decoder.instance: cursor =>
     for
       action <- cursor.get[ElicitAction]("action")
       content <- cursor.get[Option[Map[String, Json]]]("content")
     yield ElicitResult(action, content)
-  }
 
-  given Encoder[ElicitationCompleteParams] = Encoder.instance { ecp =>
+  given Encoder[ElicitationCompleteParams] = Encoder.instance: ecp =>
     Json.obj(
       "elicitationId" -> Json.fromString(ecp.elicitationId),
       "result" -> ecp.result.asJson
     )
-  }
 
-  given Decoder[ElicitationCompleteParams] = Decoder.instance { cursor =>
+  given Decoder[ElicitationCompleteParams] = Decoder.instance: cursor =>
     for
       elicitationId <- cursor.get[String]("elicitationId")
       result <- cursor.get[ElicitResult]("result")
     yield ElicitationCompleteParams(elicitationId, result)
-  }
 

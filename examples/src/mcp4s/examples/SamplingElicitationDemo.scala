@@ -193,7 +193,7 @@ object DemoClient extends IOApp.Simple:
 object DemoClientDsl extends IOApp.Simple:
 
   // Composable sampling handler using DSL - returns Samplings[IO]
-  val sampling = clientMcp.Sampling[IO] { params =>
+  val sampling = clientMcp.Sampling[IO]: params =>
     val prompt = params.messages.lastOption.map { msg =>
       msg.content match
         case SamplingTextContent(text) => text
@@ -202,7 +202,6 @@ object DemoClientDsl extends IOApp.Simple:
 
     val response = MockLLM.interpret(prompt)
     IO.pure(message(response, "mock-llm-v1"))
-  }
 
   // Composable elicitation handler using DSL - returns Elicitations[IO]
   val elicitation = clientMcp.Elicitation.withComplete[IO](

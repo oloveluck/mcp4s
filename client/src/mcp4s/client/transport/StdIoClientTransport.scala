@@ -1,6 +1,6 @@
 package mcp4s.client.transport
 
-import cats.effect.{Async, Deferred, Ref, Resource as CatsResource, Temporal}
+import cats.effect.{Async, Deferred, Ref, Resource as CatsResource}
 import cats.effect.std.Queue
 import cats.syntax.all.*
 import fs2.Stream
@@ -9,7 +9,7 @@ import io.circe.*
 import io.circe.parser.*
 import io.circe.syntax.*
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.client.{McpClient, McpConnection, ResilienceConfig}
+import mcp4s.client.{McpClient, McpConnection}
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 import fs2.io.process.Processes
@@ -34,8 +34,7 @@ object StdioClientTransport:
     */
   def connect[F[_]: Async: Processes](
       client: McpClient[F],
-      config: StdioClientConfig,
-      resilience: Option[ResilienceConfig] = None
+      config: StdioClientConfig
   )(using Tracer[F]): CatsResource[F, McpConnection[F]] =
     for
       // Create queues for message passing
@@ -66,12 +65,11 @@ object StdioClientTransport:
           .through(fs2.text.utf8.decode)
           .through(fs2.text.lines)
           .filter(_.trim.nonEmpty)
-          .evalMap { line =>
+          .evalMap: line =>
             parse(line) match
               case Right(json) => handleResponse(json, responseMap, progressHandlersRef)
               case Left(err) =>
                 Async[F].delay(System.err.println(s"[MCP Client] Failed to parse response: $err"))
-          }
           .compile
           .drain
           .start
@@ -83,9 +81,8 @@ object StdioClientTransport:
           .through(fs2.text.utf8.decode)
           .through(fs2.text.lines)
           .filter(_.trim.nonEmpty)
-          .evalMap { line =>
+          .evalMap: line =>
             Async[F].delay(System.err.println(s"[MCP Server stderr]: $line"))
-          }
           .compile
           .drain
           .start
@@ -105,7 +102,7 @@ object StdioClientTransport:
 
       // Create the connection
       connection <- CatsResource.eval(
-        establishConnection(client, inputQueue, responseMap, progressHandlersRef, summon[Tracer[F]], resilience)
+        establishConnection(client, inputQueue, responseMap, progressHandlersRef, summon[Tracer[F]])
       )
 
     yield connection
@@ -188,8 +185,7 @@ object StdioClientTransport:
       inputQueue: Queue[F, String],
       responseMap: Ref[F, Map[RequestId, Deferred[F, Json]]],
       progressHandlersRef: Ref[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]],
-      tracer: Tracer[F],
-      resilience: Option[ResilienceConfig]
+      tracer: Tracer[F]
   ): F[McpConnection[F]] =
     val sendRequest = createRequestSender(inputQueue, responseMap)
     val sendNotification = createNotificationSender(inputQueue)
@@ -204,16 +200,12 @@ object StdioClientTransport:
         ).asJson
       )
     )
-    // Wrap sendRequest with resilience if configured (init uses raw sendRequest)
-    val wrappedSendRequest = resilience match
-      case Some(config) => ResilienceConfig.wrapSendRequest(sendRequest, config)(using Temporal[F])
-      case None         => sendRequest
     for
       initResult <- sendInitRequest(initRequest, sendRequest)
       _ <- sendNotification(JsonRpcNotification(McpMethod.Initialized, None))
       conn <- McpConnection[F](
         initResult.serverInfo, initResult.capabilities,
-        wrappedSendRequest, sendNotification, tracer
+        sendRequest, sendNotification, tracer
       )
       _ <- progressHandlersRef.set(Some(conn.progressHandlers))
     yield conn
@@ -223,7 +215,7 @@ object StdioClientTransport:
       initRequest: JsonRpcRequest,
       sendRequest: JsonRpcRequest => F[Json]
   ): F[InitializeResult] =
-    sendRequest(initRequest).flatMap { responseJson =>
+    sendRequest(initRequest).flatMap: responseJson =>
       responseJson.hcursor.downField("error").focus match
         case Some(errorJson) =>
           errorJson.as[JsonRpcError] match
@@ -240,13 +232,12 @@ object StdioClientTransport:
               Async[F].raiseError(
                 McpError.InternalError(s"Failed to parse initialize response: ${err.getMessage}")
               )
-    }
 
   /** Create a request sender function that handles request/response correlation */
   private def createRequestSender[F[_]: Async](
       inputQueue: Queue[F, String],
       responseMap: Ref[F, Map[RequestId, Deferred[F, Json]]]
-  ): JsonRpcRequest => F[Json] = { req =>
+  ): JsonRpcRequest => F[Json] = req =>
     import cats.effect.syntax.all.monadCancelOps_
     for
       // Create a deferred to wait for the response
@@ -272,11 +263,9 @@ object StdioClientTransport:
         case None =>
           Async[F].pure(result)
     yield parsed
-  }
 
   /** Create a notification sender function */
   private def createNotificationSender[F[_]: Async](
       inputQueue: Queue[F, String]
-  ): JsonRpcNotification => F[Unit] = { notif =>
+  ): JsonRpcNotification => F[Unit] = notif =>
     inputQueue.offer(notif.asJson.noSpaces)
-  }

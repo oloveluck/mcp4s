@@ -93,47 +93,41 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
   // === WebSocket Integration Tests ===
 
   test("WebSocket: client connects and receives server info") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
-      wsConnectedClient(port).use { conn =>
+      wsConnectedClient(port).use: conn =>
         IO {
           assertEquals(conn.serverInfo.name, "ws-test-server")
           assertEquals(conn.serverInfo.version, "1.0.0")
         }
-      }
-    }
   }
 
   test("WebSocket: client receives server capabilities") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
-      wsConnectedClient(port).use { conn =>
+      wsConnectedClient(port).use: conn =>
         IO {
           assert(conn.serverCapabilities.tools.isDefined)
           assert(conn.serverCapabilities.resources.isDefined)
           assert(conn.serverCapabilities.prompts.isDefined)
         }
-      }
-    }
   }
 
   test("WebSocket: client lists tools from server") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
-      wsConnectedClient(port).use { conn =>
+      wsConnectedClient(port).use: conn =>
         for
           tools <- conn.listAllTools
         yield
           assertEquals(tools.length, 2)
           assert(tools.exists(_.name == "multiply"))
-      }
-    }
   }
 
   test("WebSocket: client calls tool and receives result") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
-      wsConnectedClient(port).use { conn =>
+      wsConnectedClient(port).use: conn =>
         for
           result <- conn.callTool("multiply", Json.obj(
             "a" -> Json.fromDouble(5.0).get,
@@ -147,64 +141,53 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
               assertEquals(text, "15.0")
             case _ =>
               fail("Expected text content")
-      }
-    }
   }
 
   test("WebSocket: client handles tool error") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
-      wsConnectedClient(port).use { conn =>
-        conn.callTool("nonexistent", Json.obj()).attempt.map { result =>
+      wsConnectedClient(port).use: conn =>
+        conn.callTool("nonexistent", Json.obj()).attempt.map: result =>
           assert(result.isLeft)
-        }
-      }
-    }
   }
 
   test("WebSocket: client lists resources from server") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
-      wsConnectedClient(port).use { conn =>
+      wsConnectedClient(port).use: conn =>
         for
           resources <- conn.listAllResources
         yield
           assertEquals(resources.length, 1)
           assertEquals(resources.head.uri, "file:///ws-test.txt")
-      }
-    }
   }
 
   test("WebSocket: client reads resource from server") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
-      wsConnectedClient(port).use { conn =>
+      wsConnectedClient(port).use: conn =>
         for
           content <- conn.readResource("file:///ws-test.txt")
         yield
           assertEquals(content.uri, "file:///ws-test.txt")
           assertEquals(content.text, Some("WebSocket test content"))
-      }
-    }
   }
 
   test("WebSocket: client lists prompts from server") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
-      wsConnectedClient(port).use { conn =>
+      wsConnectedClient(port).use: conn =>
         for
           prompts <- conn.listAllPrompts
         yield
           assertEquals(prompts.length, 1)
           assertEquals(prompts.head.name, "ws-greeting")
-      }
-    }
   }
 
   test("WebSocket: client gets prompt from server") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
-      wsConnectedClient(port).use { conn =>
+      wsConnectedClient(port).use: conn =>
         for
           result <- conn.getPrompt("ws-greeting", Map("name" -> "WebSocket"))
         yield
@@ -215,23 +198,19 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
               assertEquals(text, "Hello via WebSocket, WebSocket!")
             case _ =>
               fail("Expected text content")
-      }
-    }
   }
 
   test("WebSocket: client pings server") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
-      wsConnectedClient(port).use { conn =>
+      wsConnectedClient(port).use: conn =>
         conn.ping
-      }
-    }
   }
 
   test("WebSocket: client calls tool with progress and receives progress notifications") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
-      wsConnectedClient(port).use { conn =>
+      wsConnectedClient(port).use: conn =>
         for
           progressUpdates <- Ref.of[IO, List[ProgressParams]](Nil)
           result <- conn.callTool(
@@ -253,14 +232,12 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
           assertEquals(updates.head.progress, 0.0)
           assertEquals(updates.last.progress, 3.0)
           assert(updates.forall(_.total == Some(3.0)))
-      }
-    }
   }
 
   test("WebSocket: multiple concurrent tool calls") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
-      wsConnectedClient(port).use { conn =>
+      wsConnectedClient(port).use: conn =>
         val calls = List(
           conn.callTool("multiply", Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(3))),
           conn.callTool("multiply", Json.obj("a" -> Json.fromInt(4), "b" -> Json.fromInt(5))),
@@ -272,18 +249,16 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
         yield
           assertEquals(results.length, 3)
           assert(results.forall(!_.isError.getOrElse(false)))
-      }
-    }
   }
 
   test("WebSocket: health endpoint works") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
       import org.http4s.ember.client.EmberClientBuilder
       import org.http4s.*
       import org.http4s.circe.*
 
-      EmberClientBuilder.default[IO].build.use { httpClient =>
+      EmberClientBuilder.default[IO].build.use: httpClient =>
         val request = Request[IO](
           method = Method.GET,
           uri = Uri.unsafeFromString(s"http://localhost:$port/health")
@@ -292,14 +267,12 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
           response <- httpClient.expect[Json](request)
         yield
           assertEquals(response.hcursor.get[String]("status"), Right("ok"))
-      }
-    }
   }
 
   // === Concurrency Tests ===
 
   test("WebSocket: multiple concurrent clients have isolated state") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
       // Connect 3 clients simultaneously
       val client1 = wsConnectedClient(port)
@@ -323,11 +296,10 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
           assertEquals(tools2.length, 2)
           assertEquals(tools3.length, 2)
       }
-    }
   }
 
   test("WebSocket: concurrent requests from different clients don't interfere") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
       val client1 = wsConnectedClient(port)
       val client2 = wsConnectedClient(port)
@@ -354,39 +326,34 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
           assert(texts.contains("25.0"))
           assert(texts.contains("49.0"))
       }
-    }
   }
 
   test("WebSocket: rapid connect/disconnect cycle") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
       val iterations = (1 to 10).toList
       iterations.traverse_ { i =>
-        wsConnectedClient(port).use { conn =>
+        wsConnectedClient(port).use: conn =>
           for
             tools <- conn.listAllTools
             _ <- IO(assertEquals(tools.length, 2))
           yield ()
-        } >> IO.sleep(50.millis) // Allow resource cleanup between iterations
+        >> IO.sleep(50.millis) // Allow resource cleanup between iterations
       }
-    }
   }
 
   test("WebSocket: clients connect sequentially after previous disconnects") {
-    wsServerResource.use { server =>
+    wsServerResource.use: server =>
       val port = server.address.getPort
       for
         // First client connects, does work, disconnects
-        result1 <- wsConnectedClient(port).use { conn =>
+        result1 <- wsConnectedClient(port).use: conn =>
           conn.callTool("multiply", Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(2)))
-        }
         // Second client connects to same server (should get fresh state)
-        result2 <- wsConnectedClient(port).use { conn =>
+        result2 <- wsConnectedClient(port).use: conn =>
           conn.callTool("multiply", Json.obj("a" -> Json.fromInt(3), "b" -> Json.fromInt(3)))
-        }
       yield
         // Both should succeed independently
         assertEquals(result1.isError.getOrElse(false), false)
         assertEquals(result2.isError.getOrElse(false), false)
-    }
   }

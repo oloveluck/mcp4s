@@ -33,15 +33,12 @@ object DeterministicClients:
         val client = McpClient
           .builder[F]
           .withInfo(ClientInfo("test-client", "1.0.0"))
-          .withSamplingHandler { _ =>
+          .withSamplingHandler: _ =>
             samplingCount.update(_ + 1).as(samplingResponse)
-          }
-          .withElicitationHandler { _ =>
+          .withElicitationHandler: _ =>
             elicitationCount.update(_ + 1).as(elicitationResponse)
-          }
-          .withElicitationCompleteHandler { _ =>
+          .withElicitationCompleteHandler: _ =>
             elicitationCompleteCount.update(_ + 1)
-          }
           .build
 
         val getStats = for
@@ -67,22 +64,20 @@ object DeterministicClients:
     McpClient
       .builder[F]
       .withInfo(ClientInfo("test-client", "1.0.0"))
-      .withSamplingHandler { params =>
-        val prompt = params.messages.lastOption.map { msg =>
+      .withSamplingHandler: params =>
+        val prompt = params.messages.lastOption.map: msg =>
           msg.content match
             case SamplingTextContent(text) => text
             case _                         => ""
-        }.getOrElse("")
+        .getOrElse("")
         Async[F].pure(CreateMessageResult(
           role = Role.Assistant,
           content = SamplingTextContent(s"Echo: $prompt"),
           model = "mock-model",
           stopReason = Some("endTurn")
         ))
-      }
-      .withElicitationHandler { _ =>
+      .withElicitationHandler: _ =>
         Async[F].pure(ElicitResult(ElicitAction.Accept, Some(Map("response" -> Json.fromString("test")))))
-      }
       .build
 
   /** Create a client without sampling support (no handler). */
@@ -97,13 +92,12 @@ object DeterministicClients:
     McpClient
       .builder[F]
       .withInfo(ClientInfo("no-elicitation-client", "1.0.0"))
-      .withSamplingHandler { _ =>
+      .withSamplingHandler: _ =>
         Async[F].pure(CreateMessageResult(
           role = Role.Assistant,
           content = SamplingTextContent("response"),
           model = "mock-model"
         ))
-      }
       .build
 
   /** Create a client that delays responses for timeout testing.
@@ -115,18 +109,16 @@ object DeterministicClients:
     McpClient
       .builder[F]
       .withInfo(ClientInfo("slow-client", "1.0.0"))
-      .withSamplingHandler { _ =>
+      .withSamplingHandler: _ =>
         Temporal[F].sleep(delay) *>
           Async[F].pure(CreateMessageResult(
             role = Role.Assistant,
             content = SamplingTextContent("delayed response"),
             model = "mock-model"
           ))
-      }
-      .withElicitationHandler { _ =>
+      .withElicitationHandler: _ =>
         Temporal[F].sleep(delay) *>
           Async[F].pure(ElicitResult(ElicitAction.Accept, None))
-      }
       .build
 
   /** Create a client that tracks root requests. */

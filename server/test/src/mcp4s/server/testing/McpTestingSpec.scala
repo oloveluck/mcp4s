@@ -138,67 +138,60 @@ class McpTestingSpec extends CatsEffectSuite:
   }
 
   test("ServerTest lists tools") {
-    ServerTest(testServer).use { client =>
+    ServerTest(testServer).use: client =>
       for
         tools <- client.listTools
         _ = assertEquals(tools.map(_.name).toSet, Set("add", "subtract"))
       yield ()
-    }
   }
 
   test("ServerTest calls tools with typed args") {
     case class CalcArgs(a: Double, b: Double) derives ToolInput, Encoder.AsObject
 
-    ServerTest(testServer).use { client =>
+    ServerTest(testServer).use: client =>
       for
         result <- client.callTool("add", CalcArgs(10, 5))
         _ = assertEquals(result.textContent, "15.0")
       yield ()
-    }
   }
 
   test("ServerTest calls tools with Json args") {
-    ServerTest(testServer).use { client =>
+    ServerTest(testServer).use: client =>
       for
         result <- client.callToolJson("subtract", Json.obj("a" -> 10.asJson, "b" -> 3.asJson))
         _ = assertEquals(result.textContent, "7.0")
       yield ()
-    }
   }
 
   test("ServerTest lists resources") {
-    ServerTest(testServer).use { client =>
+    ServerTest(testServer).use: client =>
       for
         resources <- client.listResources
         _ = assertEquals(resources.map(_.uri), List("test://readme"))
       yield ()
-    }
   }
 
   test("ServerTest reads resources") {
-    ServerTest(testServer).use { client =>
+    ServerTest(testServer).use: client =>
       for
         content <- client.readResource("test://readme")
         _ = assertEquals(content.text, Some("Hello world"))
       yield ()
-    }
   }
 
   test("ServerTest lists prompts") {
-    ServerTest(testServer).use { client =>
+    ServerTest(testServer).use: client =>
       for
         prompts <- client.listPrompts
         _ = assertEquals(prompts.map(_.name), List("greet"))
       yield ()
-    }
   }
 
   test("ServerTest gets prompts") {
-    ServerTest(testServer).use { client =>
+    ServerTest(testServer).use: client =>
       for
         result <- client.getPromptMap("greet", Map.empty)
         _ = assertEquals(result.messages.length, 1)
         _ = assertEquals(result.messages.head.content.asInstanceOf[TextContent].text, "Hi")
       yield ()
-    }
   }

@@ -53,7 +53,7 @@ object TestServers:
       failAfter: Int,
       errorMessage: String = "Simulated failure"
   ): F[(Server[F], F[Int])] =
-    Ref.of[F, Int](0).map { counterRef =>
+    Ref.of[F, Int](0).map: counterRef =>
       val server = new Server[F]:
         val info: ServerInfo = base.info
         val capabilities: ServerCapabilities = base.capabilities
@@ -61,12 +61,11 @@ object TestServers:
         def listTools: F[List[Tool]] = base.listTools
 
         def callTool(name: String, arguments: Json): F[ToolResult] =
-          counterRef.getAndUpdate(_ + 1).flatMap { count =>
+          counterRef.getAndUpdate(_ + 1).flatMap: count =>
             if count >= failAfter then
               Async[F].raiseError(new RuntimeException(errorMessage))
             else
               base.callTool(name, arguments)
-          }
 
         def listResources: F[List[McpResource]] = base.listResources
         def listResourceTemplates: F[List[ResourceTemplate]] = base.listResourceTemplates
@@ -76,7 +75,6 @@ object TestServers:
           base.getPrompt(name, arguments)
 
       (server, counterRef.get)
-    }
 
   /** Wrap a server that tracks call counts for each operation.
     *
@@ -145,12 +143,11 @@ object TestServers:
       val capabilities: ServerCapabilities = base.capabilities
 
       private def mayFail[A](fa: F[A]): F[A] =
-        Async[F].delay(random.nextDouble()).flatMap { r =>
+        Async[F].delay(random.nextDouble()).flatMap: r =>
           if r < failureRate then
             Async[F].raiseError(new RuntimeException("Chaos failure"))
           else
             fa
-        }
 
       def listTools: F[List[Tool]] = mayFail(base.listTools)
       def callTool(name: String, arguments: Json): F[ToolResult] =
