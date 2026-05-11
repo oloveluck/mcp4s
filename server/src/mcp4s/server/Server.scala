@@ -30,7 +30,7 @@ trait Server[F[_]]:
   /** Call a tool with context for server-to-client operations.
     * Falls back to regular callTool if tool doesn't require context.
     */
-  def callToolWithContext(name: String, arguments: Json, context: ToolContext[F]): F[ToolResult] =
+  def callToolWithContext(name: String, arguments: Json, @scala.annotation.unused context: ToolContext[F]): F[ToolResult] =
     callTool(name, arguments) // Default: ignore context
 
   // === Resource Methods ===
@@ -111,6 +111,8 @@ object Server:
     /** Alias for combine using http4s-style operator. */
     def <+>(other: Server[F]): Server[F] =
       combine(other)
+
+  extension [F[_]](server: Server[F])
 
     /** Create a new server with different info. */
     def withInfo(newInfo: ServerInfo): Server[F] =

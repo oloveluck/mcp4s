@@ -62,7 +62,7 @@ class SessionManagerSpec extends CatsEffectSuite:
       session1 <- manager.create
       count1 <- manager.sessionCount
       _ = assertEquals(count1, 1)
-      session2 <- manager.create
+      _ <- manager.create
       count2 <- manager.sessionCount
       _ = assertEquals(count2, 2)
       _ <- manager.remove(session1.id)

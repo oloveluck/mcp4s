@@ -65,7 +65,7 @@ object ToolContext:
     * @param progressFn Function to send progress notifications
     * @param loggingFn Function to send logging notifications
     */
-  def apply[F[_]: Applicative](
+  def apply[F[_]](
       sampler: SamplingRequester[F],
       eliciter: ElicitationRequester[F],
       reqId: RequestId,

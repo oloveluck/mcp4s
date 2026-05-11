@@ -96,7 +96,7 @@ object WebSocketTransport:
       server: Server[F],
       wsb: WebSocketBuilder2[F],
       tracer: Tracer[F],
-      config: WebSocketConfig = WebSocketConfig.default
+      config: WebSocketConfig
   ): F[Response[F]] =
     // Create session state for this connection
     WebSocketSession[F](server, tracer, config).flatMap { session =>

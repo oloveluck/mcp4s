@@ -95,7 +95,7 @@ class McpDslDerivedSpec extends CatsEffectSuite:
   }
 
   test("Tool.withContext with custom name and derived description") {
-    val ctxTool = Tool.withContext[IO, CtxArgs]("custom-ctx") { (args, ctx) =>
+    val ctxTool = Tool.withContext[IO, CtxArgs]("custom-ctx") { (args, _) =>
       IO.pure(ok(s"Input: ${args.input}"))
     }
 

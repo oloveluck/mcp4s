@@ -1,7 +1,6 @@
 package mcp4s.server
 
 import cats.effect.{Async, Resource}
-import cats.effect.std.Console
 import com.comcast.ip4s.Port
 import fs2.io.net.Network
 import org.http4s.server.{Server as Http4sServer}
@@ -39,14 +38,14 @@ object syntax:
       *   def run = myServer.runStdio
       * }}}
       */
-    def runStdio(using Async[F], Console[F], Tracer[F]): F[Unit] =
+    def runStdio(using Async[F], Tracer[F]): F[Unit] =
       StdioTransport.run[F](server)
 
     /** Run the server on stdio transport with noop tracing.
       *
       * Convenience method that provides a noop Tracer automatically.
       */
-    def runStdioNoTrace(using Async[F], Console[F]): F[Unit] =
+    def runStdioNoTrace(using Async[F]): F[Unit] =
       given Tracer[F] = Tracer.noop[F]
       StdioTransport.run[F](server)
 

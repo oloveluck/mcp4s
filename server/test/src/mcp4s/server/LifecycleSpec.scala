@@ -1,7 +1,6 @@
 package mcp4s.server
 
 import cats.effect.{IO, Ref, Resource as CatsResource}
-import cats.syntax.all.*
 import io.circe.Json
 import io.circe.syntax.*
 import mcp4s.protocol.*
@@ -40,7 +39,7 @@ class LifecycleSpec extends CatsEffectSuite:
           counter.get.map(v => ToolResult.text(s"Counter: $v"))
 
       // Use the tool within the resource scope
-      result <- toolResource.use: tools =>
+      _ <- toolResource.use: tools =>
         for
           acquired <- acquiredRef.get
           _ = assert(acquired, "Resource should be acquired")

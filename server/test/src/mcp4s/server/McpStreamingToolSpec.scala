@@ -58,7 +58,7 @@ class McpStreamingToolSpec extends CatsEffectSuite:
   test("McpTool.streaming returns None for unknown tool") {
     case class Args(x: Int) derives ToolInput
 
-    val tool = McpTool.streaming[IO, Args]("known", "Known tool") { args =>
+    val tool = McpTool.streaming[IO, Args]("known", "Known tool") { _ =>
       Stream.emit(ToolResult.text("ok"))
     }
 

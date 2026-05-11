@@ -212,7 +212,7 @@ object Dispatcher:
           Concurrent[F].raiseError(McpError.MethodNotFound(other))
 
     private def handleInitialize(params: Json): F[Json] =
-      params.as[InitializeParams].liftTo[F].flatMap: initParams =>
+      params.as[InitializeParams].liftTo[F].flatMap: _ =>
         // Accept any version and respond with our supported version.
         // Per MCP spec, server responds with the version it supports,
         // and the client decides whether to continue.
