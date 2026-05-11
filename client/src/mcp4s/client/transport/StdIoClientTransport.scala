@@ -265,7 +265,7 @@ object StdioClientTransport:
     yield parsed
 
   /** Create a notification sender function */
-  private def createNotificationSender[F[_]: Async](
+  private def createNotificationSender[F[_]](
       inputQueue: Queue[F, String]
   ): JsonRpcNotification => F[Unit] = notif =>
     inputQueue.offer(notif.asJson.noSpaces)

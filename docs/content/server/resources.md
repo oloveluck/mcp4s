@@ -38,17 +38,7 @@ mcp.text("uri", "text content")
 mcp.blob("uri", base64Data, "image/png")
 ```
 
-### MIME Type Guidance
-
-| Content | MIME Type |
-|---------|-----------|
-| Plain text | `text/plain` |
-| JSON | `application/json` |
-| Markdown | `text/markdown` |
-| PNG image | `image/png` |
-| PDF | `application/pdf` |
-
-Set MIME types when constructing resources to help clients render content correctly. Text resources default to `text/plain` if unspecified.
+Set MIME types when constructing resources (e.g. `text/plain`, `application/json`, `image/png`). Text resources default to `text/plain`.
 
 ## Composition
 

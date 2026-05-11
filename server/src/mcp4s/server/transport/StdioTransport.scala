@@ -1,7 +1,6 @@
 package mcp4s.server.transport
 
 import cats.effect.{Async, Concurrent}
-import cats.effect.std.Console
 import cats.syntax.all.*
 import fs2.{Pipe, Stream}
 import fs2.io.stdin
@@ -34,7 +33,7 @@ object StdioTransport:
     * @param server The MCP server to run
     * @param tracer Optional OpenTelemetry tracer for distributed tracing (defaults to noop)
     */
-  def run[F[_]: Async: Console](server: Server[F])(using Tracer[F]): F[Unit] =
+  def run[F[_]: Async](server: Server[F])(using Tracer[F]): F[Unit] =
     mcp4s.server.Dispatcher[F](server).flatMap { dispatcher =>
       val input: Stream[F, String] =
         stdin[F](DefaultBufferSize)

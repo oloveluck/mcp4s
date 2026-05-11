@@ -22,7 +22,6 @@ Tools are the primary way AI clients interact with servers — calling functions
 conn.listTools                           // IO[List[Tool]]
 conn.callTool("name", args)              // IO[ToolResult]
 conn.callToolIfSupported("name", args)   // IO[Option[ToolResult]]
-conn.callToolAsTask("name", args)        // IO[TaskId] (async)
 ```
 
 ## Resources
@@ -46,27 +45,13 @@ conn.getPrompt("name", args)            // IO[GetPromptResult]
 conn.getPromptIfSupported("name", args) // IO[Option[GetPromptResult]]
 ```
 
-## Tasks
-
-For long-running operations, tools can run asynchronously as tasks:
-
-```scala
-conn.getTask(taskId)           // IO[TaskInfo]
-conn.listTasks(cursor)         // IO[TasksListResult]
-conn.cancelTask(taskId)        // IO[Unit]
-conn.getTaskResult(taskId)     // IO[TaskResult]
-```
-
 ## Streaming
 
-For tools and resources that produce incremental results, use the streaming variants:
+For tools that produce incremental results, use the streaming variant:
 
 ```scala
 // Stream tool results as they arrive
 conn.callToolStreaming("search", args): Stream[F, ToolResult]
-
-// Stream resource content
-conn.readResourceStreaming("events://live"): Stream[F, ResourceContent]
 ```
 
 Streaming requires a persistent transport (HTTP with SSE or WebSocket).

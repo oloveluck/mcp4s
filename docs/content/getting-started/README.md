@@ -12,12 +12,12 @@ This guide gets you running with both.
 
 ```scala
 // Mill
-mvn"io.github.oloveluck::mcp4s-server::0.1.7"
-mvn"io.github.oloveluck::mcp4s-client::0.1.7"
+mvn"io.github.oloveluck::mcp4s-server::0.1.8"
+mvn"io.github.oloveluck::mcp4s-client::0.1.8"
 
 // SBT
-"io.github.oloveluck" %% "mcp4s-server" % "0.1.7"
-"io.github.oloveluck" %% "mcp4s-client" % "0.1.7"
+"io.github.oloveluck" %% "mcp4s-server" % "0.1.8"
+"io.github.oloveluck" %% "mcp4s-client" % "0.1.8"
 ```
 
 ## Minimal Server
@@ -50,7 +50,7 @@ The `derives ToolInput` generates a JSON schema from the case class, so AI clien
 
 ## Minimal Client
 
-The `Tracer[IO]` is required for [OpenTelemetry](https://opentelemetry.io/) trace propagation. Use `Tracer.noop` to disable tracing, or provide a real tracer for distributed observability across MCP client-server interactions.
+A `Tracer[IO]` is needed as a type-class instance. Use `Tracer.noop` to disable tracing, or provide a real tracer for distributed observability.
 
 A client connects to a server, discovers its capabilities, and calls tools:
 

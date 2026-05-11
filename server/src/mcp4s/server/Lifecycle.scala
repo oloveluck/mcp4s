@@ -41,7 +41,7 @@ object McpLifecycle:
   def empty[F[_]: Applicative]: McpLifecycle[F] = new McpLifecycle[F] {}
 
 /** Extension methods for Server to support lifecycle management */
-extension [F[_]: Concurrent](server: Server[F])
+extension [F[_]](server: Server[F])
 
   /** Wrap the server in a Resource that manages lifecycle.
     *

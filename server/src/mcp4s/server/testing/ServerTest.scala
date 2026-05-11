@@ -1,6 +1,6 @@
 package mcp4s.server.testing
 
-import cats.effect.{Async, Resource}
+import cats.effect.Resource
 import io.circe.{Encoder, Json}
 import io.circe.syntax.*
 import mcp4s.protocol.*
@@ -65,14 +65,14 @@ object ServerTest:
     *
     * The Resource ensures proper cleanup but for most servers no cleanup is needed.
     */
-  def apply[F[_]: Async](server: Server[F]): Resource[F, ServerTest[F]] =
+  def apply[F[_]](server: Server[F]): Resource[F, ServerTest[F]] =
     Resource.pure(new ServerTestImpl(server))
 
   /** Create a test client directly (no Resource wrapper needed for most cases) */
-  def sync[F[_]: Async](server: Server[F]): ServerTest[F] =
+  def sync[F[_]](server: Server[F]): ServerTest[F] =
     new ServerTestImpl(server)
 
-  private class ServerTestImpl[F[_]: Async](server: Server[F]) extends ServerTest[F]:
+  private class ServerTestImpl[F[_]](server: Server[F]) extends ServerTest[F]:
     def serverInfo: ServerInfo = server.info
     def serverCapabilities: ServerCapabilities = server.capabilities
 

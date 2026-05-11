@@ -6,21 +6,22 @@ Full-duplex communication over a single persistent connection.
 
 ```scala
 import mcp4s.server.transport.*
+import com.comcast.ip4s.*
 
 WebSocketTransport.serve[IO](server, WebSocketConfig(
-  host = "0.0.0.0",
-  port = 3000,
+  host = host"0.0.0.0",
+  port = port"3000",
   path = "ws"
 ))
 ```
 
 ### WebSocketConfig
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `host` | `"0.0.0.0"` | Bind address |
-| `port` | `3000` | Listen port |
-| `path` | `"ws"` | WebSocket endpoint path |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `host` | `Host` | `host"0.0.0.0"` | Bind address (ip4s type-safe) |
+| `port` | `Port` | `port"3000"` | Listen port (ip4s type-safe) |
+| `path` | `String` | `"ws"` | WebSocket endpoint path |
 
 ## Client
 

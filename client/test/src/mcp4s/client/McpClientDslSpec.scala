@@ -74,7 +74,7 @@ class McpClientDslSpec extends CatsEffectSuite:
   // === Handler Constructor Tests ===
 
   test("Sampling creates composable handler") {
-    val sampling = Sampling[IO]: params =>
+    val sampling = Sampling[IO]: _ =>
       IO.pure(message("Response", "test-model"))
 
     val params = CreateMessageParams(
@@ -102,7 +102,7 @@ class McpClientDslSpec extends CatsEffectSuite:
   }
 
   test("Elicitation creates composable handler") {
-    val elicitation = Elicitation[IO]: params =>
+    val elicitation = Elicitation[IO]: _ =>
       IO.pure(accept(Map("confirmed" -> Json.fromBoolean(true))))
 
     val params = ElicitFormParams(

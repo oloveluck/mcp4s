@@ -23,7 +23,7 @@ val client = McpClient.builder[IO]
   .build
 ```
 
-The `Tracer[IO]` is required for [OpenTelemetry](https://opentelemetry.io/) trace propagation. Use `Tracer.noop` to disable tracing, or provide a real tracer for distributed observability across MCP client-server interactions.
+A `Tracer[IO]` is needed as a type-class instance. Use `Tracer.noop` to disable tracing, or provide a real tracer for distributed observability.
 
 **Roots** tell the server which directories the client has access to. **Sampling** and **elicitation** handlers enable bidirectional features where the server can request help from the client.
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.8 - 2026-05-10
+
+### Improved
+- Centralized JSON-RPC error code constants (`JsonRpcErrorCode.RequestCancelled`, `JsonRpcErrorCode.ServerError`)
+- Fixed O(n²) list accumulation in `drainQueue` and client `paginate`
+- Extracted shared HTTP header builder in `HttpClientTransport`
+- Deduplicated initialization request construction across all client transports
+- Pre-compiled URI template regexes in `BuiltServer` (avoids per-call recompilation)
+- Extracted shared session infrastructure (`SessionSupport`) between HTTP and WebSocket transports
+- Simplified `ServerBuilder` composition with `combineOpt` helper
+- Deduplicated response parsing in HTTP client transport
+- Lazy allocation in `BuiltServer.listTools`/`listResources`/`listPrompts`
+
+### Fixed
+- Removed non-existent API documentation (Tasks, `readResourceStreaming`)
+- Fixed WebSocket config documentation to show correct type-safe types
+- Clarified `Tracer` is optional (use `Tracer.noop` to disable)
+
 ## 0.1.7 - 2026-04-11
 
 ### Fixed
