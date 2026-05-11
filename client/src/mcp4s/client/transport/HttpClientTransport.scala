@@ -2,7 +2,6 @@ package mcp4s.client.transport
 
 import cats.effect.{Async, Ref, Resource as CatsResource}
 import cats.syntax.all.*
-import fs2.io.net.Network
 import io.circe.*
 import io.circe.syntax.*
 import org.http4s.*
@@ -49,7 +48,7 @@ object HttpClientTransport:
     * @param config HTTP transport configuration
     * @param tracer Optional OpenTelemetry tracer for distributed tracing (defaults to noop)
     */
-  def connect[F[_]: Async: Network](
+  def connect[F[_]: Async](
       client: McpClient[F],
       config: HttpClientConfig[F],
       httpClient: Client[F]

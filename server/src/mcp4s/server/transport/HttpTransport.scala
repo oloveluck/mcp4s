@@ -98,7 +98,7 @@ object HttpTransport:
     * @param server The MCP server to serve
     * @param config HTTP configuration
     */
-  def routes[F[_]: Async: Network](
+  def routes[F[_]: Async](
       server: Server[F],
       config: HttpConfig[F] = HttpConfig.default[F]
   )(using Tracer[F]): CatsResource[F, HttpRoutes[F]] =

@@ -299,7 +299,7 @@ class McpToolSpec extends CatsEffectSuite:
 
     val regular = McpTool.pureText[IO, CalcArgs]("add", "Add") { args => s"${args.a + args.b}" }
 
-    val contextAware = McpTool.withContext[IO, QueryArgs]("smart", "Smart") { (args, ctx) =>
+    val contextAware = McpTool.withContext[IO, QueryArgs]("smart", "Smart") { (args, _) =>
       IO.pure(ToolResult.text(s"Query: ${args.query}"))
     }
 
