@@ -47,12 +47,12 @@ val server = Server.from[IO](
 
 ```scala
 // Mill
-mvn"io.github.oloveluck::mcp4s-server::0.1.7"
-mvn"io.github.oloveluck::mcp4s-client::0.1.7"
+mvn"io.github.oloveluck::mcp4s-server::0.1.8"
+mvn"io.github.oloveluck::mcp4s-client::0.1.8"
 
 // SBT
-"io.github.oloveluck" %% "mcp4s-server" % "0.1.7"
-"io.github.oloveluck" %% "mcp4s-client" % "0.1.7"
+"io.github.oloveluck" %% "mcp4s-server" % "0.1.8"
+"io.github.oloveluck" %% "mcp4s-client" % "0.1.8"
 ```
 
 ## Modules
