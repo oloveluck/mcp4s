@@ -29,8 +29,8 @@ jobs:
       - name: Build site
         run: sbt docs/run
       - name: Disable Jekyll
-        run: touch docs/target/site/.nojekyll
-      - uses: actions/upload-pages-artifact@v3
+        run: touch out/docs/site/.nojekyll
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: docs/target/site
 
@@ -42,4 +42,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
