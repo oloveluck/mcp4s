@@ -15,6 +15,10 @@ ThisBuild / crossScalaVersions         := Seq(Scala3)
 ThisBuild / tlJdkRelease               := Some(17)
 ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
 
+// Only publish from tags (v*). Don't auto-publish snapshots on `main` pushes — the
+// Central Portal snapshot repo isn't enabled for this namespace (was 403'ing).
+ThisBuild / tlCiReleaseBranches := Seq()
+
 // Scala Native CI jobs need the LLVM/clang toolchain and GC libs.
 ThisBuild / githubWorkflowBuildPreamble ++= Seq(
   WorkflowStep.Run(
