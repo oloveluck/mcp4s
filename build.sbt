@@ -25,11 +25,18 @@ ThisBuild / githubWorkflowBuildPreamble ++= Seq(
   )
 )
 
+// The dependency-graph submission job needs `contents: write`, which this repo's
+// default GITHUB_TOKEN doesn't grant (403). Disable it rather than weaken permissions.
+ThisBuild / tlCiDependencyGraphJob := false
+
 // Run the MCP conformance suite as a dedicated CI job (manages the server itself).
+// Pin JDK 17 — the build targets `tlJdkRelease := 17`, which cannot run on the
+// default JDK 11 that added jobs would otherwise use.
 ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   id = "conformance",
   name = "MCP Conformance",
   scalas = List(Scala3),
+  javas = List(JavaSpec.temurin("17")),
   steps = githubWorkflowJobSetup.value.toList ++ List(
     WorkflowStep.Use(
       UseRef.Public("actions", "setup-node", "v4"),
