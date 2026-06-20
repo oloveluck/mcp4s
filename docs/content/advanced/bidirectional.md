@@ -15,11 +15,12 @@ Sampling lets a server request LLM completions from the client. This is useful f
 
 **Client** — Register a handler that delegates to your LLM:
 ```scala
-val client = McpClient.builder[IO]
-  .withSamplingHandler { params =>
+val client = McpClient.from[IO](
+  ClientInfo("my-client", "1.0.0"),
+  sampling = Some(Sampling[IO] { params =>
     myLlm.complete(params.messages, params.maxTokens).map(r => message(r.text, r.model))
-  }
-  .build
+  })
+)
 ```
 
 **Server** — Request a completion from within a tool:
@@ -38,11 +39,12 @@ Elicitation lets a server ask the user for input before proceeding. This is esse
 
 **Client** — Register a handler that prompts the user:
 ```scala
-val client = McpClient.builder[IO]
-  .withElicitationHandler { params =>
+val client = McpClient.from[IO](
+  ClientInfo("my-client", "1.0.0"),
+  elicitation = Some(Elicitation[IO] { params =>
     askUser(params.message).map(r => if r.confirmed then accept(r.data) else decline)
-  }
-  .build
+  })
+)
 ```
 
 **Server** — Ask the user for confirmation:

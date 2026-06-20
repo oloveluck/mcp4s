@@ -10,14 +10,13 @@ Test a full server with an in-memory client:
 import cats.effect.IO
 import munit.CatsEffectSuite
 import mcp4s.server.*
+import mcp4s.server.mcp.*
 import mcp4s.server.testing.*
 
 class MyServerSuite extends CatsEffectSuite:
 
-  val server = Server.builder[IO]
-    .withInfo(ServerInfo("test", "1.0.0"))
-    .tool[AddArgs]("add", "Add") { args => IO.pure(ok(s"${args.a + args.b}")) }
-    .build
+  val tools = Tool[IO, AddArgs]("add", "Add") { args => IO.pure(ok(s"${args.a + args.b}")) }
+  val server = Server.fromTools[IO](ServerInfo("test", "1.0.0"), tools)
 
   test("add tool returns correct result") {
     ServerTest(server).use { client =>

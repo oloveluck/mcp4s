@@ -11,13 +11,11 @@ This guide gets you running with both.
 ## Installation
 
 ```scala
-// Mill
-mvn"io.github.oloveluck::mcp4s-server::0.1.8"
-mvn"io.github.oloveluck::mcp4s-client::0.1.8"
-
-// SBT
-"io.github.oloveluck" %% "mcp4s-server" % "0.1.8"
-"io.github.oloveluck" %% "mcp4s-client" % "0.1.8"
+libraryDependencies ++= Seq(
+  "io.github.oloveluck" %%% "mcp4s-core" % "0.2.0",
+  "io.github.oloveluck" %%% "mcp4s-server" % "0.2.0",
+  "io.github.oloveluck" %%% "mcp4s-client" % "0.2.0"
+)
 ```
 
 ## Minimal Server
@@ -38,12 +36,9 @@ object MyServer extends IOApp.Simple:
     IO.pure(ok(s"${args.a + args.b}"))
   }
 
-  val server = Server.from[IO](
-    info = ServerInfo("calculator", "1.0.0"),
-    tools = tools
-  )
+  val server = Server.fromTools[IO](ServerInfo("calculator", "1.0.0"), tools)
 
-  def run: IO[Unit] = server.serveHttp(3000)
+  def run: IO[Unit] = server.serveHttp()
 ```
 
 The `derives ToolInput` generates a JSON schema from the case class, so AI clients know what arguments the tool accepts. The `@description` annotation on the class becomes the tool description, and the tool name is derived from the class name (`AddArgs` → `"add"`).
@@ -64,9 +59,7 @@ import org.typelevel.otel4s.trace.Tracer
 object MyClient extends IOApp.Simple:
   given Tracer[IO] = Tracer.noop[IO]
 
-  val client = McpClient.builder[IO]
-    .withInfo(ClientInfo("my-client", "1.0.0"))
-    .build
+  val client = McpClient.from[IO](ClientInfo("my-client", "1.0.0"))
 
   def run: IO[Unit] =
     HttpClientTransport.connect[IO](client, HttpClientConfig("http://localhost:3000")).use { conn =>

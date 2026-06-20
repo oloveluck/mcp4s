@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
-      - 'build.mill'
+      - 'build.sbt'
   workflow_dispatch:
 
 permissions:
@@ -25,16 +25,14 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-      - name: Setup Mill
-        run: |
-          curl -fLo mill https://repo1.maven.org/maven2/com/lihaoyi/mill-dist/1.0.6/mill-dist-1.0.6-mill.sh
-          chmod +x mill
-      - run: ./mill docs.run
+      - uses: sbt/setup-sbt@v1
+      - name: Build site
+        run: sbt docs/run
       - name: Disable Jekyll
-        run: touch out/docs/site/.nojekyll
+        run: touch docs/target/site/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: out/docs/site
+          path: docs/target/site
 
   deploy:
     needs: build

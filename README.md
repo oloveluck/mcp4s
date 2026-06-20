@@ -10,25 +10,18 @@ MCP4S provides a type-safe, functional implementation of MCP for Scala 3 using c
 
 ## Installation
 
-Add to your `build.mill`:
-
-```scala
-def ivyDeps = Agg(
-  ivy"io.github.oloveluck::mcp4s-core::0.1.8",
-  ivy"io.github.oloveluck::mcp4s-server::0.1.8",  // for servers
-  ivy"io.github.oloveluck::mcp4s-client::0.1.8"   // for clients
-)
-```
-
-Or in sbt:
+Add to your `build.sbt`:
 
 ```scala
 libraryDependencies ++= Seq(
-  "io.github.oloveluck" %% "mcp4s-core" % "0.1.8",
-  "io.github.oloveluck" %% "mcp4s-server" % "0.1.8",
-  "io.github.oloveluck" %% "mcp4s-client" % "0.1.8"
+  "io.github.oloveluck" %%% "mcp4s-core" % "0.2.0",
+  "io.github.oloveluck" %%% "mcp4s-server" % "0.2.0", // for servers
+  "io.github.oloveluck" %%% "mcp4s-client" % "0.2.0"  // for clients
 )
 ```
+
+`%%%` cross-resolves the artifact for your platform — mcp4s is published for
+the JVM, Scala.js (Node), and Scala Native. (Use `%%` for a JVM-only project.)
 
 ## Quick Start
 
@@ -45,10 +38,13 @@ See the [documentation site](https://oloveluck.github.io/mcp4s/getting-started/)
 ## Development
 
 ```bash
-mill __.compile          # Compile all modules
-mill __.test             # Run all tests
-mill conformance         # Run MCP conformance tests (requires Node.js 18+)
-mill __.publishLocal     # Publish locally
+sbt compile              # Compile all modules (JVM + JS + Native)
+sbt test                 # Run all tests
+sbt conformance          # Run MCP conformance tests (requires Node.js 18+)
+sbt publishLocal         # Publish locally
+
+# Target a single platform with the rootJVM / rootJS / rootNative aggregates:
+sbt rootJVM/test
 ```
 
 See the [documentation site](https://oloveluck.github.io/mcp4s/) for guides on tools, resources, prompts, transports, and testing.

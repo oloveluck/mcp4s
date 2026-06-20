@@ -43,15 +43,15 @@ messages("Description")(user("Hello"))
 val prompts = helpPrompt |+| greetPrompt |+| tutorialPrompt
 ```
 
-## With Builder
+## Register with a Server
 
 ```scala
-Server.builder[IO]
-  .prompt("help", "Help")(user("How can I help?"))
-  .prompt[GreetArgs]("greet", "Greet") { args =>
-    IO.pure(messages(user(s"Hello, ${args.name}!")))
-  }
-  .build
+Server.from[IO](
+  ServerInfo("my-server", "1.0.0"),
+  Tools.empty[IO],
+  Resources.empty[IO],
+  prompts
+)
 ```
 
 ---

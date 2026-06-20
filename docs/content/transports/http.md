@@ -12,10 +12,10 @@ The client sends JSON-RPC requests via HTTP POST, and the server streams respons
 import mcp4s.server.transport.*
 
 // Simple — starts an Ember server on port 3000
-server.serveHttp.useForever
+server.serveHttp().useForever
 
 // With custom port
-server.serveHttp(port"8080").useForever
+server.serveHttp(HttpConfig(port = port"8080")).useForever
 
 // With full config
 HttpTransport.serve[IO](server, HttpConfig(
