@@ -66,7 +66,7 @@ Features only activate when both sides support them. For example, sampling only 
 A key design principle is that everything composes with standard typeclasses:
 
 - **Tools, Resources, Prompts** combine with `|+|` (Semigroup)
-- **Servers** combine with `<+>` (SemigroupK)
+- **Servers** combine with `|+|` (Semigroup)
 - **Hooks** combine with `|+|` (Semigroup)
 
 This means you build small pieces and snap them together — no inheritance hierarchies, no plugin systems, just composition.

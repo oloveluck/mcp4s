@@ -10,10 +10,8 @@ No networking is involved. The client writes JSON-RPC to the server's stdin and 
 
 ```scala
 object MyServer extends IOApp.Simple:
-  val server = Server.builder[IO]
-    .withInfo(ServerInfo("my-server", "1.0.0"))
-    .tool[Args]("search", "Search files") { args => ... }
-    .build
+  val tools = Tool[IO, Args]("search", "Search files") { args => ... }
+  val server = Server.fromTools[IO](ServerInfo("my-server", "1.0.0"), tools)
 
   def run: IO[Unit] = server.runStdio
 ```

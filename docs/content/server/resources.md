@@ -46,15 +46,16 @@ Set MIME types when constructing resources (e.g. `text/plain`, `application/json
 val resources = readme |+| config |+| userTemplate
 ```
 
-## With Builder
+## Register with a Server
 
 ```scala
-Server.builder[IO]
-  .resource("file:///readme", "README") { "Hello" }
-  .withResource("file:///status", "Status") { _ =>
-    getStatus().map(s => ResourceContent.text("file:///status", s))
-  }
-  .build
+val resources =
+  Resource.text[IO]("file:///readme", "README")("Hello") |+|
+    Resource.handler[IO]("file:///status", "Status") { _ =>
+      getStatus().map(s => ResourceContent.text("file:///status", s))
+    }
+
+Server.from[IO](ServerInfo("my-server", "1.0.0"), Tools.empty[IO], resources, Prompts.empty[IO])
 ```
 
 ## Subscribable Resources

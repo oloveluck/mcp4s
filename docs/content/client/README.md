@@ -15,12 +15,14 @@ import org.typelevel.otel4s.trace.Tracer
 
 given Tracer[IO] = Tracer.noop[IO]
 
-val client = McpClient.builder[IO]
-  .withInfo(ClientInfo("my-client", "1.0.0"))
-  .withRoots(List(Root("file:///workspace", Some("Workspace"))))
-  .withSamplingHandler { params => myLlm.complete(params) }
-  .withElicitationHandler { params => askUser(params) }
-  .build
+import mcp4s.client.mcp.*
+
+val client = McpClient.from[IO](
+  ClientInfo("my-client", "1.0.0"),
+  roots = Some(Roots[IO]("file:///workspace", "Workspace")),
+  sampling = Some(Sampling[IO] { params => myLlm.complete(params) }),
+  elicitation = Some(Elicitation[IO] { params => askUser(params) })
+)
 ```
 
 A `Tracer[IO]` is needed as a type-class instance. Use `Tracer.noop` to disable tracing, or provide a real tracer for distributed observability.

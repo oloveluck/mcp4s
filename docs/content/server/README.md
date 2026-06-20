@@ -8,7 +8,7 @@ Servers can run over HTTP, WebSocket, or Stdio (for Claude Desktop integration).
 
 - **Claude Desktop tool servers** — Expose tools via stdio so Claude Desktop can call them locally
 - **HTTP microservices** — Run MCP servers as standalone services that AI agents call over the network
-- **Composite servers** — Combine tools from multiple domains into a single server with `<+>`
+- **Composite servers** — Combine tools from multiple domains into a single server with `|+|`
 
 ## Construction
 
@@ -17,37 +17,32 @@ import cats.effect.*
 import mcp4s.server.*
 import mcp4s.server.mcp.*
 
-// Declarative
 val server = Server.from[IO](
   info = ServerInfo("my-server", "1.0.0"),
   tools = myTools,
   resources = myResources,
   prompts = myPrompts
 )
-
-// Builder
-val server = Server.builder[IO]
-  .withInfo(ServerInfo("my-server", "1.0.0"))
-  .tool("ping", "Ping") { IO.pure(ok("pong")) }
-  .resource("file:///readme", "README") { "Hello" }
-  .prompt("greet", "Greet")(user("Hello!"))
-  .build
 ```
+
+Build `myTools` / `myResources` / `myPrompts` from the DSL (`Tool`, `Resource`, `Prompt`
+composed with `|+|`), or use `Tools.single` / `Resources.single` / `Prompts.single` for
+raw, untyped handlers.
 
 ## Composition
 
-Servers compose with `<+>` (left takes precedence on conflicts):
+Servers compose with `|+|` (left takes precedence on conflicts):
 
 ```scala
-val combined = calculatorServer <+> utilityServer
+val combined = calculatorServer |+| utilityServer
 ```
 
 ## Running
 
 ```scala
-server.serveHttp(3000)           // HTTP on /mcp
+server.serveHttp()               // HTTP on /mcp, port 3000
 server.runStdio                  // Stdio for Claude Desktop
-WebSocketTransport.serve[IO](server, WebSocketConfig(port = 3000))
+WebSocketTransport.serve[IO](server, WebSocketConfig(port = port"3000"))
 ```
 
 ## DSL Reference

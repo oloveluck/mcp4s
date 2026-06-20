@@ -12,9 +12,7 @@ import org.typelevel.otel4s.trace.Tracer
 
 given Tracer[IO] = Tracer.noop[IO]
 
-val client = McpClient.builder[IO]
-  .withInfo(ClientInfo("my-client", "1.0.0"))
-  .build
+val client = McpClient.from[IO](ClientInfo("my-client", "1.0.0"))
 
 HttpClientTransport.connect[IO](client, HttpClientConfig("http://localhost:3000")).use { conn =>
   // Use connection
@@ -67,10 +65,10 @@ MCP errors carry a numeric code and message. Use `.attempt` to handle them grace
 ```scala
 import mcp4s.protocol.McpError
 
-conn.callTool("unknown", Map.empty).attempt.flatMap {
-  case Right(result) => IO.println(s"Success: $result")
-  case Left(e: McpError) => IO.println(s"MCP error ${e.code}: ${e.message}")
-  case Left(e) => IO.println(s"Error: ${e.getMessage}")
+conn.callTool("unknown", Json.obj()).attempt.flatMap {
+  case Right(result)     => IO.println(s"Success: $result")
+  case Left(e: McpError) => IO.println(s"MCP error: ${e.message}")
+  case Left(e)           => IO.println(s"Error: ${e.getMessage}")
 }
 ```
 
@@ -83,7 +81,7 @@ if conn.supportsTools then conn.callTool("add", args)
 else IO.println("Tools not supported")
 
 // Or use conditional methods that return Option
-conn.callToolIfSupported("add", args)  // Returns Option[ToolResult]
+conn.callToolIfSupported("add", args)  // Returns F[Option[ToolResult]]
 ```
 
 ---

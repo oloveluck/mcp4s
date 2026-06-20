@@ -6,36 +6,41 @@ How to set up your development environment and contribute to mcp4s.
 
 ### Prerequisites
 
-- **Java 21+** (GraalVM or Temurin recommended)
-- **Mill** build tool (included via bootstrap script, or install globally)
+- **Java 17+** (Temurin recommended)
+- **sbt** build tool
+- **Node.js 18+** and a C toolchain (`clang`) for the JS and Native targets
+- **Scala Native** system libraries when building Native locally
+  (e.g. `clang`, `libgc`)
 
 ### Clone and Build
 
 ```bash
 git clone https://github.com/oloveluck/mcp4s.git
 cd mcp4s
-mill __.compile
+git submodule update --init   # fetch the conformance submodule
+sbt compile                   # compiles JVM + JS + Native
 ```
 
 ### Run Tests
 
 ```bash
-mill __.test
+sbt test                      # all platforms
+sbt rootJVM/test              # a single platform (rootJVM / rootJS / rootNative)
 ```
 
 ### Build the Docs Site
 
 ```bash
-mill docs.run
+sbt docs/run
 ```
 
-The output will be in `out/docs/site/`. Open `index.html` in a browser.
+The output will be in `docs/target/site/`. Open `index.html` in a browser.
 
 ## Code Style
 
 mcp4s uses strict compiler settings:
 
-- **`-Xfatal-warnings`** — all warnings are treated as errors
+- **`-Werror`** (fatal warnings, enforced in CI via sbt-typelevel) — warnings are errors
 - **`-Wunused:all`** — unused imports, parameters, and locals are flagged
 
 Make sure your code compiles cleanly before submitting a PR.
@@ -45,19 +50,21 @@ Make sure your code compiles cleanly before submitting a PR.
 The project uses scalafmt. Format your code before committing:
 
 ```bash
-mill mill.scalalib.scalafmt.ScalafmtModule/reformatAll __.sources
+sbt scalafmtAll scalafmtSbt
 ```
 
 ## Cross-Compilation
 
-mcp4s is cross-compiled for two Scala versions:
+mcp4s targets a single Scala 3 version across three platforms:
 
-| Version | Purpose |
-|---------|---------|
-| Scala 3.3.4 | LTS — widest ecosystem compatibility |
-| Scala 3.6.4 | Latest — newer language features |
+| Platform | Notes |
+|----------|-------|
+| JVM | Reference platform; the `examples` and `docs` modules are JVM-only |
+| Scala.js (Node) | Full server and client support via http4s-ember |
+| Scala Native | Server and client; the sttp-based WebSocket *client* transport is JVM-only |
 
-Your code must compile on **both** versions. Avoid using features only available in Scala 3.5+.
+Your code must compile on **all three** platforms. Platform-specific code lives
+under `<module>/{jvm,js,native}/src`; shared code under `<module>/shared/src`.
 
 See [Version Support](version-support.md) for full dependency details.
 
@@ -65,21 +72,21 @@ See [Version Support](version-support.md) for full dependency details.
 
 ```
 mcp4s/
-├── core/          # Protocol types, codec derivation
-├── server/        # Server DSL and runtime
-├── client/        # Client connection and resilience
-├── examples/      # Example servers and clients
-├── conformance/   # MCP protocol conformance tests
-├── docs/          # Documentation site (Laika)
-└── build.mill     # Build definition
+├── core/          # Protocol types, codec derivation (JVM/JS/Native)
+├── server/        # Server DSL and runtime (JVM/JS/Native)
+├── client/        # Client connection and resilience (JVM/JS/Native)
+├── examples/      # Example servers and clients (JVM-only)
+├── conformance/   # MCP protocol conformance suite (git submodule)
+├── docs/          # Documentation site (Laika, JVM-only)
+└── build.sbt      # Build definition (sbt + sbt-typelevel)
 ```
 
 ## Pull Request Process
 
 1. **Fork** the repository and create a feature branch from `main`
 2. **Write tests** for new functionality
-3. **Ensure all tests pass**: `mill __.test`
-4. **Ensure clean compilation** on both Scala versions
+3. **Ensure all tests pass**: `sbt test`
+4. **Ensure clean compilation** on all three platforms (JVM, JS, Native)
 5. **Keep commits focused** — one logical change per commit
 6. **Write a clear PR description** explaining what and why
 

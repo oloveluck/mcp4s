@@ -67,28 +67,22 @@ val server = Server.from[IO](
   prompts = prompts
 )
 
-// HTTP (production)
-server.serveHttp(3000)
+// HTTP (production) — defaults to port 3000, path /mcp
+server.serveHttp()
+
+// HTTP on a custom port
+server.serveHttp(HttpConfig(port = port"8080"))
 
 // Stdio (Claude Desktop)
 server.runStdio
 
 // WebSocket
-WebSocketTransport.serve[IO](server, WebSocketConfig(port = 3000))
+WebSocketTransport.serve[IO](server, WebSocketConfig(port = port"3000"))
 ```
 
-## Builder Alternative
-
-The builder API is more concise for simple servers:
-
-```scala
-val server = Server.builder[IO]
-  .withInfo(ServerInfo("calculator", "1.0.0"))
-  .tool[AddArgs]("add", "Add") { args => IO.pure(ok(s"${args.a + args.b}")) }
-  .resource("file:///readme", "README") { "Calculator v1.0" }
-  .prompt("help", "Help")(user("How can I help?"))
-  .build
-```
+Everything is built from the composable DSL (`import mcp4s.server.mcp.*`): `Tool`,
+`Resource`, and `Prompt` values compose with `|+|`, and `Server.from` assembles them.
+For raw, untyped handlers use `Tools.single` / `Resources.single` / `Prompts.single`.
 
 ## Test with MCP Inspector
 

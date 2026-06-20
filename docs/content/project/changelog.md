@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.0 - 2026-06-20
+
+### Build
+- Migrated from Mill to **sbt + sbt-typelevel**; now cross-built for **JVM, Scala.js (Node), and Scala Native**
+- Upgraded to Scala **3.8.4** and the latest cats-effect 3.7 / fs2 3.13 / otel4s 1.0 / http4s 0.23.34 stack
+
+### Changed (breaking)
+- Removed `Server.builder` and `McpClient.builder`; the composable DSL (`Server.from` / `McpClient.from` + `import mcp4s.{server,client}.mcp.*`) is now canonical
+- Removed the `<+>` operator in favor of `|+|` (cats `Semigroup`)
+- `McpError` is now an `enum`; no-argument cases (`NotInitialized`, etc.) are singletons (drop the `()`)
+- `runStdio` / `serveHttp` now default `Tracer` to noop (removed the `*NoTrace` variants); `serveHttp` takes an `HttpConfig`
+
+### Improved
+- Stricter lint (`-Wnonunit-statement`, `-Wshadow:all`, `-Wimplausible-patterns`) and full scalafmt + license-header enforcement
+- Extracted a shared `RequestCorrelator` for request/response correlation across all duplex transports
+- The stdio client uses a bounded queue with resource-managed reader fibers; reduced Codecs boilerplate
+
 ## 0.1.8 - 2026-05-10
 
 ### Improved
