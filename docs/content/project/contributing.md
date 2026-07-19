@@ -36,6 +36,20 @@ sbt docs/run
 
 The output will be in `docs/target/site/`. Open `index.html` in a browser.
 
+### Keep Doc Snippets Compiling
+
+Every ```` ```scala ```` block in `docs/content` is extracted into
+`examples/src/test/scala/docsnippets/` and compiled against the real API. After editing
+documentation, regenerate and verify:
+
+```bash
+python3 scripts/snippet_harness.py
+sbt examples/Test/compile
+```
+
+Mark a fence with `<!-- doc-snippet: skip -->` (non-compilable listing) or
+`<!-- doc-snippet: reset -->` (page redefines an earlier name) on the line above it when needed.
+
 ## Code Style
 
 mcp4s uses strict compiler settings:

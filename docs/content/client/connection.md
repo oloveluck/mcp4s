@@ -19,8 +19,10 @@ conn.supportsPrompts     // Boolean
 Tools are the primary way AI clients interact with servers — calling functions and getting results:
 
 ```scala
+val args = Json.obj("query" -> Json.fromString("scala"))
+
 conn.listAllTools                        // IO[List[Tool]] (follows pagination)
-conn.listTools(cursor)                   // IO[(List[Tool], Option[String])] one page
+conn.listTools(cursor = None)            // IO[(List[Tool], Option[String])] one page
 conn.callTool("name", args)              // IO[ToolResult]
 conn.callToolIfSupported(ToolName("name"), args)  // IO[Option[ToolResult]]
 ```
@@ -31,9 +33,17 @@ With an endpoint definition (see [Services](../server/services.md)), calls are t
 
 ```scala
 import mcp4s.client.TypedClient.*
+import mcp4s.schema.{Prompt as PromptDef, Schema, Tool as ToolDef}
 
-conn.call(Calculator.add)(AddArgs(1, 2))               // IO[AddResult]
-conn.getPrompt(greetingEndpoint)(GreetArgs("Ada"))     // IO[GetPromptResult]
+case class AddArgs(a: Double, b: Double) derives Schema
+case class AddResult(sum: Double) derives Schema
+case class GreetArgs(name: String) derives Schema
+
+val add      = ToolDef("add").input[AddArgs].output[AddResult]
+val greeting = PromptDef("greeting").input[GreetArgs]
+
+conn.call(add)(AddArgs(1, 2))              // IO[AddResult]
+conn.getPrompt(greeting)(GreetArgs("Ada")) // IO[GetPromptResult]
 ```
 
 An `isError` result raises `McpError.ToolExecutionError` instead of being returned silently.
@@ -54,9 +64,11 @@ conn.readResourceIfSupported(ResourceUri("uri"))  // IO[Option[ResourceContent]]
 Prompts return reusable message templates for the AI to use:
 
 ```scala
+val promptArgs = Map("name" -> "Ada")
+
 conn.listAllPrompts                     // IO[List[Prompt]]
-conn.getPrompt("name", args)            // IO[GetPromptResult]
-conn.getPromptIfSupported(PromptName("name"), args) // IO[Option[GetPromptResult]]
+conn.getPrompt("name", promptArgs)      // IO[GetPromptResult]
+conn.getPromptIfSupported(PromptName("name"), promptArgs) // IO[Option[GetPromptResult]]
 ```
 
 ## Progress
@@ -71,9 +83,9 @@ conn.callTool("index", args, p => IO.println(s"${p.progress}/${p.total.getOrElse
 ## Lifecycle
 
 ```scala
-conn.ping      // IO[Unit]
-conn.shutdown  // IO[Unit]
-conn.cancel(requestId)  // IO[Unit]
+conn.ping                             // IO[Unit]
+conn.shutdown                         // IO[Unit]
+conn.cancel(RequestId.NumberId(42))   // IO[Unit]
 ```
 
 ---

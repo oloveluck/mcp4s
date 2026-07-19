@@ -9,17 +9,20 @@ Clients discover available resources with `listResources`, then fetch them with 
 ## Constructors
 
 ```scala
-import mcp4s.server.dsl.*
+import mcp4s.server.dsl.{Resource, *}
+
+def getStatus: IO[String] = IO.pure("all good")
 
 // Static text
 Resource.text[IO]("file:///readme", "README")("Hello world")
 
 // Dynamic (effectful)
-Resource[IO]("file:///status", "Status")(getStatus().map(s => text("file:///status", s)))
+Resource[IO]("file:///status", "Status")(getStatus.map(s => text("file:///status", s)))
 
 // Template (pattern matching)
 Resource.template[IO]("api://users/{id}", "User", "Get user by ID"): uri =>
-  fetchUser(uri.split("/").last).map(u => text(uri, u.toJson))
+  val id = uri.split("/").last
+  IO.pure(text(uri, s"""{"id": "$id"}"""))
 ```
 
 Templates use URI patterns with `{param}` placeholders. Clients discover templates via `listResourceTemplates` and substitute parameters to form concrete URIs.
@@ -27,6 +30,8 @@ Templates use URI patterns with `{param}` placeholders. Clients discover templat
 ## Content Types
 
 ```scala
+val base64Data = "iVBORw0KGgoAAAANSUhEUg=="
+
 // Plain text
 text("uri", "text content")
 
@@ -39,16 +44,26 @@ blob("uri", base64Data, "image/png")
 ## Composition
 
 ```scala
+val readme = Resource.text[IO]("file:///readme", "README")("Hello")
+val config = Resource.text[IO]("file:///config", "Config")("debug = false")
+val userTemplate = Resource.template[IO]("api://users/{id}", "User"): uri =>
+  IO.pure(text(uri, "{}"))
+
 val resources = readme |+| config |+| userTemplate
 ```
 
 ## Register with a Server
 
+<!-- doc-snippet: reset -->
 ```scala
+import mcp4s.server.dsl.{Resource, *}
+
+def getStatus: IO[String] = IO.pure("ok")
+
 val resources =
   Resource.text[IO]("file:///readme", "README")("Hello") |+|
     Resource.handler[IO]("file:///status", "Status")(_ =>
-      getStatus().map(s => ResourceContent.text("file:///status", s))
+      getStatus.map(s => ResourceContent.text("file:///status", s))
     )
 
 val server = McpServer[IO](ServerInfo("my-server", "1.0.0")).withResources(resources)
@@ -61,14 +76,21 @@ A server with resources registered advertises the `resources` capability automat
 Resources can notify clients when their content changes. Use `subscribable` with an fs2 change stream, or `polling` for periodic checks:
 
 ```scala
+import scala.concurrent.duration.*
+
+def dbChangeStream: Stream[IO, Unit] = ???
+def getDbStatus: IO[String]          = ???
+def configChanged: IO[Boolean]       = ???
+def readConfig: IO[String]           = ???
+
 // Change-stream driven — notifies when the stream emits
 Resource.subscribable[IO]("db://status", "DB Status", dbChangeStream)(uri =>
-  getDbStatus().map(s => text(uri, s))
+  getDbStatus.map(s => text(uri, s))
 )
 
 // Polling — checks a condition on an interval
 Resource.polling[IO]("file:///config", "Config", 10.seconds, configChanged)(uri =>
-  readConfig().map(c => text(uri, c.toString))
+  readConfig.map(c => text(uri, c))
 )
 ```
 
@@ -81,6 +103,12 @@ The server advertises `resources.subscribe = true` only when at least one subscr
 A more realistic template exposing database records:
 
 ```scala
+case class Order(id: String):
+  def toJson: String = s"""{"id": "$id"}"""
+
+object orderRepo:
+  def findById(id: String): IO[Option[Order]] = ???
+
 Resource.template[IO]("db://orders/{orderId}", "Order", "Fetch order by ID"): uri =>
   orderRepo.findById(uri.split("/").last).flatMap:
     case Some(order) => IO.pure(text(uri, order.toJson))

@@ -38,6 +38,7 @@ class MyServerSuite extends CatsEffectSuite:
 
 For simpler tests that don't need Resource lifecycle:
 
+<!-- doc-snippet: skip -->
 ```scala
 test("sync test") {
   val client = ServerTest.sync(server)
@@ -49,6 +50,7 @@ test("sync test") {
 
 ### Available Operations
 
+<!-- doc-snippet: skip -->
 ```scala
 client.listTools                           // IO[List[Tool]]
 client.callTool("name", args)             // IO[ToolResult]
@@ -67,28 +69,33 @@ Test tools directly without building a full server:
 ```scala
 import mcp4s.server.testing.*
 import mcp4s.server.testing.ToolsTest.*
-import mcp4s.server.dsl.*
 
-@description("Add two numbers")
-case class AddArgs(a: Double, b: Double) derives Schema
+class MyToolsSuite extends CatsEffectSuite:
+  import mcp4s.server.dsl.*
 
-val tools = Tool.from[AddArgs].handle[IO](args => IO.pure(ok(s"${args.a + args.b}")))
+  @description("Add two numbers")
+  case class MyAddArgs(a: Double, b: Double) derives Schema
 
-test("call tool directly"):
-  for result <- tools.testCall("add", args("a" -> 3.0, "b" -> 2.0))
-  yield assertEquals(result.textContent, "5.0")
+  val tools = Tool.from[MyAddArgs].withName("add").handle[IO] { args =>
+    IO.pure(ok(s"${args.a + args.b}"))
+  }
 
-test("tool exists"):
-  for exists <- tools.hasTool("add")
-  yield assert(exists)
+  test("call tool directly"):
+    for result <- tools.testCall("add", args("a" -> 3.0, "b" -> 2.0))
+    yield assertEquals(result.textContent, "5.0")
 
-test("get tool definition"):
-  for tool <- tools.assertTool("add")
-  yield assertEquals(tool.name, "add")
+  test("tool exists"):
+    for exists <- tools.hasTool("add")
+    yield assert(exists)
+
+  test("get tool definition"):
+    for tool <- tools.assertTool("add")
+    yield assertEquals(tool.name, "add")
 ```
 
 ### Extension Methods
 
+<!-- doc-snippet: skip -->
 ```scala
 tools.testCall("name", arguments)   // Call tool, raises McpError.ToolNotFound if missing
 tools.testCallJson("name", json)    // Call with raw JSON
@@ -116,6 +123,7 @@ Supports `String`, `Int`, `Double`, `Boolean`, and up to 4 key-value pairs.
 
 ### Testing Error Cases
 
+<!-- doc-snippet: skip -->
 ```scala
 test("unknown tool raises error"):
   tools.testCall("nonexistent", args.empty).intercept[McpError]
@@ -123,6 +131,7 @@ test("unknown tool raises error"):
 
 ### Testing Resources
 
+<!-- doc-snippet: skip -->
 ```scala
 test("read resource"):
   ServerTest(server).use: client =>
@@ -132,6 +141,7 @@ test("read resource"):
 
 ### Testing Prompts
 
+<!-- doc-snippet: skip -->
 ```scala
 test("prompt generates messages"):
   ServerTest(server).use: client =>

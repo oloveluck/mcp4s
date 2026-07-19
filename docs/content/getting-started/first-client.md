@@ -49,7 +49,7 @@ Same API, different transport. Use WebSocket for lower latency and real-time bid
 
 ```scala
 client.webSocket("ws://localhost:3000/ws").use: conn =>
-  conn.callTool("add", args)
+  conn.callTool("add", Json.obj("a" -> 5.asJson, "b" -> 3.asJson))
 ```
 
 ## Error Handling
@@ -70,6 +70,8 @@ conn.callTool("unknown", Json.obj()).attempt.flatMap:
 Not all servers support all features. Capabilities are derived from what the server actually registers, so check before calling:
 
 ```scala
+val args = Json.obj("a" -> 5.asJson, "b" -> 3.asJson)
+
 if conn.supportsTools then conn.callTool("add", args)
 else IO.println("Tools not supported")
 

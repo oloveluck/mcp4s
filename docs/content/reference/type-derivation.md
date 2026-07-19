@@ -25,6 +25,8 @@ This single derivation gives you:
 Use it with the endpoint DSL — with `Tool.from`, the name and description derive automatically:
 
 ```scala
+def search(query: String, limit: Int): IO[String] = ???   // your search logic
+
 Tool.from[SearchArgs].handle[IO](args => search(args.query, args.limit.getOrElse(10)).map(ok(_)))
 ```
 
@@ -103,6 +105,8 @@ given Schema[UserId] = Schema.bijection[String, UserId](UserId(_), _.value)
 Declare a tool's output with `.output[B]`; the schema is advertised as `outputSchema` and results are encoded as `structuredContent`:
 
 ```scala
+case class CalcArgs(a: Double, b: Double) derives Schema
+
 case class CalcResult(
   @description("The computed value") result: Double,
   @description("The operation") operation: String

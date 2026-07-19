@@ -61,3 +61,36 @@ object syntax:
     /** Connect over Streamable HTTP at `uri`, building an Ember client for you (JVM-only). */
     def http(uri: String)(using Async[F], Network[F]): Resource[F, McpConnection[F]] =
       http(HttpTransportConfig[F](uri))
+
+  extension [F[_]](builder: McpClientBuilder[F])
+
+    /** Connect over WebSocket (JVM-only). Uses the `Tracer[F]` in scope, or noop. */
+    inline def webSocket(config: WebSocketTransportConfig[F])(using
+        Async[F]
+    ): Resource[F, McpConnection[F]] =
+      builder.toClient.webSocket(config)(using summon[Async[F]])(using tracerOrNoop[F])
+
+    /** Connect over WebSocket at `uri` (other settings default; JVM-only). */
+    inline def webSocket(uri: String)(using Async[F]): Resource[F, McpConnection[F]] =
+      builder.webSocket(WebSocketTransportConfig[F](uri))
+
+    /** Connect over Streamable HTTP, building and managing an Ember client for you (JVM-only). */
+    inline def http(config: HttpTransportConfig[F])(using
+        Async[F],
+        Network[F]
+    ): Resource[F, McpConnection[F]] =
+      EmberClientBuilder
+        .default[F]
+        .build
+        .flatMap(builder.http(config, _)(using summon[Async[F]])(using tracerOrNoop[F]))
+
+    /** Connect over Streamable HTTP at `uri`, building an Ember client for you (JVM-only). */
+    inline def http(uri: String)(using Async[F], Network[F]): Resource[F, McpConnection[F]] =
+      builder.http(HttpTransportConfig[F](uri))
+
+  /** The `Tracer[F]` in scope at the inline site, or noop when none is given. */
+  private inline def tracerOrNoop[F[_]](using Async[F]): Tracer[F] =
+    scala.compiletime.summonFrom {
+      case t: Tracer[F] => t
+      case _            => Tracer.noop[F]
+    }

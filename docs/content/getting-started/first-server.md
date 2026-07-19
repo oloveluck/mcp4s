@@ -7,9 +7,8 @@ This walkthrough builds a calculator server with tools, resources, and prompts â
 Tools are functions that AI clients can call. Each tool needs a name, a description (so the AI knows when to use it), and typed arguments:
 
 ```scala
-import cats.effect.*
+import cats.effect.IO
 import mcp4s.server.dsl.*
-import mcp4s.protocol.*
 
 @description("Add two numbers")
 case class AddArgs(a: Double, b: Double) derives Schema
@@ -35,6 +34,8 @@ Tool("add").withDescription("Add two numbers").input[AddArgs].handle[IO] { args 
 Resources expose data that AI clients can read. They're addressed by URI:
 
 ```scala
+import mcp4s.server.dsl.Resource   // the DSL's resource constructors, not cats.effect.Resource
+
 val resources =
   Resource.text[IO]("file:///readme", "README")("Calculator Server v1.0") |+|
     Resource.template[IO]("api://users/{id}", "User", "Get user by ID")(uri =>
@@ -59,6 +60,7 @@ val prompts =
 ## Build and Run
 
 ```scala
+import mcp4s.protocol.ServerInfo
 import mcp4s.server.*
 
 val server = McpServer[IO](ServerInfo("calculator", "1.0.0"))

@@ -15,10 +15,17 @@ Servers can run over HTTP, WebSocket, or Stdio (for Claude Desktop integration).
 `McpServer` is the one entry point for assembling a server:
 
 ```scala
-import cats.effect.*
+import cats.effect.IO
 import mcp4s.server.*
-import mcp4s.server.dsl.*
-import mcp4s.protocol.*
+import mcp4s.server.dsl.{Resource, *}
+import mcp4s.protocol.ServerInfo
+
+case class EchoArgs(text: String) derives Schema
+
+val myTools = Tool("echo").withDescription("Echo back").input[EchoArgs]
+  .handle[IO](args => IO.pure(ok(args.text)))
+val myResources = Resource.text[IO]("file:///readme", "README")("Hello")
+val myPrompts   = Prompt("help").withDescription("Get help").messages[IO](user("How can I help?"))
 
 val server = McpServer[IO](ServerInfo("my-server", "1.0.0"))
   .withTools(myTools)
@@ -40,6 +47,9 @@ Capabilities are **derived from what you register**: a tools-only server adverti
 Servers compose with `|+|` (left takes precedence on conflicts):
 
 ```scala
+val calculatorServer = McpServer[IO](ServerInfo("calc", "1.0.0")).withTools(myTools).toServer
+val utilityServer    = McpServer[IO](ServerInfo("util", "1.0.0")).withPrompts(myPrompts).toServer
+
 val combined = calculatorServer |+| utilityServer
 ```
 
@@ -48,11 +58,13 @@ val combined = calculatorServer |+| utilityServer
 Bind a transport directly on the builder (or on any `Server[F]` — no import needed):
 
 ```scala
-server.stdio.run                                    // Stdio for Claude Desktop
-server.http().resource.useForever                   // HTTP on /mcp, port 3000
-server.http(HttpConfig(port = port"8080")).resource // HTTP on a custom port
-server.http(config).routes                          // embed in an existing http4s app
-server.webSocket().resource.useForever              // WebSocket on /ws, port 3000
+val config = HttpConfig[IO](port = port"8080")
+
+server.stdio.run                          // Stdio for Claude Desktop
+server.http().resource.useForever         // HTTP on /mcp, port 3000
+server.http(config).resource              // HTTP on a custom port
+server.http(config).routes                // embed in an existing http4s app
+server.webSocket().resource.useForever    // WebSocket on /ws, port 3000
 ```
 
 `HttpConfig` / `WebSocketConfig` live in `mcp4s.server.transport`. For custom http4s
@@ -64,20 +76,27 @@ see [HTTP Security](auth.md).
 ```scala
 import mcp4s.server.dsl.*
 
+@description("Summarize text")
+case class SummarizeArgs(text: String) derives Schema
+
 // Tools — an endpoint definition plus exactly one handler
-Tool.from[Args].handle[IO](args => IO.pure(ok("result")))       // derived name + desc
-Tool("name").withDescription("desc").input[Args]
+Tool.from[SummarizeArgs]
+  .handle[IO](args => IO.pure(ok("result")))                    // derived name + desc
+Tool("name").withDescription("desc").input[SummarizeArgs]
   .handle[IO](args => IO.pure(ok("result")))                    // explicit
-Tool("name").input[Args].handleWith[IO]((args, ctx) => ...)     // with context
-Tool("name").input[Args].stream[IO](args => fs2.Stream(...))    // streaming
+Tool("name").input[SummarizeArgs]
+  .handleWith[IO]((args, ctx) => IO.pure(ok("result")))         // with context
+Tool("name").input[SummarizeArgs]
+  .stream[IO](args => fs2.Stream(ok("chunk")))                  // streaming
 
 // Resources — data the AI can read
 Resource.text[IO]("uri", "name")("content")
-Resource.template[IO]("uri/{id}", "name", "desc")(uri => ...)
+Resource.template[IO]("uri/{id}", "name", "desc")(uri => IO.pure(text(uri, "content")))
 
 // Prompts — reusable message templates
 Prompt("name").withDescription("desc").messages[IO](user("Hello"))
-Prompt.from[Args].handle[IO](args => IO.pure(messages(...)))    // derived name + desc
+Prompt.from[SummarizeArgs]
+  .handle[IO](args => IO.pure(messages(user("Hello"))))         // derived name + desc
 
 // Results
 ok("success")

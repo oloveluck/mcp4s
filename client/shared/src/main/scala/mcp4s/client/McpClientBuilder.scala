@@ -108,11 +108,6 @@ object McpClientBuilder:
   def apply[F[_]: Concurrent](info: ClientInfo): McpClientBuilder[F] =
     new McpClientBuilder(info, None, None, None)
 
-  /** A builder is usable anywhere an [[McpClient]] is expected (e.g. the JVM-only `webSocket` /
-    * auto-Ember `http` extensions in `mcp4s.client.syntax`).
-    */
-  given toMcpClient[F[_]]: Conversion[McpClientBuilder[F], McpClient[F]] = _.toClient
-
   /** Start assembling a client with the given name and version. */
   def apply[F[_]: Concurrent](name: String, version: String): McpClientBuilder[F] =
     apply(ClientInfo(name, version))

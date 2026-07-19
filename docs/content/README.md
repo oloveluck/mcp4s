@@ -18,9 +18,9 @@ MCP defines three core primitives:
 
 ```scala
 import cats.effect.*
+import mcp4s.protocol.ServerInfo
 import mcp4s.server.*
 import mcp4s.server.dsl.*
-import mcp4s.protocol.*
 
 @description("Add two numbers")
 case class AddArgs(a: Double, b: Double) derives Schema
@@ -40,6 +40,7 @@ val server = McpServer[IO](ServerInfo("calculator", "1.0.0")).withTools(tools)
 
 ## Installation
 
+<!-- doc-snippet: skip -->
 ```scala
 libraryDependencies ++= Seq(
   "io.github.oloveluck" %%% "mcp4s-core" % "0.2.0",
@@ -57,3 +58,11 @@ libraryDependencies ++= Seq(
 | `mcp4s-core` | Protocol types, codecs, and the `Schema`/endpoint layer | [Protocol Reference](reference/protocol.md) |
 | `mcp4s-server` | Server with DSL for tools, resources, prompts | [Server Guide](server/README.md) |
 | `mcp4s-client` | Client with typed endpoint calls | [Client Guide](client/README.md) |
+| `mcp4s-testkit` | Compliance and performance suites for any MCP server | [Testing](testing/README.md) |
+
+## Where to Start
+
+1. [Getting Started](getting-started/README.md) — a working server and client in minutes
+2. [Your First Server](getting-started/first-server.md) / [Your First Client](getting-started/first-client.md)
+3. [Services](server/services.md) — define endpoints once, share them between server and client
+4. [Transports](transports/README.md) — stdio for Claude Desktop, HTTP or WebSocket for the network

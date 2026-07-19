@@ -37,7 +37,10 @@ Prompt("greet")
 
 `Prompt.from[GreetArgs]` derives the name and description from the input type, exactly like `Tool.from`:
 
+<!-- doc-snippet: reset -->
 ```scala
+import mcp4s.server.dsl.*
+
 @description("Greet someone")
 case class GreetArgs(name: String) derives Schema
 
@@ -62,6 +65,10 @@ messages("Description")(user("Hello"))
 ## Composition
 
 ```scala
+val helpPrompt     = Prompt("help").messages[IO](user("How can I help?"))
+val greetPrompt    = Prompt.from[GreetArgs].handle[IO](args => IO.pure(messages(user(s"Hi, ${args.name}!"))))
+val tutorialPrompt = Prompt("tutorial").messages[IO](user("Walk me through the basics."))
+
 val prompts = helpPrompt |+| greetPrompt |+| tutorialPrompt
 ```
 

@@ -35,6 +35,8 @@ server.webSocket(WebSocketConfig(
 ```scala
 import mcp4s.client.syntax.*   // JVM-only
 
+val args = Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))
+
 client.webSocket("ws://localhost:3000/ws").use: conn =>
   conn.callTool("add", args)
 

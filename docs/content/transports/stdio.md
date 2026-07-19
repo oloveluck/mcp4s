@@ -10,13 +10,15 @@ No networking is involved. The client writes JSON-RPC to the server's stdin and 
 
 ```scala
 import cats.effect.*
+import mcp4s.protocol.ServerInfo
 import mcp4s.server.*
 import mcp4s.server.dsl.*
-import mcp4s.protocol.*
+
+case class Args(query: String) derives Schema
 
 object MyServer extends IOApp.Simple:
   val tools = Tool("search").withDescription("Search files").input[Args]
-    .handle[IO](args => ...)
+    .handle[IO](args => IO.pure(ok(s"Results for: ${args.query}")))
 
   val server = McpServer[IO](ServerInfo("my-server", "1.0.0")).withTools(tools)
 
@@ -30,8 +32,14 @@ object MyServer extends IOApp.Simple:
 To drive a server you spawn yourself as a subprocess (cross-platform, no import needed):
 
 ```scala
+import io.circe.Json
+import mcp4s.client.McpClientBuilder
+import mcp4s.protocol.ClientInfo
+
+val client = McpClientBuilder[IO](ClientInfo("my-client", "1.0.0"))
+
 client.stdio("java", "-jar", "/path/to/server.jar").use: conn =>
-  conn.callTool("search", args)
+  conn.callTool("search", Json.obj("query" -> Json.fromString("readme")))
 ```
 
 For working directory, environment, or timeouts, pass a full config:
@@ -47,7 +55,7 @@ client.stdio(StdioTransportConfig(
   workingDirectory = Some("/srv/mcp"),
   env              = Map("LOG_LEVEL" -> "debug"),
   timeouts         = Timeouts(request = 1.minute, init = 15.seconds)
-)).use(conn => ...)
+)).use(conn => conn.listAllTools)
 ```
 
 ## Claude Desktop Config

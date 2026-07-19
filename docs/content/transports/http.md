@@ -31,9 +31,12 @@ server.http(HttpConfig(
 Use `.routes` to get raw `HttpRoutes[F]` that you can embed in an existing http4s application and wrap with standard middleware:
 
 ```scala
+import org.http4s.HttpRoutes
 import org.http4s.server.middleware.CORS
 import org.http4s.server.Router
 import org.http4s.ember.server.EmberServerBuilder
+
+def myAppRoutes: HttpRoutes[IO] = ???   // your existing routes
 
 server.http(HttpConfig[IO]()).routes.flatMap: mcpRoutes =>
   // Wrap with CORS, combine with your own routes
@@ -51,10 +54,10 @@ import mcp4s.client.syntax.*      // JVM-only convenience overloads
 import mcp4s.client.transport.*
 
 // JVM one-liner — builds and manages an Ember client for you
-client.http("http://localhost:3000/mcp").use(conn => ...)
+client.http("http://localhost:3000/mcp").use(conn => conn.listAllTools)
 
 // Cross-platform — bring your own http4s Client[F]
-client.http(HttpTransportConfig[IO]("http://localhost:3000/mcp"), httpClient).use(conn => ...)
+client.http(HttpTransportConfig[IO]("http://localhost:3000/mcp"), httpClient).use(conn => conn.listAllTools)
 ```
 
 The config takes the **full URI including the path** — there is no separate base URL/endpoint pair.
@@ -71,6 +74,8 @@ The config takes the **full URI including the path** — there is no separate ba
 ### Authentication
 
 ```scala
+def fetchToken: IO[String] = ???   // your token refresh flow
+
 val config = HttpTransportConfig[IO](
   uri  = "https://api.example.com/mcp",
   auth = Some(McpAuth.Bearer("my-token"))              // static token
@@ -86,12 +91,13 @@ For retry, compose standard http4s middleware on the `Client[F]` you pass in (th
 cross-platform overload), then connect:
 
 ```scala
-import org.http4s.client.middleware.{Retry, RetryPolicy, Timeout}
+import org.http4s.client.middleware.{Retry, RetryPolicy}
+import scala.concurrent.duration.*
 
 val retryPolicy = RetryPolicy[IO](RetryPolicy.exponentialBackoff(maxWait = 10.seconds, maxRetry = 3))
-val resilientClient = Timeout(30.seconds)(Retry(retryPolicy)(httpClient))
+val resilientClient = Retry(retryPolicy)(httpClient)
 
-client.http(HttpTransportConfig[IO]("http://localhost:3000/mcp"), resilientClient).use(conn => ...)
+client.http(HttpTransportConfig[IO]("http://localhost:3000/mcp"), resilientClient).use(conn => conn.listAllTools)
 ```
 
 ## Features

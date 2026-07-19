@@ -59,6 +59,12 @@ Tool("version").withDescription("Get server version").handle[IO](_ => IO.pure(ok
 Every tool attaches exactly one of four handlers:
 
 ```scala
+val endpoint = Tool("search_docs").withDescription("Search the docs").input[SearchArgs]
+
+def params: CreateMessageParams = ???
+object database:
+  def search(query: String): Stream[IO, String] = ???
+
 // 1. Effectful
 endpoint.handle[IO](args => IO.pure(ok("done")))
 
@@ -89,6 +95,8 @@ Streaming handlers require `Concurrent[F]` (all handlers do). The client receive
 Declare a structured output with `.output[B]`. The output schema is advertised as `outputSchema` and results are encoded as `structuredContent`:
 
 ```scala
+case class CalcArgs(a: Double, b: Double) derives Schema
+
 case class CalcResult(
   @description("The computed value") result: Double,
   @description("Operation performed") operation: String
@@ -110,11 +118,13 @@ Typed outputs pair with the [typed client](services.md), which decodes `structur
 Attach MCP tool annotations (hints like read-only or destructive) with `.withAnnotations`:
 
 ```scala
+case class DeleteArgs(path: String) derives Schema
+
 Tool("delete_file")
   .withDescription("Delete a file")
   .input[DeleteArgs]
   .withAnnotations(ToolAnnotations(destructiveHint = Some(true)))
-  .handle[IO](args => ...)
+  .handle[IO](args => IO.pure(ok(s"Deleted ${args.path}")))
 ```
 
 ## Results
@@ -130,7 +140,7 @@ content(textContent("a"), textContent("b"))  // Multiple items
 Attaching a handler produces a `Tools[F]` value. Tools compose with the `|+|` operator — this is the standard way to build up a tool set:
 
 ```scala
-val tools = addTool |+| multiplyTool |+| divideTool
+val tools = search |+| calculate
 
 val server = McpServer[IO](ServerInfo("calc", "1.0.0")).withTools(tools)
 ```

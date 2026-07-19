@@ -12,20 +12,20 @@ In the MCP architecture, clients are the active side — they initiate connectio
 
 ```scala
 import cats.effect.*
-import mcp4s.client.*
+import mcp4s.client.McpClientBuilder
 import mcp4s.client.mcp.*
 import mcp4s.protocol.*
-import org.typelevel.otel4s.trace.Tracer
 
-given Tracer[IO] = Tracer.noop[IO]
+def myLlm(params: CreateMessageParams): IO[CreateMessageResult] = ???   // your LLM integration
+def askUser(params: ElicitParams): IO[ElicitResult] = ???               // your UI integration
 
 val client = McpClientBuilder[IO](ClientInfo("my-client", "1.0.0"))
   .withRoots(Roots[IO]("file:///workspace", "Workspace"))
-  .withSampling(Sampling[IO](params => myLlm.complete(params)))
+  .withSampling(Sampling[IO](params => myLlm(params)))
   .withElicitation(Elicitation[IO](params => askUser(params)))
 ```
 
-A `Tracer[IO]` is needed as a type-class instance. Use `Tracer.noop` to disable tracing, or provide a real tracer for distributed observability.
+Tracing uses otel4s and defaults to `Tracer.noop` — bring a `given Tracer[IO]` into scope to enable distributed observability.
 
 **Roots** tell the server which directories the client has access to. **Sampling** and **elicitation** handlers enable bidirectional features where the server can request help from the client. Advertised client capabilities are **derived** from which handlers you add — no manual capability flags.
 
@@ -38,6 +38,9 @@ Each transport is a verb on the builder (or on any `McpClient[F]`), returning a 
 ```scala
 import mcp4s.client.syntax.*   // JVM-only verbs: webSocket, auto-Ember http
 import mcp4s.client.transport.*
+import io.circe.Json, io.circe.syntax.*
+
+val args = Json.obj("a" -> 1.asJson, "b" -> 2.asJson)
 
 // Stdio — spawn a subprocess
 client.stdio("node", "server.js").use(conn => conn.callTool("add", args))
@@ -83,11 +86,11 @@ val config = HttpTransportConfig[IO](
 For HTTP transport, compose standard http4s middleware on your `Client[F]` before passing it to the transport:
 
 ```scala
-import org.http4s.client.middleware.{Retry, RetryPolicy, Timeout}
+import org.http4s.client.middleware.{Retry, RetryPolicy}
 import scala.concurrent.duration.*
 
 val retryPolicy = RetryPolicy[IO](RetryPolicy.exponentialBackoff(maxWait = 10.seconds, maxRetry = 3))
-val resilientClient = Timeout(30.seconds)(Retry(retryPolicy)(rawHttpClient))
+val resilientClient = Retry(retryPolicy)(httpClient)   // httpClient: your http4s Client[IO]
 
 // Pass the wrapped client to the cross-platform http overload
 client.http(HttpTransportConfig[IO]("http://localhost:3000/mcp"), resilientClient).use: conn =>
@@ -102,6 +105,14 @@ If the server publishes an `McpService`, skip raw JSON entirely:
 
 ```scala
 import mcp4s.client.TypedClient.*
+import mcp4s.schema.{Schema, Tool as ToolDef}
+
+// The endpoint definitions shared with the server (see Services)
+case class AddArgs(a: Double, b: Double) derives Schema
+case class AddResult(sum: Double) derives Schema
+
+object Calculator:
+  val add = ToolDef("add").input[AddArgs].output[AddResult]
 
 conn.call(Calculator.add)(AddArgs(1, 2))   // : IO[AddResult]
 ```

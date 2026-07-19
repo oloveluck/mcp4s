@@ -17,12 +17,17 @@ Sampling lets a server request LLM completions from the client. This is useful f
 
 **Client** — Register a handler that delegates to your LLM:
 ```scala
-import mcp4s.client.*
+import cats.effect.IO
+import mcp4s.client.McpClientBuilder
 import mcp4s.client.mcp.*
+import mcp4s.protocol.{ClientInfo, SamplingMessage}
+
+case class LlmReply(text: String, model: String)
+def myLlm(messages: List[SamplingMessage], maxTokens: Int): IO[LlmReply] = ???   // your LLM
 
 val client = McpClientBuilder[IO](ClientInfo("my-client", "1.0.0"))
   .withSampling(Sampling[IO](params =>
-    myLlm.complete(params.messages, params.maxTokens).map(r => message(r.text, r.model))
+    myLlm(params.messages, params.maxTokens).map(r => message(r.text, r.model))
   ))
 ```
 
@@ -31,6 +36,8 @@ Adding the handler is what advertises the `sampling` capability — nothing else
 **Server** — Request a completion from within a tool, using a `handleWith` (context) handler:
 ```scala
 import mcp4s.server.dsl.*
+
+case class Args(query: String) derives Schema
 
 Tool("smart").withDescription("AI tool").input[Args].handleWith[IO] { (args, ctx) =>
   ctx.sampling
@@ -47,7 +54,17 @@ Tool("smart").withDescription("AI tool").input[Args].handleWith[IO] { (args, ctx
 Elicitation lets a server ask the user for input before proceeding. This is essential for destructive actions (confirming a deletion) or when the server needs information it can't infer.
 
 **Client** — Register a handler that prompts the user:
+<!-- doc-snippet: reset -->
 ```scala
+import cats.effect.IO
+import io.circe.Json
+import mcp4s.client.McpClientBuilder
+import mcp4s.client.mcp.*
+import mcp4s.protocol.{ClientInfo, ElicitFormParams, ElicitUrlParams}
+
+case class Answer(confirmed: Boolean, data: Map[String, Json])
+def askUser(message: String): IO[Answer] = ???   // your UI integration
+
 val client = McpClientBuilder[IO](ClientInfo("my-client", "1.0.0"))
   .withElicitation(Elicitation[IO] {
     case form: ElicitFormParams =>
@@ -58,7 +75,11 @@ val client = McpClientBuilder[IO](ClientInfo("my-client", "1.0.0"))
 
 **Server** — Ask the user for confirmation:
 ```scala
+import mcp4s.server.dsl.*
+
+case class Args(path: String) derives Schema
 case class Confirm(confirmed: Boolean) derives Schema
+def deleteFile(path: String): IO[Unit] = ???
 
 Tool("delete").withDescription("Delete file").input[Args].handleWith[IO] { (args, ctx) =>
   ctx.elicitation
@@ -76,6 +97,8 @@ Tool("delete").withDescription("Delete file").input[Args].handleWith[IO] { (args
 Servers can also push progress updates and log messages to the client during tool execution:
 
 ```scala
+def doWork(): IO[ToolResult] = ???
+
 Tool("work").withDescription("Do work").input[Args].handleWith[IO] { (args, ctx) =>
   ctx.log(LogLevel.Info, "Starting") *>
     ctx.progress(0.5, Some(100)) *>

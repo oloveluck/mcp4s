@@ -1,60 +1,59 @@
-# Async Tasks
+# Long-Running Tools
 
-MCP tasks let you run long-running tool operations asynchronously. Instead of blocking until completion, the client receives a task ID and can poll for progress, retrieve results, or cancel.
+For operations that take more than a few seconds — data processing, file generation, complex
+queries — keep the connection responsive by reporting progress and, where it fits, streaming
+intermediate results.
 
-> For the full protocol details, see the [MCP specification](https://spec.modelcontextprotocol.io/specification/2025-03-26/).
+## Progress Reporting
 
-Tasks are useful for operations that take more than a few seconds — data processing, file generation, complex queries — where you want to keep the connection responsive.
-
-## Client Usage
-
-```scala
-// Start async
-val taskId: IO[TaskId] = conn.callToolAsTask("long-query", args)
-
-// Poll status
-conn.getTask(taskId)       // IO[TaskInfo]
-conn.listTasks()           // IO[TasksListResult]
-conn.cancelTask(taskId)    // IO[Unit]
-conn.getTaskResult(taskId) // IO[TaskResult]
-```
-
-## Server-Side Progress
-
-Report progress during long operations using the tool context:
+Report progress from a context-aware handler; the client receives `notifications/progress` while
+the tool runs (over HTTP/SSE or WebSocket):
 
 ```scala
-Tool("process").withDescription("Process data").input[Args].handleWith[IO] { (args, ctx) =>
-  for
-    data <- loadData(args)
-    results <- data.zipWithIndex.traverse { case (item, idx) =>
-      ctx.progress(idx.toDouble / data.size, Some(data.size)) *>
-        processItem(item)
-    }
-  yield ok(results.mkString(", "))
+import mcp4s.server.dsl.*
+
+case class ProcessArgs(items: List[String]) derives Schema
+def processItem(item: String): IO[String] = ???
+
+val process = Tool("process").withDescription("Process data").input[ProcessArgs].handleWith[IO] {
+  (args, ctx) =>
+    for results <- args.items.zipWithIndex.traverse { case (item, idx) =>
+        ctx.progress(idx.toDouble / args.items.size, Some(args.items.size.toDouble)) *>
+          processItem(item)
+      }
+    yield ok(results.mkString(", "))
 }
 ```
 
-The `progress` call sends a notification to the client with:
-- `progress`: a `Double` between 0.0 and 1.0
-- `total`: an optional total count for display
+The `progress` call sends a notification with:
+- `progress`: how far along the operation is
+- `total`: an optional total for display
 
-## Task Lifecycle
+On the client, pass an `onProgress` callback to receive them:
 
+```scala
+conn.callTool(
+  "process",
+  Json.obj("items" -> Json.arr(Json.fromString("a"), Json.fromString("b"))),
+  p => IO.println(s"${p.progress}/${p.total.getOrElse("?")}")
+)
 ```
-Pending ──> Running ──> Completed
-                   ├──> Failed
-                   └──> Cancelled
+
+## Streaming Handlers
+
+A streaming handler emits intermediate values while it works; on the plain request/response call
+path the last emitted value is the tool result:
+
+```scala
+val ticker = Tool("count").withDescription("Count up").stream[IO] { _ =>
+  Stream.range(1, 6).map(n => ok(s"count: $n"))
+}
 ```
 
-- **Pending** — Task created but not yet started
-- **Running** — Actively executing, may emit progress
-- **Completed** — Finished successfully, result available via `getTaskResult`
-- **Failed** — Terminated with an error
-- **Cancelled** — Stopped by client via `cancelTask`
+## MCP Async Tasks
 
-## Transport Requirements
-
-Tasks require a persistent connection for progress notifications. They work with all transports (HTTP with SSE, WebSocket, Stdio), but progress updates are only delivered while the connection is active.
-
-Both client and server must declare task support in their capabilities during initialization.
+The MCP specification also defines an async-task protocol (`tasks/get`, `tasks/result`,
+`tasks/cancel`) where a tool call returns a task ID that the client polls. mcp4s declares the
+wire-level capability types (`ServerTasksCapability`, `ClientTasksCapability`) but does **not yet
+implement** task execution on either side — for long-running work today, use progress
+notifications and streaming as shown above.

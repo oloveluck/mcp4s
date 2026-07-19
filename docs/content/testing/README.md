@@ -9,6 +9,7 @@ mcp4s itself and any server you build with the library. It has three layers:
 | **Compliance** | `McpComplianceSuite` — a capability-parameterized [weaver](https://github.com/typelevel/weaver-test) suite that checks protocol correctness over live HTTP + WebSocket | JVM |
 | **Performance** | `McpBenchmark.run` (returns a `PerfReport`), and `McpPerformanceSuite` — a weaver suite that drives load and asserts SLOs | JVM |
 
+<!-- doc-snippet: skip -->
 ```scala
 libraryDependencies += "io.github.oloveluck" %% "mcp4s-testkit" % "<version>" % Test
 // weaver test framework (transitively available via testkit on the JVM):
@@ -29,6 +30,9 @@ import cats.effect.IO
 import io.circe.Json
 import io.circe.syntax.*
 import mcp4s.testkit.*
+
+object MyServer:
+  def build[F[_]]: mcp4s.server.Server[F] = ???   // your server under test
 
 object MyServerComplianceSpec extends McpComplianceSuite:
   def serverUnderTest: mcp4s.server.Server[IO] = MyServer.build[IO]

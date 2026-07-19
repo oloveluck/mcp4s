@@ -9,8 +9,9 @@ Use `server.http(config).routes` to get the raw MCP routes, then wrap them with 
 ```scala
 import cats.data.{Kleisli, OptionT}
 import cats.effect.IO
-import org.http4s.*
+import org.http4s.{AuthScheme, AuthedRoutes, Credentials, Request}
 import org.http4s.headers.Authorization
+import org.http4s.implicits.*
 import org.http4s.server.{AuthMiddleware, Router}
 import org.http4s.server.middleware.CORS
 import org.http4s.ember.server.EmberServerBuilder
@@ -52,11 +53,10 @@ On the client side, pass an `McpAuth` in the transport config to send the matchi
 Use `org.http4s.server.middleware.CORS` with a `CORSPolicy`:
 
 ```scala
-import org.http4s.server.middleware.CORS
-import org.http4s.Method
+import org.http4s.{HttpRoutes, Method}
 import scala.concurrent.duration.*
 
-val corsRoutes = CORS.policy
+def corsRoutes(mcpRoutes: HttpRoutes[IO]): HttpRoutes[IO] = CORS.policy
   .withAllowOriginAll
   .withAllowCredentials(false)
   .withAllowMethodsIn(Set(Method.GET, Method.POST, Method.DELETE))
