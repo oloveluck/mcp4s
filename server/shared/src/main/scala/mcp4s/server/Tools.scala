@@ -58,12 +58,18 @@ trait Tools[F[_]]:
     */
   def isEmpty: Boolean = false
 
+  /** Tool definitions statically known at construction time (empty for fully dynamic
+    * implementations). Used by `ServiceRoutes` for construction-time completeness checks.
+    */
+  def definitions: List[Tool] = Nil
+
 object Tools:
 
   /** Create tool routes from a single tool (ignores context) */
   def single[F[_]: Concurrent](tool: Tool)(handler: Json => F[ToolResult]): Tools[F] =
     new Tools[F]:
-      def list: F[List[Tool]] = Applicative[F].pure(List(tool))
+      def list: F[List[Tool]]              = Applicative[F].pure(List(tool))
+      override def definitions: List[Tool] = List(tool)
 
       def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
         if name == tool.name then OptionT.liftF(handler(args))
@@ -78,7 +84,8 @@ object Tools:
       handler: (Json, ToolContext[F]) => F[ToolResult]
   ): Tools[F] =
     new Tools[F]:
-      def list: F[List[Tool]] = Applicative[F].pure(List(tool))
+      def list: F[List[Tool]]              = Applicative[F].pure(List(tool))
+      override def definitions: List[Tool] = List(tool)
 
       def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
         if name == tool.name then OptionT.liftF(handler(args, ctx))
@@ -95,6 +102,9 @@ object Tools:
   def combine[F[_]: Concurrent](x: Tools[F], y: Tools[F]): Tools[F] =
     new Tools[F]:
       override def isEmpty: Boolean = x.isEmpty && y.isEmpty
+      override def definitions: List[Tool] =
+        val xNames = x.definitions.map(_.name).toSet
+        x.definitions ++ y.definitions.filterNot(t => xNames.contains(t.name))
       def list: F[List[Tool]] =
         for
           xTools <- x.list

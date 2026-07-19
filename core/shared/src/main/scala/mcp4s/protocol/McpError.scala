@@ -75,6 +75,10 @@ enum McpError(val message: String) extends Exception(message):
   /** Client does not support elicitation capability */
   case ElicitationNotSupported extends McpError("Client does not support elicitation")
 
+  /** Tool ran but reported an error result (`isError = true`) */
+  case ToolExecutionError(name: String, detail: String)
+      extends McpError(s"Tool '$name' returned an error: $detail")
+
 object McpError:
   /** Convert a JSON-RPC error to a typed McpError */
   def fromJsonRpcError(error: JsonRpcError): McpError = error.code match
@@ -99,4 +103,5 @@ object McpError:
     case CapabilityNotSupported(_)     => JsonRpcError.invalidRequest(err.message)
     case SamplingNotSupported          => JsonRpcError.invalidRequest(err.message)
     case ElicitationNotSupported       => JsonRpcError.invalidRequest(err.message)
+    case ToolExecutionError(_, _)      => JsonRpcError.internalError(err.message)
     case InternalError(_)              => JsonRpcError.internalError(err.message)
