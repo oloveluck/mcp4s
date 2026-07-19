@@ -38,7 +38,7 @@ object scope_1:
   Tool.from[SearchArgs].handle[IO](args => search(args.query, args.limit.getOrElse(10)).map(ok(_)))
 
   // ---- snippet at line 40
-  enum Unit derives Schema:
+  enum TempUnit derives Schema:
     case Celsius, Fahrenheit
 
   case class Coordinates(lat: Double, lon: Double)   // nested: derived automatically
@@ -48,7 +48,7 @@ object scope_1:
     @description("City to look up") city: String,
     where: Coordinates,
     days: Int = 3,
-    unit: Unit = Unit.Celsius,
+    unit: TempUnit = TempUnit.Celsius,
     tags: Map[String, String] = Map.empty
   ) derives Schema
 
