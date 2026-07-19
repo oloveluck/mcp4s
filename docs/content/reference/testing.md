@@ -2,6 +2,10 @@
 
 MCP4S provides testing utilities for verifying servers and tools without running a transport.
 
+> For full **compliance** and **performance** suites that run a server over live transports —
+> usable against your own MCP server — see [Testing your MCP server](../testing/README.md)
+> (`mcp4s-testkit`). This page covers the lighter in-process `ServerTest` / `ToolsTest` helpers.
+
 ## ServerTest
 
 Test a full server with an in-memory client:
@@ -15,16 +19,13 @@ import mcp4s.server.testing.*
 
 class MyServerSuite extends CatsEffectSuite:
 
-  val tools = Tool[IO, AddArgs]("add", "Add") { args => IO.pure(ok(s"${args.a + args.b}")) }
+  val tools  = Tool[IO, AddArgs]("add", "Add")(args => IO.pure(ok(s"${args.a + args.b}")))
   val server = Server.fromTools[IO](ServerInfo("test", "1.0.0"), tools)
 
-  test("add tool returns correct result") {
-    ServerTest(server).use { client =>
-      for
-        result <- client.callTool("add", AddArgs(2.0, 3.0))
+  test("add tool returns correct result"):
+    ServerTest(server).use: client =>
+      for result <- client.callTool("add", AddArgs(2.0, 3.0))
       yield assertEquals(result.textContent, "5.0")
-    }
-  }
 ```
 
 ### Synchronous Variant
@@ -65,27 +66,19 @@ import mcp4s.protocol.*
 @description("Add two numbers")
 case class AddArgs(a: Double, b: Double) derives ToolInput
 
-val tools = Tool[IO, AddArgs] { args =>
-  IO.pure(ToolResult.text(s"${args.a + args.b}"))
-}
+val tools = Tool[IO, AddArgs](args => IO.pure(ToolResult.text(s"${args.a + args.b}")))
 
-test("call tool directly") {
-  for
-    result <- tools.testCall("add", args("a" -> 3.0, "b" -> 2.0))
+test("call tool directly"):
+  for result <- tools.testCall("add", args("a" -> 3.0, "b" -> 2.0))
   yield assertEquals(result.textContent, "5.0")
-}
 
-test("tool exists") {
-  for
-    exists <- tools.hasTool("add")
+test("tool exists"):
+  for exists <- tools.hasTool("add")
   yield assert(exists)
-}
 
-test("get tool definition") {
-  for
-    tool <- tools.assertTool("add")
+test("get tool definition"):
+  for tool <- tools.assertTool("add")
   yield assertEquals(tool.name, "add")
-}
 ```
 
 ### Extension Methods
@@ -118,31 +111,24 @@ Supports `String`, `Int`, `Double`, `Boolean`, and up to 4 key-value pairs.
 ### Testing Error Cases
 
 ```scala
-test("unknown tool raises error") {
+test("unknown tool raises error"):
   tools.testCall("nonexistent", args.empty).intercept[McpError]
-}
 ```
 
 ### Testing Resources
 
 ```scala
-test("read resource") {
-  ServerTest(server).use { client =>
-    for
-      content <- client.readResource("file:///readme")
+test("read resource"):
+  ServerTest(server).use: client =>
+    for content <- client.readResource("file:///readme")
     yield assert(content.text.exists(_.contains("Hello")))
-  }
-}
 ```
 
 ### Testing Prompts
 
 ```scala
-test("prompt generates messages") {
-  ServerTest(server).use { client =>
-    for
-      result <- client.getPromptMap("greet", Map("name" -> "Alice"))
+test("prompt generates messages"):
+  ServerTest(server).use: client =>
+    for result <- client.getPromptMap("greet", Map("name" -> "Alice"))
     yield assert(result.messages.nonEmpty)
-  }
-}
 ```

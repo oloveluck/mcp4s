@@ -24,9 +24,7 @@ This generates:
 Use with the server DSL — the name and description are derived automatically:
 
 ```scala
-Tool[IO, SearchArgs] { args =>
-  search(args.query, args.limit.getOrElse(10)).map(ok(_))
-}
+Tool[IO, SearchArgs](args => search(args.query, args.limit.getOrElse(10)).map(ok(_)))
 ```
 
 The tool name is derived from the class name (`SearchArgs` → `"search"`) and the description from the class-level `@description` annotation.
@@ -74,9 +72,7 @@ This generates:
 Use with the server DSL — name and description derived from the class:
 
 ```scala
-Prompt[IO, GreetArgs] { args =>
-  IO.pure(messages(user(s"Hello, ${args.name}!")))
-}
+Prompt[IO, GreetArgs](args => IO.pure(messages(user(s"Hello, ${args.name}!"))))
 ```
 
 ## Supported Types

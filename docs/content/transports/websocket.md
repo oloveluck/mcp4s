@@ -5,14 +5,19 @@ Full-duplex communication over a single persistent connection.
 ## Server
 
 ```scala
-import mcp4s.server.transport.*
+import mcp4s.server.syntax.*
 import com.comcast.ip4s.*
 
-WebSocketTransport.serve[IO](server, WebSocketConfig(
+server.serveWebSocket().useForever          // defaults: port 3000, path /ws
+server.serveWebSocket(port"3001").useForever
+
+// Full configuration
+import mcp4s.server.transport.*
+server.serveWebSocket(WebSocketConfig(
   host = host"0.0.0.0",
   port = port"3000",
   path = "ws"
-))
+)).useForever
 ```
 
 ### WebSocketConfig
@@ -26,15 +31,19 @@ WebSocketTransport.serve[IO](server, WebSocketConfig(
 ## Client
 
 ```scala
-import mcp4s.client.transport.*
+import mcp4s.client.syntax.*
 
-WebSocketClientTransport.connect[IO](client, WebSocketClientConfig(
-  url = "ws://localhost:3000",
-  path = "ws"
-)).use { conn =>
+client.connectWebSocket("ws://localhost:3000").use: conn =>
   conn.callTool("add", args)
-}
+
+// Full configuration
+import mcp4s.client.transport.*
+val config = WebSocketClientConfig(url = "ws://localhost:3000", path = "ws")
+client.connectWebSocket(config).use: conn =>
+  conn.callTool("add", args)
 ```
+
+> The WebSocket client transport is **JVM-only** (it uses http4s `JdkWSClient`).
 
 ### WebSocketClientConfig
 

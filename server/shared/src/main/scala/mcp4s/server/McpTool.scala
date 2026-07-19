@@ -150,7 +150,7 @@ private[server] object McpTool:
     * The handler returns a Stream that emits ToolResult chunks. The final result is produced by
     * compiling the stream (last emitted value).
     */
-  def streaming[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
+  def stream[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
       handler: A => fs2.Stream[F, ToolResult]
   ): Tools[F] =
     val ti   = summon[ToolInput[A]]
@@ -168,8 +168,8 @@ private[server] object McpTool:
           }
         else OptionT.none[F, ToolResult]
 
-  /** Create a streaming tool with context support. */
-  def streamingWithContext[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
+  /** Create a streaming tool with typed arguments and context support. */
+  def streamWithContext[F[_]: Concurrent, A: ToolInput](name: String, description: String)(
       handler: (A, ToolContext[F]) => fs2.Stream[F, ToolResult]
   ): Tools[F] =
     val ti   = summon[ToolInput[A]]
@@ -188,7 +188,7 @@ private[server] object McpTool:
         else OptionT.none[F, ToolResult]
 
   /** Create a streaming tool with no arguments. */
-  def streamingNoArgs[F[_]: Concurrent](name: String, description: String)(
+  def streamNoArgs[F[_]: Concurrent](name: String, description: String)(
       handler: fs2.Stream[F, ToolResult]
   ): Tools[F] =
     val tool = Tool(name, Some(description), JsonSchema.empty)
@@ -197,4 +197,16 @@ private[server] object McpTool:
 
       def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
         if name == tool.name then OptionT.liftF(handler.compile.lastOrError)
+        else OptionT.none[F, ToolResult]
+
+  /** Create a streaming tool with no arguments and context support. */
+  def streamWithContextNoArgs[F[_]: Concurrent](name: String, description: String)(
+      handler: ToolContext[F] => fs2.Stream[F, ToolResult]
+  ): Tools[F] =
+    val tool = Tool(name, Some(description), JsonSchema.empty)
+    new Tools[F]:
+      def list: F[List[Tool]] = Applicative[F].pure(List(tool))
+
+      def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
+        if name == tool.name then OptionT.liftF(handler(ctx).compile.lastOrError)
         else OptionT.none[F, ToolResult]

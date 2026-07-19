@@ -45,8 +45,8 @@ trait ElicitationRequester[F[_]]:
     *   The elicitation request parameters
     * @return
     *   The user's response
-    * @throws McpError.ElicitationNotSupported
-    *   if the client doesn't support elicitation
+    * @throws mcp4s.protocol.McpError
+    *   `McpError.ElicitationNotSupported` if the client doesn't support elicitation
     */
   def elicit(params: ElicitParams): F[ElicitResult]
 

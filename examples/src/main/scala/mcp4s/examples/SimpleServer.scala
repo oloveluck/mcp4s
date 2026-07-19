@@ -21,7 +21,7 @@ import mcp4s.protocol.*
 import mcp4s.server.*
 import mcp4s.server.mcp
 import mcp4s.server.mcp.{ok, user}
-import mcp4s.server.transport.*
+import mcp4s.server.syntax.*
 import org.typelevel.otel4s.trace.Tracer
 
 @description("Add two numbers")
@@ -59,6 +59,5 @@ object SimpleServer extends IOApp.Simple:
 
   def run: IO[Unit] =
     given Tracer[IO] = Tracer.noop[IO]
-    val httpConfig   = HttpConfig[IO]()
     IO.println("Starting Simple MCP Server on http://localhost:3000") *>
-      HttpTransport.serve[IO](server, httpConfig).useForever
+      server.serveHttp().useForever

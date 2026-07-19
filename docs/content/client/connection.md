@@ -19,7 +19,8 @@ conn.supportsPrompts     // Boolean
 Tools are the primary way AI clients interact with servers — calling functions and getting results:
 
 ```scala
-conn.listTools                           // IO[List[Tool]]
+conn.listAllTools                        // IO[List[Tool]] (follows pagination)
+conn.listTools(cursor)                   // IO[(List[Tool], Option[String])] one page
 conn.callTool("name", args)              // IO[ToolResult]
 conn.callToolIfSupported("name", args)   // IO[Option[ToolResult]]
 ```
@@ -29,9 +30,9 @@ conn.callToolIfSupported("name", args)   // IO[Option[ToolResult]]
 Resources provide read access to server-side data via URIs:
 
 ```scala
-conn.listResources              // IO[List[Resource]]
-conn.listResourceTemplates      // IO[List[ResourceTemplate]]
-conn.readResource("uri")        // IO[ResourceContent]
+conn.listAllResources                // IO[List[Resource]]
+conn.listAllResourceTemplates        // IO[List[ResourceTemplate]]
+conn.readResource("uri")             // IO[ResourceContent]
 conn.readResourceIfSupported("uri")  // IO[Option[ResourceContent]]
 ```
 
@@ -40,21 +41,19 @@ conn.readResourceIfSupported("uri")  // IO[Option[ResourceContent]]
 Prompts return reusable message templates for the AI to use:
 
 ```scala
-conn.listPrompts                        // IO[List[Prompt]]
+conn.listAllPrompts                     // IO[List[Prompt]]
 conn.getPrompt("name", args)            // IO[GetPromptResult]
 conn.getPromptIfSupported("name", args) // IO[Option[GetPromptResult]]
 ```
 
-## Streaming
+## Progress
 
-For tools that produce incremental results, use the streaming variant:
+For long-running tools, pass an `onProgress` callback to receive `notifications/progress` as the
+server reports them (over HTTP/SSE or WebSocket):
 
 ```scala
-// Stream tool results as they arrive
-conn.callToolStreaming("search", args): Stream[F, ToolResult]
+conn.callTool("index", args, p => IO.println(s"${p.progress}/${p.total.getOrElse("?")}"))
 ```
-
-Streaming requires a persistent transport (HTTP with SSE or WebSocket).
 
 ## Lifecycle
 

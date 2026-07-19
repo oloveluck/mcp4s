@@ -26,19 +26,18 @@ A server exposes capabilities that AI clients can discover and use. Here's a cal
 import cats.effect.*
 import mcp4s.server.*
 import mcp4s.server.mcp.*
+import mcp4s.server.syntax.*
 import mcp4s.protocol.*
 
 @description("Add two numbers")
 case class AddArgs(a: Double, b: Double) derives ToolInput
 
 object MyServer extends IOApp.Simple:
-  val tools = Tool[IO, AddArgs] { args =>
-    IO.pure(ok(s"${args.a + args.b}"))
-  }
+  val add = Tool[IO, AddArgs](args => IO.pure(ok(s"${args.a + args.b}")))
 
-  val server = Server.fromTools[IO](ServerInfo("calculator", "1.0.0"), tools)
+  val server = Server.fromTools[IO](ServerInfo("calculator", "1.0.0"), add)
 
-  def run: IO[Unit] = server.serveHttp()
+  def run = server.serveHttp().useForever
 ```
 
 The `derives ToolInput` generates a JSON schema from the case class, so AI clients know what arguments the tool accepts. The `@description` annotation on the class becomes the tool description, and the tool name is derived from the class name (`AddArgs` → `"add"`).
@@ -51,9 +50,9 @@ A client connects to a server, discovers its capabilities, and calls tools:
 
 ```scala
 import cats.effect.*
-import io.circe.Json
+import io.circe.Json, io.circe.syntax.*
 import mcp4s.client.*
-import mcp4s.client.transport.*
+import mcp4s.client.syntax.*
 import org.typelevel.otel4s.trace.Tracer
 
 object MyClient extends IOApp.Simple:
@@ -61,11 +60,10 @@ object MyClient extends IOApp.Simple:
 
   val client = McpClient.from[IO](ClientInfo("my-client", "1.0.0"))
 
-  def run: IO[Unit] =
-    HttpClientTransport.connect[IO](client, HttpClientConfig("http://localhost:3000")).use { conn =>
-      conn.callTool("add", Json.obj("a" -> Json.fromDouble(5).get, "b" -> Json.fromDouble(3).get))
-        .flatMap(r => IO.println(s"Result: $r"))
-    }
+  def run = client.connectHttp("http://localhost:3000").use: conn =>
+    conn
+      .callTool("add", Json.obj("a" -> 5.asJson, "b" -> 3.asJson))
+      .flatMap(r => IO.println(s"Result: $r"))
 ```
 
 ## Key Concepts
@@ -82,7 +80,8 @@ val tools = addTool |+| multiplyTool |+| divideTool
 
 **Resource safety** — Connections clean up automatically:
 ```scala
-transport.connect(client, config).use { conn => ... }
+client.connectHttp("http://localhost:3000").use: conn =>
+  conn.callTool("add", args)
 ```
 
 ---

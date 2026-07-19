@@ -25,14 +25,9 @@ import mcp4s.protocol.*
 @description("Add two numbers")
 case class AddArgs(a: Double, b: Double) derives ToolInput
 
-val tools = Tool[IO, AddArgs] { args =>
-  IO.pure(ok(s"${args.a + args.b}"))
-}
+val tools = Tool[IO, AddArgs](args => IO.pure(ok(s"${args.a + args.b}")))
 
-val server = Server.from[IO](
-  info = ServerInfo("calculator", "1.0.0"),
-  tools = tools
-)
+val server = Server.fromTools[IO](ServerInfo("calculator", "1.0.0"), tools)
 ```
 
 ## What mcp4s provides

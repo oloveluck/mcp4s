@@ -17,20 +17,21 @@ Sampling lets a server request LLM completions from the client. This is useful f
 ```scala
 val client = McpClient.from[IO](
   ClientInfo("my-client", "1.0.0"),
-  sampling = Some(Sampling[IO] { params =>
+  sampling = Some(Sampling[IO](params =>
     myLlm.complete(params.messages, params.maxTokens).map(r => message(r.text, r.model))
-  })
+  ))
 )
 ```
 
 **Server** — Request a completion from within a tool:
 ```scala
-Tool.withContext[IO, Args]("smart", "AI tool") { (args, ctx) =>
-  ctx.sampling.createMessage(CreateMessageParams(
-    messages = List(SamplingMessage(Role.User, SamplingTextContent(args.query))),
-    maxTokens = 500
-  )).map(r => ok(r.content.toString))
-}
+Tool.withContext[IO, Args]("smart", "AI tool"): (args, ctx) =>
+  ctx.sampling
+    .createMessage(CreateMessageParams(
+      messages = List(SamplingMessage(Role.User, SamplingTextContent(args.query))),
+      maxTokens = 500
+    ))
+    .map(r => ok(r.content.toString))
 ```
 
 ## Elicitation
@@ -41,20 +42,18 @@ Elicitation lets a server ask the user for input before proceeding. This is esse
 ```scala
 val client = McpClient.from[IO](
   ClientInfo("my-client", "1.0.0"),
-  elicitation = Some(Elicitation[IO] { params =>
+  elicitation = Some(Elicitation[IO](params =>
     askUser(params.message).map(r => if r.confirmed then accept(r.data) else decline)
-  })
+  ))
 )
 ```
 
 **Server** — Ask the user for confirmation:
 ```scala
-Tool.withContext[IO, Args]("delete", "Delete file") { (args, ctx) =>
-  ctx.elicitation.elicit(ElicitParams(s"Delete ${args.path}?")).flatMap {
+Tool.withContext[IO, Args]("delete", "Delete file"): (args, ctx) =>
+  ctx.elicitation.elicit(ElicitParams(s"Delete ${args.path}?")).flatMap:
     case ElicitResult.Accepted(_) => deleteFile(args.path).map(_ => ok("Deleted"))
-    case _ => IO.pure(ok("Cancelled"))
-  }
-}
+    case _                        => IO.pure(ok("Cancelled"))
 ```
 
 ## Progress & Logging
@@ -62,9 +61,8 @@ Tool.withContext[IO, Args]("delete", "Delete file") { (args, ctx) =>
 Servers can also push progress updates and log messages to the client during tool execution:
 
 ```scala
-Tool.withContext[IO, Args]("work", "Do work") { (args, ctx) =>
+Tool.withContext[IO, Args]("work", "Do work"): (args, ctx) =>
   ctx.log(LogLevel.Info, "Starting") *>
     ctx.progress(0.5, Some(100)) *>
     doWork()
-}
 ```

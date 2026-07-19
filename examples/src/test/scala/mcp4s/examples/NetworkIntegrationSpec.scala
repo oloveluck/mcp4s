@@ -22,7 +22,7 @@ import com.comcast.ip4s.port
 import io.circe.Json
 import mcp4s.client.*
 import mcp4s.client.transport.*
-import mcp4s.examples.fixtures.*
+import mcp4s.testkit.*
 import mcp4s.protocol.*
 import mcp4s.server.*
 import mcp4s.server.transport.*

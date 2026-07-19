@@ -18,12 +18,8 @@ case class AddArgs(a: Double, b: Double) derives ToolInput
 case class MultiplyArgs(a: Double, b: Double) derives ToolInput
 
 val tools =
-  Tool[IO, AddArgs] { args =>
-    IO.pure(ok(s"${args.a + args.b}"))
-  } |+|
-  Tool[IO, MultiplyArgs] { args =>
-    IO.pure(ok(s"${args.a * args.b}"))
-  }
+  Tool[IO, AddArgs](args => IO.pure(ok(s"${args.a + args.b}"))) |+|
+    Tool[IO, MultiplyArgs](args => IO.pure(ok(s"${args.a * args.b}")))
 ```
 
 The tool name is derived from the class name (`AddArgs` → `"add"`, `MultiplyArgs` → `"multiply"`) and the description comes from the class-level `@description` annotation.
@@ -34,13 +30,10 @@ Resources expose data that AI clients can read. They're addressed by URI:
 
 ```scala
 val resources =
-  Resource.text[IO]("file:///readme", "README") {
-    "Calculator Server v1.0"
-  } |+|
-  Resource.template[IO]("api://users/{id}", "User", "Get user by ID") { uri =>
-    val id = uri.split("/").last
-    IO.pure(mcp.text(uri, s"""{"id":"$id"}"""))
-  }
+  Resource.text[IO]("file:///readme", "README")("Calculator Server v1.0") |+|
+    Resource.template[IO]("api://users/{id}", "User", "Get user by ID")(uri =>
+      IO.pure(mcp.text(uri, s"""{"id":"${uri.split("/").last}"}"""))
+    )
 ```
 
 ## Define Prompts
@@ -52,9 +45,9 @@ case class GreetArgs(name: String) derives PromptInput
 
 val prompts =
   Prompt[IO]("help", "Get help")(user("How do I use this?")) |+|
-  Prompt[IO, GreetArgs]("greet", "Greet someone") { args =>
-    IO.pure(messages(user(s"Hello, ${args.name}!")))
-  }
+    Prompt[IO, GreetArgs]("greet", "Greet someone")(args =>
+      IO.pure(messages(user(s"Hello, ${args.name}!")))
+    )
 ```
 
 ## Build and Run
@@ -71,14 +64,17 @@ val server = Server.from[IO](
 server.serveHttp()
 
 // HTTP on a custom port
-server.serveHttp(HttpConfig(port = port"8080"))
+server.serveHttp(port"8080")
 
 // Stdio (Claude Desktop)
 server.runStdio
 
-// WebSocket
-WebSocketTransport.serve[IO](server, WebSocketConfig(port = port"3000"))
+// WebSocket — defaults to port 3000, path /ws
+server.serveWebSocket()
+server.serveWebSocket(port"3001")
 ```
+
+All of these come from `import mcp4s.server.syntax.*`.
 
 Everything is built from the composable DSL (`import mcp4s.server.mcp.*`): `Tool`,
 `Resource`, and `Prompt` values compose with `|+|`, and `Server.from` assembles them.

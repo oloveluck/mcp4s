@@ -12,18 +12,14 @@ Clients discover available resources with `listResources`, then fetch them with 
 import mcp4s.server.mcp.*
 
 // Static text
-Resource.text[IO]("file:///readme", "README") { "Hello world" }
+Resource.text[IO]("file:///readme", "README")("Hello world")
 
 // Dynamic (effectful)
-Resource[IO]("file:///status", "Status") {
-  getStatus().map(s => mcp.text("file:///status", s))
-}
+Resource[IO]("file:///status", "Status")(getStatus().map(s => mcp.text("file:///status", s)))
 
 // Template (pattern matching)
-Resource.template[IO]("api://users/{id}", "User", "Get user by ID") { uri =>
-  val id = uri.split("/").last
-  fetchUser(id).map(u => mcp.text(uri, u.toJson))
-}
+Resource.template[IO]("api://users/{id}", "User", "Get user by ID"): uri =>
+  fetchUser(uri.split("/").last).map(u => mcp.text(uri, u.toJson))
 ```
 
 Templates use URI patterns with `{param}` placeholders. Clients discover templates via `listResourceTemplates` and substitute parameters to form concrete URIs.
@@ -51,9 +47,9 @@ val resources = readme |+| config |+| userTemplate
 ```scala
 val resources =
   Resource.text[IO]("file:///readme", "README")("Hello") |+|
-    Resource.handler[IO]("file:///status", "Status") { _ =>
+    Resource.handler[IO]("file:///status", "Status")(_ =>
       getStatus().map(s => ResourceContent.text("file:///status", s))
-    }
+    )
 
 Server.from[IO](ServerInfo("my-server", "1.0.0"), Tools.empty[IO], resources, Prompts.empty[IO])
 ```
@@ -64,14 +60,14 @@ Resources can notify clients when their content changes. Use `subscribable` with
 
 ```scala
 // Change-stream driven — notifies when the stream emits
-Resource.subscribable[IO]("db://status", "DB Status", dbChangeStream) { uri =>
+Resource.subscribable[IO]("db://status", "DB Status", dbChangeStream)(uri =>
   getDbStatus().map(s => mcp.text(uri, s))
-}
+)
 
 // Polling — checks a condition on an interval
-Resource.polling[IO]("file:///config", "Config", 10.seconds, configChanged) { uri =>
+Resource.polling[IO]("file:///config", "Config", 10.seconds, configChanged)(uri =>
   readConfig().map(c => mcp.text(uri, c.toString))
-}
+)
 ```
 
 Clients subscribe via `subscribeResource` and receive `notifications/resources/updated` when changes occur. This works with all persistent transports (HTTP with SSE, WebSocket, Stdio).
@@ -81,17 +77,10 @@ Clients subscribe via `subscribeResource` and receive `notifications/resources/u
 A more realistic template exposing database records:
 
 ```scala
-Resource.template[IO](
-  "db://orders/{orderId}",
-  "Order",
-  "Fetch order by ID"
-) { uri =>
-  val orderId = uri.split("/").last
-  orderRepo.findById(orderId).flatMap {
+Resource.template[IO]("db://orders/{orderId}", "Order", "Fetch order by ID"): uri =>
+  orderRepo.findById(uri.split("/").last).flatMap:
     case Some(order) => IO.pure(mcp.text(uri, order.toJson))
     case None        => IO.raiseError(McpError.ResourceNotFound(uri))
-  }
-}
 ```
 
 ---

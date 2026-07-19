@@ -34,8 +34,9 @@ import mcp4s.protocol.Codecs.given
   *   - List and read resources
   *   - List and get prompts
   *
-  * Connections are created via transport-specific methods like
-  * [[mcp4s.transport.http.HttpClientTransport.connect]].
+  * Connections are created via the transport-selection syntax (`import mcp4s.client.syntax.*`) —
+  * `client.connectHttp`, `client.connectStdio`, `client.connectWebSocket` — or directly via a
+  * transport object such as [[mcp4s.client.transport.HttpClientTransport]].
   */
 trait McpConnection[F[_]]:
 

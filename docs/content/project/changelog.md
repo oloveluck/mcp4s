@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Docs
+- Refreshed all guide examples to modern braceless Scala 3 syntax and the current fluent APIs (`server.serveHttp`/`client.connectHttp`, `listAll*`, `.asJson`), and fixed several stale snippets (e.g. `serveHttp()` needs `.useForever`, `McpError` is an `enum`, the non-existent `conn.callToolStreaming`).
+
+### Performance
+- **List responses are no longer re-encoded on every call.** The dispatcher caches the encoded `tools/list` / `resources/list` / `resources/templates/list` / `prompts/list` JSON, keyed by the source list (re-encoded only when it changes, e.g. on `list_changed`). Measured **−80%** allocations on `tools/list` (28.9 KB → 5.7 KB per call).
+- **URI-template resource matching compiles its regex once** per template instead of on every `resources/read` — **−28%** allocations on a templated read (10.8 KB → 7.8 KB). Guarded by `benchmarks/results/baseline.json`.
+
+### Fixed
+- **WebSocket client no longer stalls under sustained load.** Reimplemented the JVM WebSocket client transport on http4s `JdkWSClient` (high-level `WSConnectionHighLevel`) instead of sttp's `HttpClientFs2Backend`. A 4,000-call / concurrency-8 run that previously hung indefinitely now completes with 0 failures at ~4,100 calls/sec (p50 1.5 ms, p99 7.6 ms) — faster than HTTP. The `sttp-client4` dependency is dropped; WebSocket remains JVM-only.
+
+### Changed (breaking)
+- Renamed the streaming tool constructors to align with `fs2.Stream` and the `withContext` modifier: `Tool.streaming` → `Tool.stream` and `Tool.streamingWithContext` → `Tool.streamWithContext` (no deprecated aliases)
+
+### Added
+- Exposed `Tool.streamWithContext` in the public DSL (typed and no-argument overloads); previously a streaming + context tool could only be built via the internal `McpTool`
+- Symmetric, fluent transport selection — pick a transport with one extension method on the value you already hold:
+  - **Server** (`import mcp4s.server.syntax.*`): added `server.serveWebSocket(...)` (previously only `WebSocketTransport.serve` was available) plus bare-`Port` convenience overloads `serveHttp(port)` / `serveWebSocket(port)`
+  - **Client** (new `import mcp4s.client.syntax.*`): `client.connectStdio(...)` / `connectHttp(...)` / `connectWebSocket(...)`, each returning `Resource[F, McpConnection[F]]`, with `command`/`args` and bare-URL convenience overloads. On the JVM, `connectHttp(url)` builds and manages an Ember client for you, and `connectWebSocket` is available (JVM-only, as before)
+  - Purely additive — the `*Transport` objects remain for custom http4s routes/middleware and non-Ember client backends
+- **`mcp4s-testkit`** — a new cross-platform (JVM/JS/Native), published module with reusable test fixtures (`TestServers` configurable/chaotic/counting servers, `DeterministicClients`) for testing MCP servers and clients. Extracted from the examples' internal fixtures so downstream users can depend on it too.
+- **`benchmarks`** module (JVM-only, not published) — JMH microbenchmarks for the in-memory request hot path (`DispatcherBench`: dispatch, decode, encode), tool lookup vs N tools (`ToolLookupBench`), and the resource-template regex hotspot (`ResourceTemplateBench`); plus an end-to-end throughput/latency driver (`ThroughputDriver`, HdrHistogram). A committed `benchmarks/results/baseline.json` and a documented **allocations-per-op** (`gc.alloc.rate.norm`) comparison workflow make this a reliable cross-version regression measure. See `BENCHMARKS.md`.
+- **Compliance + performance harness in `mcp4s-testkit`** (JVM, built on [weaver](https://github.com/typelevel/weaver-test)) — point it at any `Server[IO]` to get a profile:
+  - `McpComplianceSuite` — a capability-parameterized suite (via `ComplianceProfile` + `ToolProbe`/`ResourceProbe`/`PromptProbe`) that checks protocol correctness over live HTTP **and** WebSocket, skipping checks for capabilities a server doesn't declare
+  - `McpBenchmark.run` (returns a `PerfReport`) and `McpPerformanceSuite` — a concurrent load run that reports throughput/latency (HdrHistogram) and asserts `PerfProfile` SLOs (failure rate / throughput / p99); a one-liner against any `Server[IO]`
+  - The weaver code is **JVM-only** (`testkit/.jvm`); the cross-platform fixtures are unchanged. `weaver-cats` becomes a JVM compile-scope dependency of the published `mcp4s-testkit`. See the [Testing guide](../testing/README.md).
+
 ## 0.2.0 - 2026-06-20
 
 ### Build

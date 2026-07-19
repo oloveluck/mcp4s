@@ -31,10 +31,10 @@ class McpStreamingToolSpec extends CatsEffectSuite:
 
   // === McpTool Streaming Tests ===
 
-  test("McpTool.streaming creates tool with streaming handler") {
+  test("McpTool.stream creates tool with streaming handler") {
     case class CountArgs(count: Int) derives ToolInput
 
-    val streamingTool = McpTool.streaming[IO, CountArgs]("count", "Count to N") { args =>
+    val streamingTool = McpTool.stream[IO, CountArgs]("count", "Count to N") { args =>
       Stream.range(1, args.count + 1).map(n => ToolResult.text(s"Count: $n"))
     }
 
@@ -56,8 +56,8 @@ class McpStreamingToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpTool.streamingNoArgs creates streaming tool without args") {
-    val streamingTool = McpTool.streamingNoArgs[IO]("tick", "Emit ticks") {
+  test("McpTool.streamNoArgs creates streaming tool without args") {
+    val streamingTool = McpTool.streamNoArgs[IO]("tick", "Emit ticks") {
       Stream.emits(
         List(
           ToolResult.text("tick 1"),
@@ -76,10 +76,10 @@ class McpStreamingToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpTool.streaming returns None for unknown tool") {
+  test("McpTool.stream returns None for unknown tool") {
     case class Args(x: Int) derives ToolInput
 
-    val tool = McpTool.streaming[IO, Args]("known", "Known tool") { _ =>
+    val tool = McpTool.stream[IO, Args]("known", "Known tool") { _ =>
       Stream.emit(ToolResult.text("ok"))
     }
 
@@ -89,10 +89,10 @@ class McpStreamingToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpTool.streaming handles errors in stream") {
+  test("McpTool.stream handles errors in stream") {
     case class Args(fail: Boolean) derives ToolInput
 
-    val tool = McpTool.streaming[IO, Args]("maybe-fail", "Maybe fails") { args =>
+    val tool = McpTool.stream[IO, Args]("maybe-fail", "Maybe fails") { args =>
       if args.fail then Stream.raiseError[IO](new RuntimeException("Intentional failure"))
       else Stream.emit(ToolResult.text("success"))
     }
@@ -117,7 +117,7 @@ class McpStreamingToolSpec extends CatsEffectSuite:
     case class Args1(x: Int) derives ToolInput
     case class Args2(y: String) derives ToolInput
 
-    val streamingTool = McpTool.streaming[IO, Args1]("stream-tool", "Streaming tool") { args =>
+    val streamingTool = McpTool.stream[IO, Args1]("stream-tool", "Streaming tool") { args =>
       Stream.range(1, args.x + 1).map(n => ToolResult.text(s"chunk $n"))
     }
 
@@ -147,11 +147,11 @@ class McpStreamingToolSpec extends CatsEffectSuite:
     case class Args1(x: Int) derives ToolInput
     case class Args2(y: String) derives ToolInput
 
-    val tool1 = McpTool.streaming[IO, Args1]("tool1", "First tool") { args =>
+    val tool1 = McpTool.stream[IO, Args1]("tool1", "First tool") { args =>
       Stream.emit(ToolResult.text(s"Tool1: ${args.x}"))
     }
 
-    val tool2 = McpTool.streaming[IO, Args2]("tool2", "Second tool") { args =>
+    val tool2 = McpTool.stream[IO, Args2]("tool2", "Second tool") { args =>
       Stream.emit(ToolResult.text(s"Tool2: ${args.y}"))
     }
 
@@ -171,10 +171,10 @@ class McpStreamingToolSpec extends CatsEffectSuite:
 
   // === Context-aware Streaming Tool Tests ===
 
-  test("McpTool.streamingWithContext passes context to handler") {
+  test("McpTool.streamWithContext passes context to handler") {
     case class LogArgs(count: Int) derives ToolInput
 
-    val tool = McpTool.streamingWithContext[IO, LogArgs]("log", "Log with context") { (args, ctx) =>
+    val tool = McpTool.streamWithContext[IO, LogArgs]("log", "Log with context") { (args, ctx) =>
       Stream.range(1, args.count + 1).evalMap { n =>
         ctx.log(LogLevel.Info, s"Processing $n").as(ToolResult.text(s"Done: $n"))
       }
@@ -186,5 +186,38 @@ class McpStreamingToolSpec extends CatsEffectSuite:
 
       result <- tool.call("log", Json.obj("count" -> 2.asJson), minimalCtx).value
       _ = assertEquals(result.map(_.textContent), Some("Done: 2"))
+    yield ()
+  }
+
+  test("mcp.Tool.streamWithContext (DSL) exposes the typed context + streaming variant") {
+    case class LogArgs(count: Int) derives ToolInput
+
+    val tool = mcp.Tool.streamWithContext[IO, LogArgs]("dsl-log", "DSL log with context") {
+      (args, ctx) =>
+        Stream.range(1, args.count + 1).evalMap { n =>
+          ctx.log(LogLevel.Info, s"step $n").as(ToolResult.text(s"Done: $n"))
+        }
+    }
+
+    for
+      tools <- tool.list
+      _ = assertEquals(tools.head.name, "dsl-log")
+      result <- tool.call("dsl-log", Json.obj("count" -> 3.asJson), minimalCtx).value
+      _ = assertEquals(result.map(_.textContent), Some("Done: 3"))
+    yield ()
+  }
+
+  test("mcp.Tool.streamWithContext (DSL) supports the no-arg context + streaming variant") {
+    val tool = mcp.Tool.streamWithContext[IO]("ticks", "Stream ticks with context") { ctx =>
+      Stream
+        .range(1, 3)
+        .evalMap(n => ctx.log(LogLevel.Info, s"tick $n").as(ToolResult.text(s"tick $n")))
+    }
+
+    for
+      tools <- tool.list
+      _ = assertEquals(tools.head.inputSchema, JsonSchema.empty)
+      result <- tool.call("ticks", Json.obj(), minimalCtx).value
+      _ = assertEquals(result.map(_.textContent), Some("tick 2"))
     yield ()
   }

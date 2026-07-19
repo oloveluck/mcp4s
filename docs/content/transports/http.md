@@ -9,21 +9,22 @@ The client sends JSON-RPC requests via HTTP POST, and the server streams respons
 ## Server
 
 ```scala
-import mcp4s.server.transport.*
+import mcp4s.server.syntax.*
 
 // Simple — starts an Ember server on port 3000
 server.serveHttp().useForever
 
 // With custom port
-server.serveHttp(HttpConfig(port = port"8080")).useForever
+server.serveHttp(port"8080").useForever
 
 // With full config
-HttpTransport.serve[IO](server, HttpConfig(
+import mcp4s.server.transport.*
+server.serveHttp(HttpConfig(
   host = host"0.0.0.0",
   port = port"3000",
   path = "mcp",
   enableSessions = true
-))
+)).useForever
 ```
 
 ### Composable Routes
@@ -36,20 +37,11 @@ import org.http4s.server.middleware.CORS
 import org.http4s.server.Router
 import org.http4s.ember.server.EmberServerBuilder
 
-HttpTransport.routes[IO](server).flatMap { mcpRoutes =>
-  // Wrap with CORS
-  val withCors = CORS.policy
-    .withAllowOriginAll
-    .withAllowCredentials(false)
-    .apply(mcpRoutes)
-
-  // Combine with your own routes
+HttpTransport.routes[IO](server).flatMap: mcpRoutes =>
+  // Wrap with CORS, combine with your own routes
+  val withCors  = CORS.policy.withAllowOriginAll.withAllowCredentials(false).apply(mcpRoutes)
   val allRoutes = withCors <+> myAppRoutes
-
-  EmberServerBuilder.default[IO]
-    .withHttpApp(Router("/" -> allRoutes).orNotFound)
-    .build
-}
+  EmberServerBuilder.default[IO].withHttpApp(Router("/" -> allRoutes).orNotFound).build
 ```
 
 See [HTTP Security](../server/auth.md) for authentication middleware examples.
@@ -57,23 +49,30 @@ See [HTTP Security](../server/auth.md) for authentication middleware examples.
 ## Client
 
 ```scala
+import mcp4s.client.syntax.*
+
+// JVM one-liner — builds and manages an Ember client for you
+client.connectHttp("http://localhost:3000").use(conn => ...)
+
+// Cross-platform — bring your own http4s Client[F]
+client.connectHttp("http://localhost:3000", httpClient).use(conn => ...)
+
+// Custom endpoint via config
 import mcp4s.client.transport.*
+val config = HttpClientConfig(baseUrl = "http://localhost:3000", endpoint = "/mcp")
+client.connectHttp(config, httpClient).use(conn => ...)
+```
 
-HttpClientTransport.connect[IO](client, HttpClientConfig(
-  baseUrl = "http://localhost:3000",
-  endpoint = "/mcp"
-), httpClient).use { conn => ... }
+For retry/timeout, compose standard http4s middleware on the `Client[F]` you pass in (the
+cross-platform overload), then connect:
 
-// With retry/timeout via http4s middleware
+```scala
 import org.http4s.client.middleware.{Retry, RetryPolicy, Timeout}
 
 val retryPolicy = RetryPolicy[IO](RetryPolicy.exponentialBackoff(maxWait = 10.seconds, maxRetry = 3))
 val resilientClient = Timeout(30.seconds)(Retry(retryPolicy)(httpClient))
 
-HttpClientTransport.connect[IO](client, HttpClientConfig(
-  baseUrl = "http://localhost:3000",
-  endpoint = "/mcp"
-), resilientClient).use { conn => ... }
+client.connectHttp("http://localhost:3000", resilientClient).use(conn => ...)
 ```
 
 ## Features

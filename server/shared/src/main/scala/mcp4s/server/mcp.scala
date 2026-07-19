@@ -240,29 +240,54 @@ object mcp:
       * Example:
       * {{{
       * case class SearchArgs(query: String) derives ToolInput
-      * val search = Tool.streaming[IO, SearchArgs]("search", "Stream results") { args =>
+      * val search = Tool.stream[IO, SearchArgs]("search", "Stream results") { args =>
       *   searchService.results(args.query).map(r => ok(r.toString))
       * }
       * }}}
       */
-    def streaming[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(
+    def stream[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(
         f: A => fs2.Stream[F, ToolResult]
     ): Tools[F] =
-      McpTool.streaming[F, A](name, desc)(f)
+      McpTool.stream[F, A](name, desc)(f)
 
     /** Create a streaming tool with no arguments.
       *
       * Example:
       * {{{
-      * val ticks = Tool.streaming[IO]("tick", "Emit ticks") {
+      * val ticks = Tool.stream[IO]("tick", "Emit ticks") {
       *   Stream.emits(List(ok("tick 1"), ok("tick 2")))
       * }
       * }}}
       */
-    def streaming[F[_]: Concurrent](name: String, desc: String)(
+    def stream[F[_]: Concurrent](name: String, desc: String)(
         f: fs2.Stream[F, ToolResult]
     ): Tools[F] =
-      McpTool.streamingNoArgs[F](name, desc)(f)
+      McpTool.streamNoArgs[F](name, desc)(f)
+
+    /** Create a streaming tool with typed arguments and context support.
+      *
+      * The handler additionally receives the [[ToolContext]] for progress reporting, logging,
+      * sampling, and elicitation while it streams.
+      *
+      * Example:
+      * {{{
+      * case class SearchArgs(query: String) derives ToolInput
+      * val search = Tool.streamWithContext[IO, SearchArgs]("search", "Search with progress") {
+      *   (args, ctx) =>
+      *     searchService.results(args.query).evalMap(r => ctx.progress(1, None).as(ok(r.toString)))
+      * }
+      * }}}
+      */
+    def streamWithContext[F[_]: Concurrent, A: ToolInput](name: String, desc: String)(
+        f: (A, ToolContext[F]) => fs2.Stream[F, ToolResult]
+    ): Tools[F] =
+      McpTool.streamWithContext[F, A](name, desc)(f)
+
+    /** Create a streaming tool with no arguments and context support. */
+    def streamWithContext[F[_]: Concurrent](name: String, desc: String)(
+        f: ToolContext[F] => fs2.Stream[F, ToolResult]
+    ): Tools[F] =
+      McpTool.streamWithContextNoArgs[F](name, desc)(f)
 
     /** Create a tool with typed output. */
     def typed[F[_]: Concurrent, A: ToolInput, B](name: String, desc: String)(

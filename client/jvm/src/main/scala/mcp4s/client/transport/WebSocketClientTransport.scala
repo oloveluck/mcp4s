@@ -16,20 +16,17 @@
 
 package mcp4s.client.transport
 
-import cats.effect.{Async, Deferred, Ref, Resource as CatsResource}
+import cats.effect.{Async, Ref, Resource as CatsResource}
 import cats.effect.std.Queue
-import cats.effect.syntax.monadCancel.*
+import cats.effect.syntax.all.*
 import cats.syntax.all.*
-import fs2.{Pipe, Stream}
-import fs2.concurrent.SignallingRef
+import fs2.Stream
 import io.circe.*
 import io.circe.parser.*
 import io.circe.syntax.*
-import sttp.capabilities.fs2.Fs2Streams
-import sttp.client4.*
-import sttp.client4.httpclient.fs2.HttpClientFs2Backend
-import sttp.client4.ws.stream.*
-import sttp.ws.WebSocketFrame
+import org.http4s.Uri
+import org.http4s.client.websocket.{WSClient, WSDataFrame, WSFrame, WSRequest}
+import org.http4s.jdkhttpclient.JdkWSClient
 import org.typelevel.otel4s.trace.Tracer
 import mcp4s.RequestCorrelator
 import mcp4s.client.{ClientDispatcher, McpClient, McpConnection}
@@ -54,6 +51,9 @@ final case class WebSocketClientConfig(
   *
   * Connects to an MCP server via a single bidirectional WebSocket connection. This provides lower
   * latency than HTTP/SSE and simplifies connection management.
+  *
+  * JVM-only: built on http4s `JdkWSClient`, which uses `java.net.http` (JDK 11+). The high-level
+  * connection handles ping/pong and close frames automatically.
   */
 object WebSocketClientTransport:
 
@@ -71,11 +71,11 @@ object WebSocketClientTransport:
       config: WebSocketClientConfig
   )(using Tracer[F]): CatsResource[F, McpConnection[F]] =
     for
-      backend          <- HttpClientFs2Backend.resource[F]()
+      wsClient         <- CatsResource.eval(JdkWSClient.simple[F])
       clientDispatcher <- CatsResource.eval(ClientDispatcher[F](client))
       connection <- establishConnection(
         client,
-        backend,
+        wsClient,
         clientDispatcher,
         config,
         summon[Tracer[F]]
@@ -84,28 +84,29 @@ object WebSocketClientTransport:
 
   private def establishConnection[F[_]: Async](
       client: McpClient[F],
-      backend: WebSocketStreamBackend[F, Fs2Streams[F]],
+      wsClient: WSClient[F],
       clientDispatcher: ClientDispatcher[F],
       config: WebSocketClientConfig,
       tracer: Tracer[F]
   ): CatsResource[F, McpConnection[F]] =
-    val wsUrl = s"${config.url}/${config.path}"
+    val uri = Uri.unsafeFromString(s"${config.url}/${config.path}")
 
     for
       // Correlates server responses back to in-flight client requests.
       correlator <- CatsResource.eval(RequestCorrelator[F])
-      // Queue for outgoing messages (bounded with backpressure)
-      outQueue <- CatsResource.eval(Queue.bounded[F, WebSocketFrame](config.maxQueueSize))
-      // Indirection for progress handlers - set after connection creation
+      // Queue for outgoing data frames (bounded, with backpressure).
+      outQueue <- CatsResource.eval(Queue.bounded[F, WSDataFrame](config.maxQueueSize))
+      // Indirection for progress handlers - set after connection creation.
       progressHandlersRef <- CatsResource.eval(
         Ref.of[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]](None)
       )
-      // Deferred to signal initialization complete and pass the connection
-      connectionDeferred <- CatsResource.eval(Deferred[F, McpConnection[F]])
-      // Signal to trigger initialization after streams are running
-      initSignal <- CatsResource.eval(SignallingRef.of[F, Boolean](false))
 
-      // Handle incoming messages
+      // Establish the live WebSocket connection (high-level: control frames handled for us).
+      wsConn <- wsClient.connectHighLevel(WSRequest(uri))
+
+      // Fail all pending requests when the connection closes.
+      cleanupPendingRequests = correlator.cancelAll(JsonRpcError(-32000, "Connection closed", None))
+
       handleIncoming = (text: String) =>
         decode[JsonRpcMessage](text) match
           case Right(response: JsonRpcResponse) =>
@@ -116,9 +117,8 @@ object WebSocketClientTransport:
 
           case Right(request: JsonRpcRequest) =>
             clientDispatcher.dispatch(request).flatMap {
-              case Some(response) =>
-                outQueue.offer(WebSocketFrame.text(response.asJson.noSpaces))
-              case None => Async[F].unit
+              case Some(response) => outQueue.offer(WSFrame.Text(response.asJson.noSpaces))
+              case None           => Async[F].unit
             }
 
           case Right(notif: JsonRpcNotification) if notif.method == McpMethod.Progress =>
@@ -129,25 +129,30 @@ object WebSocketClientTransport:
               })
             }
 
-          case Right(_: JsonRpcNotification) =>
-            Async[F].unit
+          case Right(_: JsonRpcNotification) => Async[F].unit
+          case Left(_)                       => Async[F].unit
 
-          case Left(_) =>
-            Async[F].unit
-
-      // Create the sendRequest function
       sendRequest = (req: JsonRpcRequest) =>
         correlator.request(req.id, config.requestTimeout):
-          outQueue.offer(WebSocketFrame.text(req.asJson.noSpaces))
+          outQueue.offer(WSFrame.Text(req.asJson.noSpaces))
 
-      // Create the sendNotification function
       sendNotification = (notif: JsonRpcNotification) =>
-        outQueue.offer(WebSocketFrame.text(notif.asJson.noSpaces))
+        outQueue.offer(WSFrame.Text(notif.asJson.noSpaces))
 
-      // Cleanup function - fails all pending requests when the connection closes
-      cleanupPendingRequests = correlator.cancelAll(JsonRpcError(-32000, "Connection closed", None))
+      // Pump outgoing frames from the queue to the socket.
+      _ <- Stream.fromQueueUnterminated(outQueue).evalMap(wsConn.send).compile.drain.background
 
-      // Initialization logic - runs after streams are active
+      // Process incoming frames; clean up pending requests when the stream ends (socket closed).
+      _ <- wsConn.receiveStream
+        .evalMap {
+          case WSFrame.Text(text, _) => handleIncoming(text)
+          case _                     => Async[F].unit
+        }
+        .compile
+        .drain
+        .guarantee(cleanupPendingRequests)
+        .background
+
       initRequest = JsonRpcRequest(
         RequestId.NumberId(1),
         McpMethod.Initialize,
@@ -159,11 +164,10 @@ object WebSocketClientTransport:
           ).asJson
         )
       )
+
       doInit = for
-        initResult <- sendRequest(initRequest).flatMap { result =>
-          result.as[InitializeResult].liftTo[F]
-        }
-        _ <- sendNotification(JsonRpcNotification(McpMethod.Initialized, None))
+        initResult <- sendRequest(initRequest).flatMap(_.as[InitializeResult].liftTo[F])
+        _          <- sendNotification(JsonRpcNotification(McpMethod.Initialized, None))
         conn <- McpConnection[F](
           initResult.serverInfo,
           initResult.capabilities,
@@ -172,43 +176,13 @@ object WebSocketClientTransport:
           tracer
         )
         _ <- progressHandlersRef.set(Some(conn.progressHandlers))
-        _ <- connectionDeferred.complete(conn)
-      yield ()
+      yield conn
 
-      // WebSocket frame processing pipe
-      wsPipe: Pipe[F, WebSocketFrame.Data[?], WebSocketFrame] = incoming =>
-        // Outgoing frames from queue
-        val outgoing = Stream.fromQueueUnterminated(outQueue)
-
-        // Process incoming frames
-        val incomingProcessed = incoming.evalMap {
-          case WebSocketFrame.Text(text, _, _) => handleIncoming(text)
-          case _                               => Async[F].unit
-        }.drain
-
-        // Signal that streams are ready, then keep running
-        val signalReady = Stream.eval(initSignal.set(true)).drain
-
-        // Merge all streams: signal ready, then process in/out concurrently
-        signalReady ++ outgoing.mergeHaltBoth(incomingProcessed)
-
-      // Start WebSocket connection in background with cleanup on termination
-      _ <- CatsResource.make(
-        Async[F].start {
-          basicRequest
-            .get(uri"$wsUrl")
-            .response(asWebSocketStream(Fs2Streams[F])(wsPipe))
-            .send(backend)
-            .void
-            .guarantee(cleanupPendingRequests) // Clean up pending requests on any termination
-        }
-      )(fiber => fiber.cancel)
-
-      // Wait for streams to be ready, then initialize (with timeout and error handling)
-      _ <- CatsResource.eval {
+      // Run the initialize handshake with a timeout; clean up on failure so nothing hangs.
+      connection <- CatsResource.eval(
         Async[F]
           .timeoutTo(
-            initSignal.waitUntil(identity) *> doInit,
+            doInit,
             config.initTimeout,
             cleanupPendingRequests *> Async[F].raiseError(
               McpError.InternalError(
@@ -216,12 +190,6 @@ object WebSocketClientTransport:
               )
             )
           )
-          .onError { _ =>
-            // On init failure, cleanup so pending requests don't hang
-            cleanupPendingRequests
-          }
-      }
-
-      // Get the connection
-      connection <- CatsResource.eval(connectionDeferred.get)
+          .onError(_ => cleanupPendingRequests)
+      )
     yield connection

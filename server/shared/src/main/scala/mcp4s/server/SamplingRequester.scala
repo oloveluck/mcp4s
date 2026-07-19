@@ -43,8 +43,8 @@ trait SamplingRequester[F[_]]:
     *   The sampling request parameters
     * @return
     *   The LLM response from the client
-    * @throws McpError.SamplingNotSupported
-    *   if the client doesn't support sampling
+    * @throws mcp4s.protocol.McpError
+    *   `McpError.SamplingNotSupported` if the client doesn't support sampling
     */
   def createMessage(params: CreateMessageParams): F[CreateMessageResult]
 

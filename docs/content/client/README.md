@@ -20,8 +20,8 @@ import mcp4s.client.mcp.*
 val client = McpClient.from[IO](
   ClientInfo("my-client", "1.0.0"),
   roots = Some(Roots[IO]("file:///workspace", "Workspace")),
-  sampling = Some(Sampling[IO] { params => myLlm.complete(params) }),
-  elicitation = Some(Elicitation[IO] { params => askUser(params) })
+  sampling = Some(Sampling[IO](params => myLlm.complete(params))),
+  elicitation = Some(Elicitation[IO](params => askUser(params)))
 )
 ```
 
@@ -32,20 +32,27 @@ A `Tracer[IO]` is needed as a type-class instance. Use `Tracer.noop` to disable 
 ## Connecting
 
 ```scala
-import mcp4s.client.transport.*
+import mcp4s.client.syntax.*
 
-// HTTP
-HttpClientTransport.connect[IO](client, HttpClientConfig("http://localhost:3000"), httpClient).use { conn =>
-  conn.callTool("add", args)
-}
+// Stdio — spawn a subprocess
+client.connectStdio("node", "server.js").use(conn => conn.callTool("add", args))
 
-// WebSocket
-WebSocketClientTransport.connect[IO](client, WebSocketClientConfig("ws://localhost:3000")).use { conn =>
-  conn.callTool("add", args)
-}
+// HTTP — JVM one-liner (builds/manages an Ember client for you)
+client.connectHttp("http://localhost:3000").use(conn => conn.callTool("add", args))
+
+// HTTP — cross-platform: bring your own http4s Client[F]
+client.connectHttp("http://localhost:3000", httpClient).use(conn => conn.callTool("add", args))
+
+// WebSocket (JVM-only)
+client.connectWebSocket("ws://localhost:3000").use(conn => conn.callTool("add", args))
 ```
 
 The connection is a `Resource` — it handles initialization, capability negotiation, and cleanup automatically.
+
+> `connectWebSocket` and the no-`Client` `connectHttp` are JVM-only. On JS/Native, use the
+> cross-platform `connectHttp(url, httpClient)` / `connectStdio` and supply a platform
+> `Client[F]`. For custom backends or middleware, call `HttpClientTransport` /
+> `WebSocketClientTransport` / `StdioClientTransport` directly.
 
 ## Retry & Timeout
 
@@ -58,9 +65,9 @@ import scala.concurrent.duration.*
 val retryPolicy = RetryPolicy[IO](RetryPolicy.exponentialBackoff(maxWait = 10.seconds, maxRetry = 3))
 val resilientClient = Timeout(30.seconds)(Retry(retryPolicy)(rawHttpClient))
 
-HttpClientTransport.connect[IO](client, config, resilientClient).use { conn =>
+// Pass the wrapped client to the cross-platform connectHttp overload
+client.connectHttp("http://localhost:3000", resilientClient).use: conn =>
   conn.callTool("operation", args)
-}
 ```
 
 For WebSocket/Stdio transports, reconnection (re-establishing the transport) is the appropriate strategy for connection failures rather than per-message retry.

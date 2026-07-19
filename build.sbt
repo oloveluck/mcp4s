@@ -63,11 +63,13 @@ val Circe           = "0.14.15"
 val Fs2             = "3.13.0"
 val Http4s          = "0.23.34"
 val Otel4s          = "1.0.1"
-val Sttp            = "4.0.25"
+val JdkHttpClient   = "0.9.2"
 val ScodecBits      = "1.2.5"
 val MunitCatsEffect = "2.2.0"
 val MunitScalaCheck = "1.3.0"
 val Laika           = "1.3.2"
+val Weaver          = "0.10.1"
+val HdrHistogram    = "2.2.2"
 
 lazy val commonSettings = Seq(
   scalacOptions ++= Seq(
@@ -83,7 +85,7 @@ lazy val commonSettings = Seq(
   )
 )
 
-lazy val root = tlCrossRootProject.aggregate(core, server, client, examples)
+lazy val root = tlCrossRootProject.aggregate(core, server, client, testkit, examples, benchmarks)
 
 lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
   .crossType(CrossType.Full)
@@ -135,10 +137,31 @@ lazy val client = crossProject(JVMPlatform, JSPlatform, NativePlatform)
       "org.typelevel" %%% "otel4s-core"         % Otel4s
     )
   )
-  // The WebSocket client transport is JVM-only: sttp's fs2 WebSocket backend
-  // (HttpClientFs2Backend) wraps java.net.http and has no JS/Native build.
+  // The WebSocket client transport is JVM-only: http4s's JdkWSClient is built on
+  // java.net.http (JDK 11+) and has no JS/Native build.
   .jvmSettings(
-    libraryDependencies += "com.softwaremill.sttp.client4" %% "fs2" % Sttp
+    libraryDependencies += "org.http4s" %% "http4s-jdk-http-client" % JdkHttpClient
+  )
+
+// Reusable, cross-platform test fixtures (configurable servers + deterministic
+// clients) for exercising mcp4s servers/clients. Published so downstream users can
+// test their own MCP servers, and reused by `examples` tests and `benchmarks`.
+lazy val testkit = crossProject(JVMPlatform, JSPlatform, NativePlatform)
+  .crossType(CrossType.Pure)
+  .in(file("testkit"))
+  .dependsOn(server, client)
+  .settings(name := "mcp4s-testkit")
+  .settings(commonSettings)
+  // The weaver-based compliance/performance harness runs live ember servers and uses
+  // HdrHistogram, so it is JVM-only (sources under testkit/.jvm/src). weaver-cats is a
+  // compile-scope dep so the abstract suites can live in `main` for downstream users.
+  .jvmSettings(
+    libraryDependencies ++= Seq(
+      "org.typelevel"    %% "weaver-cats"  % Weaver,
+      "org.hdrhistogram"  % "HdrHistogram" % HdrHistogram
+    ),
+    testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
+    Test / parallelExecution := false
   )
 
 // Examples are JVM-only: they run the ember server and provide a concrete
@@ -146,13 +169,29 @@ lazy val client = crossProject(JVMPlatform, JSPlatform, NativePlatform)
 lazy val examples = project
   .in(file("examples"))
   .enablePlugins(NoPublishPlugin)
-  .dependsOn(server.jvm, client.jvm)
+  .dependsOn(server.jvm, client.jvm, testkit.jvm)
   .settings(commonSettings)
   .settings(
     name                                   := "mcp4s-examples",
     libraryDependencies += "org.typelevel" %% "otel4s-oteljava" % Otel4s,
     // Integration tests bind ember servers to ports; run them sequentially.
     Test / parallelExecution := false
+  )
+
+// JVM-only performance benchmarks: JMH microbenchmarks for the request hot path
+// plus an end-to-end throughput/latency driver. Run with `benchmarks/Jmh/run`.
+lazy val benchmarks = project
+  .in(file("benchmarks"))
+  .enablePlugins(NoPublishPlugin, JmhPlugin)
+  .dependsOn(server.jvm, client.jvm, testkit.jvm)
+  .settings(
+    name := "mcp4s-benchmarks",
+    // JMH-generated harness code and the benchmark bodies legitimately discard
+    // values / use non-unit statements, so relax those lints for this module only.
+    scalacOptions ~= (_.filterNot(
+      Set("-Wnonunit-statement", "-Wvalue-discard", "-Wunused:all")
+    )),
+    libraryDependencies += "org.hdrhistogram" % "HdrHistogram" % "2.2.2"
   )
 
 // Documentation site, generated from docs/content with Laika (JVM-only).

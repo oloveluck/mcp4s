@@ -29,22 +29,12 @@ val authUser: Kleisli[OptionT[IO, *], Request[IO], String] =
 
 val bearerAuth: AuthMiddleware[IO, String] = AuthMiddleware(authUser)
 
-HttpTransport.routes[IO](server).flatMap { mcpRoutes =>
+HttpTransport.routes[IO](server).flatMap: mcpRoutes =>
   // 2. Wrap MCP routes with bearer-token auth
-  val authed = bearerAuth(AuthedRoutes { req =>
-    mcpRoutes.run(req.req)
-  })
-
+  val authed = bearerAuth(AuthedRoutes(req => mcpRoutes.run(req.req)))
   // 3. Apply CORS
-  val withCors = CORS.policy
-    .withAllowOriginAll
-    .withAllowCredentials(false)
-    .apply(authed)
-
-  EmberServerBuilder.default[IO]
-    .withHttpApp(Router("/" -> withCors).orNotFound)
-    .build
-}
+  val withCors = CORS.policy.withAllowOriginAll.withAllowCredentials(false).apply(authed)
+  EmberServerBuilder.default[IO].withHttpApp(Router("/" -> withCors).orNotFound).build
 ```
 
 ## Middleware
@@ -87,11 +77,11 @@ val sessionConfig = SessionConfig(
   requestTimeout = 5.minutes
 )
 
-HttpTransport.serve[IO](server, HttpConfig(
+server.serveHttp(HttpConfig(
   port = port"3000",
   enableSessions = true,
   sessionConfig = sessionConfig
-))
+)).useForever
 ```
 
 ## DNS Rebinding Protection

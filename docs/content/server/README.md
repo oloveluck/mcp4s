@@ -40,10 +40,16 @@ val combined = calculatorServer |+| utilityServer
 ## Running
 
 ```scala
+import mcp4s.server.syntax.*
+
 server.serveHttp()               // HTTP on /mcp, port 3000
+server.serveHttp(port"8080")     // HTTP on a custom port
+server.serveWebSocket()          // WebSocket on /ws, port 3000
 server.runStdio                  // Stdio for Claude Desktop
-WebSocketTransport.serve[IO](server, WebSocketConfig(port = port"3000"))
 ```
+
+For custom http4s routes/middleware (CORS, auth, embedding in an existing app), drop down to
+`HttpTransport` / `WebSocketTransport` directly.
 
 ## DSL Reference
 
@@ -51,17 +57,17 @@ WebSocketTransport.serve[IO](server, WebSocketConfig(port = port"3000"))
 import mcp4s.server.mcp.*
 
 // Tools — functions the AI can call
-Tool[IO, Args] { args => IO.pure(ok("result")) }                 // derived name + desc
-Tool[IO, Args]("name", "desc") { args => IO.pure(ok("result")) } // explicit
-Tool.withContext[IO, Args] { (args, ctx) => ... }                 // with context
+Tool[IO, Args](args => IO.pure(ok("result")))                  // derived name + desc
+Tool[IO, Args]("name", "desc")(args => IO.pure(ok("result")))  // explicit
+Tool.withContext[IO, Args]((args, ctx) => ...)                 // with context
 
 // Resources — data the AI can read
-Resource.text[IO]("uri", "name") { "content" }
-Resource.template[IO]("uri/{id}", "name", "desc") { uri => ... }
+Resource.text[IO]("uri", "name")("content")
+Resource.template[IO]("uri/{id}", "name", "desc")(uri => ...)
 
 // Prompts — reusable message templates
 Prompt[IO]("name", "desc")(user("Hello"))
-Prompt[IO, Args] { args => IO.pure(messages(...)) }  // derived name + desc
+Prompt[IO, Args](args => IO.pure(messages(...)))  // derived name + desc
 
 // Results
 ok("success")

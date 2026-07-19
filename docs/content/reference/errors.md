@@ -6,8 +6,17 @@ MCP uses JSON-RPC error codes to communicate failures. Errors are structured val
 
 ## McpError
 
+`McpError` is an `enum` of the protocol failure modes; each case carries a human-readable
+`message`. Map one to a JSON-RPC code with `McpError.toJsonRpcError(e).code`.
+
 ```scala
-case class McpError(code: Int, message: String, data: Option[Json]) extends Exception
+enum McpError(val message: String) extends Exception(message):
+  case ToolNotFound(name: String)
+  case ResourceNotFound(uri: String)
+  case InvalidToolArguments(name: String, reason: String)
+  case MethodNotSupported(method: String)
+  case NotInitialized
+  // … and more
 ```
 
 ## Standard Codes
@@ -27,23 +36,20 @@ These are the JSON-RPC standard error codes used by MCP:
 Return errors from tools using `attempt`:
 
 ```scala
-Tool[IO, Args]("risky", "May fail") { args =>
-  doWork(args).attempt.map {
+Tool[IO, Args]("risky", "May fail"): args =>
+  doWork(args).attempt.map:
     case Right(r) => ok(r)
-    case Left(e) => error(e.getMessage)
-  }
-}
+    case Left(e)  => error(e.getMessage)
 ```
 
 ## Client-Side
 
 ```scala
-conn.callTool("tool", args).attempt.flatMap {
-  case Right(result) if result.isError => IO.println("Tool error")
-  case Right(result) => IO.println(s"Success: $result")
-  case Left(e: McpError) => IO.println(s"Protocol error ${e.code}")
-  case Left(e) => IO.println(s"Connection error: ${e.getMessage}")
-}
+conn.callTool("tool", args).attempt.flatMap:
+  case Right(result) if result.isError.getOrElse(false) => IO.println("Tool error")
+  case Right(result)     => IO.println(s"Success: $result")
+  case Left(e: McpError) => IO.println(s"Protocol error: ${e.message}")
+  case Left(e)           => IO.println(s"Connection error: ${e.getMessage}")
 ```
 
 ## With http4s Middleware
@@ -57,7 +63,6 @@ import scala.concurrent.duration.*
 val retryPolicy = RetryPolicy[IO](RetryPolicy.exponentialBackoff(maxWait = 10.seconds, maxRetry = 3))
 val resilientClient = Timeout(30.seconds)(Retry(retryPolicy)(rawHttpClient))
 
-HttpClientTransport.connect[IO](client, config, resilientClient).use { conn =>
+client.connectHttp("http://localhost:3000", resilientClient).use: conn =>
   conn.callTool("tool", args)
-}
 ```

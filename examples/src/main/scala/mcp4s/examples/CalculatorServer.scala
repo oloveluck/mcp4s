@@ -22,7 +22,7 @@ import mcp4s.protocol.*
 import mcp4s.server.*
 import mcp4s.server.mcp
 import mcp4s.server.mcp.{error, messages, ok, user}
-import mcp4s.server.transport.*
+import mcp4s.server.syntax.*
 import org.typelevel.otel4s.trace.Tracer
 
 @description("Add two numbers")
@@ -122,4 +122,4 @@ object CalculatorServer extends IOApp.Simple:
   def run: IO[Unit] =
     given Tracer[IO] = Tracer.noop[IO]
     IO.println("Starting Calculator MCP Server on http://localhost:3000") *>
-      HttpTransport.serve[IO](server, HttpConfig[IO]()).useForever
+      server.serveHttp().useForever

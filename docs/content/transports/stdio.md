@@ -10,10 +10,21 @@ No networking is involved. The client writes JSON-RPC to the server's stdin and 
 
 ```scala
 object MyServer extends IOApp.Simple:
-  val tools = Tool[IO, Args]("search", "Search files") { args => ... }
+  val tools  = Tool[IO, Args]("search", "Search files")(args => ...)
   val server = Server.fromTools[IO](ServerInfo("my-server", "1.0.0"), tools)
 
-  def run: IO[Unit] = server.runStdio
+  def run = server.runStdio
+```
+
+## Client
+
+To drive a server you spawn yourself as a subprocess (cross-platform):
+
+```scala
+import mcp4s.client.syntax.*
+
+client.connectStdio("java", "-jar", "/path/to/server.jar").use: conn =>
+  conn.callTool("search", args)
 ```
 
 ## Claude Desktop Config

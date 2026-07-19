@@ -117,20 +117,17 @@ object Resources:
         description = if description.isEmpty then None else Some(description)
       )
 
+      // Compile the match pattern once. A URI template like "test://template/{id}/data" becomes
+      // a regex with `{...}` placeholders turned into `[^/]+` segments.
+      private val templateRegex =
+        uriPattern.replace(".", "\\.").replace("/", "\\/").replaceAll("\\{[^}]+\\}", "[^/]+").r
+
       def list: F[List[Resource]]                  = Applicative[F].pure(Nil)
       def listTemplates: F[List[ResourceTemplate]] = Applicative[F].pure(List(resourceTemplate))
       def read(uri: String): OptionT[F, ResourceContent] =
-        if matchesTemplate(uriPattern, uri) then OptionT.liftF(handler(uri))
+        if templateRegex.matches(uri) then OptionT.liftF(handler(uri))
         else OptionT.none[F, ResourceContent]
       def changes: Stream[F, String] = Stream.empty
-
-      private def matchesTemplate(pattern: String, uri: String): Boolean =
-        // Convert URI template pattern like "test://template/{id}/data" to regex
-        val regexPattern = pattern
-          .replace(".", "\\.")
-          .replace("/", "\\/")
-          .replaceAll("\\{[^}]+\\}", "[^/]+")
-        uri.matches(regexPattern)
 
 /** Internal resource factory. Use `Resource` from `import mcp4s.server.mcp.*` instead. */
 private[server] object McpResource:

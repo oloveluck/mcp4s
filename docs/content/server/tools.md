@@ -32,19 +32,18 @@ The tool name is derived from the class name (e.g. `SearchArgs` → `"search"`) 
 import mcp4s.server.mcp.*
 
 // Effectful — name and description derived from SearchArgs
-Tool[IO, SearchArgs] { args => IO.pure(ok("result")) }
+Tool[IO, SearchArgs](args => IO.pure(ok("result")))
 
 // Pure text result
-Tool.text[IO, SearchArgs] { args => "result" }
+Tool.text[IO, SearchArgs](args => "result")
 
 // With context (sampling, progress, logging)
-Tool.withContext[IO, SearchArgs] { (args, ctx) =>
+Tool.withContext[IO, SearchArgs]: (args, ctx) =>
   for
-    _ <- ctx.log(LogLevel.Info, "Processing")
-    _ <- ctx.progress(0.5, Some(100))
+    _        <- ctx.log(LogLevel.Info, "Processing")
+    _        <- ctx.progress(0.5, Some(100))
     response <- ctx.sampling.createMessage(params)
   yield ok(response.content.toString)
-}
 ```
 
 ### Explicit name + description
@@ -53,16 +52,16 @@ Use explicit names when the derived name doesn't match what you need:
 
 ```scala
 // Full explicit
-Tool[IO, Args]("name", "desc") { args => IO.pure(ok("result")) }
+Tool[IO, Args]("name", "desc")(args => IO.pure(ok("result")))
 
 // Custom name, description derived from @description
-Tool[IO, Args]("custom-name") { args => IO.pure(ok("result")) }
+Tool[IO, Args]("custom-name")(args => IO.pure(ok("result")))
 
 // No arguments
-Tool.text[IO]("ping", "Ping") { "pong" }
+Tool.text[IO]("ping", "Ping")("pong")
 
 // With context, explicit name
-Tool.withContext[IO, Args]("smart", "AI tool") { (args, ctx) => ... }
+Tool.withContext[IO, Args]("smart", "AI tool")((args, ctx) => ...)
 ```
 
 The **context** variant gives your tool access to the MCP session: it can report progress to the client, write logs, and even request LLM completions from the client via **sampling** (a bidirectional MCP feature where the server asks the client's AI model for help).
@@ -72,34 +71,21 @@ The **context** variant gives your tool access to the MCP session: it can report
 Tools can stream results incrementally using `fs2.Stream`:
 
 ```scala
-Tool.streaming[IO, QueryArgs]("search", "Search documents") { args =>
+// Typed arguments
+Tool.stream[IO, QueryArgs]("search", "Search documents")(args =>
   database.search(args.query).map(r => ok(r.toString))
-}
+)
 
 // No arguments
-Tool.streaming[IO]("events", "Stream events") {
-  eventSource.subscribe.map(e => ok(e.toString))
-}
+Tool.stream[IO]("events", "Stream events")(eventSource.subscribe.map(e => ok(e.toString)))
+
+// `streamWithContext` hands the stream a `ToolContext` (progress, logging, sampling)
+Tool.streamWithContext[IO, QueryArgs]("smart-search", "Search with progress")((args, ctx) =>
+  database.search(args.query).evalTap(_ => ctx.progress(0.5, None)).map(r => ok(r.toString))
+)
 ```
 
 Streaming tools require `Concurrent[F]`. The client receives results as they're produced via SSE or WebSocket.
-
-### More Streaming Constructors
-
-```scala
-Tool.streaming[IO, Args]("search", "Search") { args =>
-  database.search(args.query).map(r => ok(r.toString))
-}
-
-Tool.streamingWithContext[IO, Args]("smart-search", "Search with progress") { (args, ctx) =>
-  database.search(args.query).evalTap(_ => ctx.progress(0.5, None))
-    .map(r => ok(r.toString))
-}
-
-Tool.streaming[IO]("feed", "Live feed") {
-  liveFeed.subscribe.map(e => ok(e.toString))
-}
-```
 
 ## Typed Output
 
@@ -114,9 +100,9 @@ case class CalcResult(
   @description("Operation performed") operation: String
 ) derives ToolOutput, Encoder.AsObject
 
-Tool.typed[IO, CalcArgs, CalcResult]("calculate", "Calculate") { args =>
+Tool.typed[IO, CalcArgs, CalcResult]("calculate", "Calculate")(args =>
   IO.pure(CalcResult(args.a + args.b, "add"))
-}
+)
 ```
 
 The output schema is included in the tool definition, letting clients know the shape of the response. See [Type Derivation](../reference/type-derivation.md) for details.

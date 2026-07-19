@@ -21,9 +21,9 @@ Prompt[IO]("help", "Get help")(
 // With arguments — customizable via parameters
 case class GreetArgs(name: String) derives PromptInput
 
-Prompt[IO, GreetArgs]("greet", "Greet someone") { args =>
+Prompt[IO, GreetArgs]("greet", "Greet someone")(args =>
   IO.pure(messages(user(s"Hello, ${args.name}!")))
-}
+)
 ```
 
 Clients call `getPrompt("greet", {"name": "Alice"})` and receive the rendered messages to inject into the conversation.
