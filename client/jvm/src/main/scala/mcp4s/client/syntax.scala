@@ -20,62 +20,44 @@ import cats.effect.{Async, Resource}
 import fs2.io.net.Network
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.client.transport.{HttpTransportConfig, WebSocketClientTransport, WebSocketTransportConfig}
+import mcp4s.client.transport.{
+  HttpTransportConfig,
+  WebSocketClientTransport,
+  WebSocketTransportConfig
+}
 
-/** Transport-selection extensions for [[McpClient]] (`import mcp4s.client.syntax.*`).
+/** JVM-only transport bindings (`import mcp4s.client.syntax.*`).
   *
-  * On top of the cross-platform [[ClientSyntax]] (`connectStdio` / `connectHttp` with a
-  * caller-supplied `Client[F]`), the JVM adds:
-  *   - `connectWebSocket` — bidirectional WebSocket (JVM-only; http4s `JdkWSClient`).
-  *   - `connectHttp` without a `Client[F]` — builds and manages an Ember client for you.
+  * The cross-platform bindings (`client.stdio(...)`, `client.http(config, httpClient)`) need no
+  * import — they live on [[McpClient]]/[[McpClientBuilder]] directly. The JVM adds:
+  *   - `webSocket` — bidirectional WebSocket (http4s `JdkWSClient`).
+  *   - `http` without a `Client[F]` — builds and manages an Ember client for you.
   */
-object syntax extends ClientSyntax:
+object syntax:
 
   extension [F[_]](client: McpClient[F])
 
-    /** Connect over WebSocket (JVM-only). Manages the http4s `JdkWSClient` internally.
-      *
-      * {{{
-      * client.connectWebSocket(WebSocketTransportConfig("ws://localhost:3000/ws")).use { ... }
-      * }}}
-      */
-    def connectWebSocket(config: WebSocketTransportConfig[F])(using Async[F])(using
+    /** Connect over WebSocket (JVM-only). Manages the http4s `JdkWSClient` internally. */
+    def webSocket(config: WebSocketTransportConfig[F])(using Async[F])(using
         tracer: Tracer[F] = Tracer.noop[F]
     ): Resource[F, McpConnection[F]] =
       WebSocketClientTransport.connect[F](client, config)
 
-    /** Connect over WebSocket at `url` (other settings default; JVM-only).
-      *
-      * For tracing, use the `WebSocketTransportConfig` overload with a `given Tracer[F]` in scope.
-      *
-      * {{{
-      * client.connectWebSocket("ws://localhost:3000").use { conn => ... }
-      * }}}
-      */
-    def connectWebSocket(url: String)(using Async[F]): Resource[F, McpConnection[F]] =
-      connectWebSocket(WebSocketTransportConfig[F](s"$url/ws"))
+    /** Connect over WebSocket at `uri` (other settings default; JVM-only). */
+    def webSocket(uri: String)(using Async[F]): Resource[F, McpConnection[F]] =
+      webSocket(WebSocketTransportConfig[F](uri))
 
     /** Connect over Streamable HTTP, building and managing an Ember client for you (JVM-only).
       *
       * The Ember client's lifecycle is bracketed into the returned `Resource`. For a custom or
-      * shared backend (or to enable tracing), use the [[ClientSyntax]] overload that takes a
-      * `Client[F]` with a `given Tracer[F]` in scope.
-      *
-      * {{{
-      * client.connectHttp(HttpTransportConfig("http://localhost:3000/mcp")).use { conn => ... }
-      * }}}
+      * shared backend, use `client.http(config, httpClient)`.
       */
-    def connectHttp(config: HttpTransportConfig[F])(using
+    def http(config: HttpTransportConfig[F])(using
         Async[F],
         Network[F]
     ): Resource[F, McpConnection[F]] =
-      EmberClientBuilder.default[F].build.flatMap(connectHttp(config, _))
+      EmberClientBuilder.default[F].build.flatMap(client.http(config, _))
 
-    /** Connect over Streamable HTTP at `baseUrl`, building an Ember client for you (JVM-only).
-      *
-      * {{{
-      * client.connectHttp("http://localhost:3000").use { conn => ... }
-      * }}}
-      */
-    def connectHttp(baseUrl: String)(using Async[F], Network[F]): Resource[F, McpConnection[F]] =
-      connectHttp(HttpTransportConfig[F](s"$baseUrl/mcp"))
+    /** Connect over Streamable HTTP at `uri`, building an Ember client for you (JVM-only). */
+    def http(uri: String)(using Async[F], Network[F]): Resource[F, McpConnection[F]] =
+      http(HttpTransportConfig[F](uri))

@@ -126,6 +126,22 @@ object Server:
       ComposedServer(server, other)
 
   extension [F[_]](server: Server[F])
+    /** Bind this server to the stdio transport: `server.stdio.run`. */
+    def stdio: McpServer.StdioBinding[F] = McpServer.StdioBinding(server)
+
+    /** Bind this server to the Streamable HTTP transport: `server.http().resource` or
+      * `server.http(config).routes` for embedding.
+      */
+    def http(
+        config: mcp4s.server.transport.HttpConfig[F] = mcp4s.server.transport.HttpConfig[F]()
+    ): McpServer.HttpBinding[F] = McpServer.HttpBinding(server, config)
+
+    /** Bind this server to the WebSocket transport: `server.webSocket().resource`. */
+    def webSocket(
+        config: mcp4s.server.transport.WebSocketConfig = mcp4s.server.transport.WebSocketConfig()
+    ): McpServer.WebSocketBinding[F] = McpServer.WebSocketBinding(server, config)
+
+  extension [F[_]](server: Server[F])
     /** Create a new server with different info. */
     def withInfo(newInfo: ServerInfo): Server[F] =
       new Server[F]:

@@ -119,6 +119,30 @@ object McpClient:
       elicitation
     )
 
+  /** Start assembling a client fluently — the mirror of `McpServer` on the server side. */
+  def builder[F[_]: Concurrent](info: ClientInfo): McpClientBuilder[F] =
+    McpClientBuilder[F](info)
+
+  extension [F[_]](client: McpClient[F])
+    /** Connect by spawning a subprocess and speaking JSON-RPC over its stdin/stdout. */
+    def stdio(config: transport.StdioTransportConfig)(using
+        cats.effect.Async[F],
+        fs2.io.process.Processes[F]
+    )(using
+        tracer: org.typelevel.otel4s.trace.Tracer[F] = org.typelevel.otel4s.trace.Tracer.noop[F]
+    ): cats.effect.Resource[F, McpConnection[F]] =
+      transport.StdioClientTransport.connect[F](client, config)
+
+    /** Connect over Streamable HTTP using a caller-provided http4s `Client[F]`. On the JVM, see
+      * the no-`Client` overload (`import mcp4s.client.syntax.*`) that builds an Ember client.
+      */
+    def http(config: transport.HttpTransportConfig[F], httpClient: org.http4s.client.Client[F])(
+        using cats.effect.Async[F]
+    )(using
+        tracer: org.typelevel.otel4s.trace.Tracer[F] = org.typelevel.otel4s.trace.Tracer.noop[F]
+    ): cats.effect.Resource[F, McpConnection[F]] =
+      transport.HttpClientTransport.connect[F](client, config, httpClient)
+
 /** Client implementation using composed handlers. */
 final private[client] class ComposedMcpClient[F[_]: Concurrent](
     val info: ClientInfo,

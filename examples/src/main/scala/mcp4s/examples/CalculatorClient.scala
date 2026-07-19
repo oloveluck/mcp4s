@@ -41,7 +41,7 @@ object CalculatorClient extends IOApp.Simple:
   def run: IO[Unit] =
     given Tracer[IO] = Tracer.noop[IO]
     // This brings its own http4s `Client[F]` (the cross-platform path). On the JVM the whole
-    // block collapses to a one-liner: `client.connectHttp("http://localhost:3000").use: conn =>`
+    // block collapses to a one-liner: `client.http("http://localhost:3000/mcp").use: conn =>`
     // (see `import mcp4s.client.syntax.*`), which builds and manages an Ember client for you.
     IO.println("Connecting to Calculator MCP Server...") *>
       EmberClientBuilder

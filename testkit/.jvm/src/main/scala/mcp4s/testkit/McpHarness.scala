@@ -21,7 +21,7 @@ import com.comcast.ip4s.port
 import mcp4s.client.McpConnection
 import mcp4s.client.syntax.*
 import mcp4s.server.Server
-import mcp4s.server.syntax.*
+import mcp4s.server.transport.{HttpConfig, WebSocketConfig}
 
 /** Transport a compliance/performance run exercises a server over. */
 enum McpTransport:
@@ -47,13 +47,13 @@ object McpHarness:
     transport match
       case McpTransport.Http =>
         server
-          .serveHttp(port"0")
+          .http(HttpConfig(port = port"0")).resource
           .map: http =>
-            val url = s"http://localhost:${http.address.getPort}"
-            McpEndpoint(DeterministicClients.simple[IO].connectHttp(url))
+            val url = s"http://localhost:${http.address.getPort}/mcp"
+            McpEndpoint(DeterministicClients.simple[IO].http(url))
       case McpTransport.WebSocket =>
         server
-          .serveWebSocket(port"0")
+          .webSocket(WebSocketConfig(port = port"0")).resource
           .map: ws =>
-            val url = s"ws://localhost:${ws.address.getPort}"
-            McpEndpoint(DeterministicClients.simple[IO].connectWebSocket(url))
+            val url = s"ws://localhost:${ws.address.getPort}/ws"
+            McpEndpoint(DeterministicClients.simple[IO].webSocket(url))

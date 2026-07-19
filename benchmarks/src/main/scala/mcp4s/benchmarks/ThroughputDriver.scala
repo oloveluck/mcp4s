@@ -27,7 +27,7 @@ import org.http4s.server.Server as Http4sServer
 import mcp4s.client.{McpClient, McpConnection}
 import mcp4s.client.syntax.*
 import mcp4s.server.Server
-import mcp4s.server.syntax.*
+import mcp4s.server.transport.{HttpConfig, WebSocketConfig}
 import mcp4s.testkit.{DeterministicClients, TestServers}
 
 /** End-to-end throughput / latency driver: starts a real server, opens N concurrent client
@@ -62,14 +62,14 @@ object ThroughputDriver extends IOApp.Simple:
   private def serverResource: Resource[IO, Http4sServer] =
     val server: Server[IO] = TestServers.simple[IO]
     transport match
-      case "ws" => server.serveWebSocket(port"0")
-      case _    => server.serveHttp(port"0")
+      case "ws" => server.webSocket(WebSocketConfig(port = port"0")).resource
+      case _    => server.http(HttpConfig(port = port"0")).resource
 
   private def connect(port: Int): Resource[IO, McpConnection[IO]] =
     val client: McpClient[IO] = DeterministicClients.simple[IO]
     transport match
-      case "ws" => client.connectWebSocket(s"ws://localhost:$port")
-      case _    => client.connectHttp(s"http://localhost:$port")
+      case "ws" => client.webSocket(s"ws://localhost:$port/ws")
+      case _    => client.http(s"http://localhost:$port/mcp")
 
   /** Outcome of driving one connection: latency histogram (µs, successes only) + failure count. */
   final private case class DriveResult(hist: Histogram, failures: Long)
