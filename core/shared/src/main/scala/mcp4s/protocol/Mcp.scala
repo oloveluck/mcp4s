@@ -243,7 +243,11 @@ final case class JsonSchemaProperty(
     enumNames: Option[List[String]] = None, // Legacy titled enums
     // SEP-1330: Array types with enums
     items: Option[JsonSchemaProperty] = None,
-    anyOf: Option[List[Json]] = None // For titled multi-select
+    anyOf: Option[List[Json]] = None, // For titled multi-select
+    // Nested object schemas
+    properties: Option[Map[String, JsonSchemaProperty]] = None,
+    required: Option[List[String]] = None,
+    additionalProperties: Option[JsonSchemaProperty] = None
 )
 
 object JsonSchemaProperty:
