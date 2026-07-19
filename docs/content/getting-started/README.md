@@ -25,22 +25,21 @@ A server exposes capabilities that AI clients can discover and use. Here's a cal
 ```scala
 import cats.effect.*
 import mcp4s.server.*
-import mcp4s.server.mcp.*
-import mcp4s.server.syntax.*
+import mcp4s.server.dsl.*
 import mcp4s.protocol.*
 
 @description("Add two numbers")
-case class AddArgs(a: Double, b: Double) derives ToolInput
+case class AddArgs(a: Double, b: Double) derives Schema
 
 object MyServer extends IOApp.Simple:
-  val add = Tool[IO, AddArgs](args => IO.pure(ok(s"${args.a + args.b}")))
+  val add = Tool.from[AddArgs].handle[IO](args => IO.pure(ok(s"${args.a + args.b}")))
 
-  val server = Server.fromTools[IO](ServerInfo("calculator", "1.0.0"), add)
+  val server = McpServer[IO](ServerInfo("calculator", "1.0.0")).withTools(add)
 
-  def run = server.serveHttp().useForever
+  def run = server.http().run
 ```
 
-The `derives ToolInput` generates a JSON schema from the case class, so AI clients know what arguments the tool accepts. The `@description` annotation on the class becomes the tool description, and the tool name is derived from the class name (`AddArgs` → `"add"`).
+`derives Schema` generates a JSON schema from the case class, so AI clients know what arguments the tool accepts. `Tool.from[AddArgs]` derives the tool name from the class name (`AddArgs` → `"add"`) and takes the description from the class-level `@description` annotation. Capabilities are derived automatically — a tools-only server advertises only tools.
 
 ## Minimal Client
 
@@ -53,24 +52,27 @@ import cats.effect.*
 import io.circe.Json, io.circe.syntax.*
 import mcp4s.client.*
 import mcp4s.client.syntax.*
+import mcp4s.protocol.*
 import org.typelevel.otel4s.trace.Tracer
 
 object MyClient extends IOApp.Simple:
   given Tracer[IO] = Tracer.noop[IO]
 
-  val client = McpClient.from[IO](ClientInfo("my-client", "1.0.0"))
+  val client = McpClientBuilder[IO](ClientInfo("my-client", "1.0.0"))
 
-  def run = client.connectHttp("http://localhost:3000").use: conn =>
+  def run = client.http("http://localhost:3000/mcp").use: conn =>
     conn
       .callTool("add", Json.obj("a" -> 5.asJson, "b" -> 3.asJson))
       .flatMap(r => IO.println(s"Result: $r"))
 ```
 
+Note that the URI is the **full MCP endpoint**, including the path (`/mcp`).
+
 ## Key Concepts
 
 **Type-safe arguments** — Derive JSON schemas from case classes:
 ```scala
-case class Args(query: String, limit: Option[Int]) derives ToolInput
+case class Args(query: String, limit: Option[Int]) derives Schema
 ```
 
 **Composable APIs** — Combine with `|+|`:
@@ -80,7 +82,7 @@ val tools = addTool |+| multiplyTool |+| divideTool
 
 **Resource safety** — Connections clean up automatically:
 ```scala
-client.connectHttp("http://localhost:3000").use: conn =>
+client.http("http://localhost:3000/mcp").use: conn =>
   conn.callTool("add", args)
 ```
 

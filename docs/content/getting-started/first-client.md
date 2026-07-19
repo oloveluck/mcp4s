@@ -8,18 +8,19 @@ A client connects to an MCP server, discovers what it offers, and starts making 
 import cats.effect.*
 import mcp4s.client.*
 import mcp4s.client.syntax.*
+import mcp4s.protocol.*
 import org.typelevel.otel4s.trace.Tracer
 
 given Tracer[IO] = Tracer.noop[IO]
 
-val client = McpClient.from[IO](ClientInfo("my-client", "1.0.0"))
+val client = McpClientBuilder[IO](ClientInfo("my-client", "1.0.0"))
 
 // JVM one-liner: builds and manages an Ember client for you
-client.connectHttp("http://localhost:3000").use: conn =>
+client.http("http://localhost:3000/mcp").use: conn =>
   IO.println(s"Connected to ${conn.serverInfo.name}")
 ```
 
-The `connect` call performs the MCP handshake — both sides exchange capabilities and the server reports its name, version, and supported features.
+The URI is the full MCP endpoint, path included. Connecting performs the MCP handshake — both sides exchange capabilities and the server reports its name, version, and supported features.
 
 ## Operations
 
@@ -28,7 +29,7 @@ Once connected, you can discover and use everything the server exposes:
 ```scala
 import io.circe.Json, io.circe.syntax.*
 
-client.connectHttp("http://localhost:3000").use: conn =>
+client.http("http://localhost:3000/mcp").use: conn =>
   for
     _         <- IO.println(s"Connected to: ${conn.serverInfo.name}")
     tools     <- conn.listAllTools                          // discover tools
@@ -40,12 +41,14 @@ client.connectHttp("http://localhost:3000").use: conn =>
   yield ()
 ```
 
+For fully typed calls — no stringly-typed names, no hand-rolled JSON — define your endpoints once in an `McpService` and use the [typed client](../server/services.md).
+
 ## WebSocket Transport
 
 Same API, different transport. Use WebSocket for lower latency and real-time bidirectional communication (JVM-only):
 
 ```scala
-client.connectWebSocket("ws://localhost:3000").use: conn =>
+client.webSocket("ws://localhost:3000/ws").use: conn =>
   conn.callTool("add", args)
 ```
 
@@ -64,14 +67,14 @@ conn.callTool("unknown", Json.obj()).attempt.flatMap:
 
 ## Capability Checks
 
-Not all servers support all features. Check before calling:
+Not all servers support all features. Capabilities are derived from what the server actually registers, so check before calling:
 
 ```scala
 if conn.supportsTools then conn.callTool("add", args)
 else IO.println("Tools not supported")
 
 // Or use conditional methods that return Option
-conn.callToolIfSupported("add", args)  // Returns F[Option[ToolResult]]
+conn.callToolIfSupported(ToolName("add"), args)  // Returns F[Option[ToolResult]]
 ```
 
 ---

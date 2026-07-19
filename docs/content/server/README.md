@@ -12,22 +12,28 @@ Servers can run over HTTP, WebSocket, or Stdio (for Claude Desktop integration).
 
 ## Construction
 
+`McpServer` is the one entry point for assembling a server:
+
 ```scala
 import cats.effect.*
 import mcp4s.server.*
-import mcp4s.server.mcp.*
+import mcp4s.server.dsl.*
+import mcp4s.protocol.*
 
-val server = Server.from[IO](
-  info = ServerInfo("my-server", "1.0.0"),
-  tools = myTools,
-  resources = myResources,
-  prompts = myPrompts
-)
+val server = McpServer[IO](ServerInfo("my-server", "1.0.0"))
+  .withTools(myTools)
+  .withResources(myResources)
+  .withPrompts(myPrompts)
 ```
 
 Build `myTools` / `myResources` / `myPrompts` from the DSL (`Tool`, `Resource`, `Prompt`
 composed with `|+|`), or use `Tools.single` / `Resources.single` / `Prompts.single` for
-raw, untyped handlers.
+raw, untyped handlers. Each `with*` method may be called multiple times; routes combine
+first-match-wins.
+
+Capabilities are **derived from what you register**: a tools-only server advertises only tools, and `resources.subscribe` is `true` only if a subscribable resource is registered.
+
+`Server.from(info, tools, resources, prompts)` remains as the low-level constructor when you want a plain `Server[F]` value.
 
 ## Composition
 
@@ -39,35 +45,39 @@ val combined = calculatorServer |+| utilityServer
 
 ## Running
 
-```scala
-import mcp4s.server.syntax.*
+Bind a transport directly on the builder (or on any `Server[F]` — no import needed):
 
-server.serveHttp()               // HTTP on /mcp, port 3000
-server.serveHttp(port"8080")     // HTTP on a custom port
-server.serveWebSocket()          // WebSocket on /ws, port 3000
-server.runStdio                  // Stdio for Claude Desktop
+```scala
+server.stdio.run                                    // Stdio for Claude Desktop
+server.http().resource.useForever                   // HTTP on /mcp, port 3000
+server.http(HttpConfig(port = port"8080")).resource // HTTP on a custom port
+server.http(config).routes                          // embed in an existing http4s app
+server.webSocket().resource.useForever              // WebSocket on /ws, port 3000
 ```
 
-For custom http4s routes/middleware (CORS, auth, embedding in an existing app), drop down to
-`HttpTransport` / `WebSocketTransport` directly.
+`HttpConfig` / `WebSocketConfig` live in `mcp4s.server.transport`. For custom http4s
+routes/middleware (CORS, auth, embedding in an existing app), use `server.http(config).routes` —
+see [HTTP Security](auth.md).
 
 ## DSL Reference
 
 ```scala
-import mcp4s.server.mcp.*
+import mcp4s.server.dsl.*
 
-// Tools — functions the AI can call
-Tool[IO, Args](args => IO.pure(ok("result")))                  // derived name + desc
-Tool[IO, Args]("name", "desc")(args => IO.pure(ok("result")))  // explicit
-Tool.withContext[IO, Args]((args, ctx) => ...)                 // with context
+// Tools — an endpoint definition plus exactly one handler
+Tool.from[Args].handle[IO](args => IO.pure(ok("result")))       // derived name + desc
+Tool("name").withDescription("desc").input[Args]
+  .handle[IO](args => IO.pure(ok("result")))                    // explicit
+Tool("name").input[Args].handleWith[IO]((args, ctx) => ...)     // with context
+Tool("name").input[Args].stream[IO](args => fs2.Stream(...))    // streaming
 
 // Resources — data the AI can read
 Resource.text[IO]("uri", "name")("content")
 Resource.template[IO]("uri/{id}", "name", "desc")(uri => ...)
 
 // Prompts — reusable message templates
-Prompt[IO]("name", "desc")(user("Hello"))
-Prompt[IO, Args](args => IO.pure(messages(...)))  // derived name + desc
+Prompt("name").withDescription("desc").messages[IO](user("Hello"))
+Prompt.from[Args].handle[IO](args => IO.pure(messages(...)))    // derived name + desc
 
 // Results
 ok("success")
@@ -81,6 +91,7 @@ assistant("text")
 - [Tools](tools.md) — Callable functions for AI clients
 - [Resources](resources.md) — Data exposed via URI
 - [Prompts](prompts.md) — Reusable message templates
+- [Services](services.md) — Define endpoints once, share them between server and client
 - [HTTP Security](auth.md) — Securing your server
 
 ---

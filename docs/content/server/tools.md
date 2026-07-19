@@ -8,104 +8,114 @@ Tools have a **name**, a **description** (so the AI knows when to use it), and a
 
 ## Type-Safe Arguments
 
-Define tool inputs as case classes. The `derives ToolInput` macro generates a JSON schema and decoder automatically:
+Define tool inputs as case classes. `derives Schema` generates the JSON schema, encoder, and decoder from a single description of the type:
 
 ```scala
-import mcp4s.protocol.*
+import mcp4s.server.dsl.*
 
 @description("Search documents")
 case class SearchArgs(
   query: String,
   @description("Max results") limit: Option[Int]
-) derives ToolInput
+) derives Schema
 ```
 
-The class-level `@description` becomes the tool description. Field-level `@description` annotations add documentation to the schema — this helps the AI understand what each parameter does. `Option` fields become optional in the schema.
+The class-level `@description` becomes the tool description. Field-level `@description` annotations add documentation to the schema — this helps the AI understand what each parameter does. `Option` fields and fields with constructor defaults become optional in the schema. Nested case classes, Scala 3 enums, sealed traits, and `Map[String, V]` are all supported — see [Type Derivation](../reference/type-derivation.md).
 
-## Constructors
+## Defining a Tool
 
-### Derived name + description (recommended)
-
-The tool name is derived from the class name (e.g. `SearchArgs` → `"search"`) and the description from the class-level `@description`:
+A tool is an **endpoint definition** (`ToolEndpoint`) plus exactly one **handler**. Build the endpoint fluently, then attach the handler:
 
 ```scala
-import mcp4s.server.mcp.*
+import mcp4s.server.dsl.*
 
-// Effectful — name and description derived from SearchArgs
-Tool[IO, SearchArgs](args => IO.pure(ok("result")))
+val search = Tool("search")
+  .withDescription("Search the document index")
+  .input[SearchArgs]
+  .handle[IO] { args =>
+    IO.pure(ok(s"Searching for ${args.query}"))
+  }
+```
 
-// Pure text result
-Tool.text[IO, SearchArgs](args => "result")
+### Derived name + description
 
-// With context (sampling, progress, logging)
-Tool.withContext[IO, SearchArgs]: (args, ctx) =>
+`Tool.from[Args]` derives the name from the input class (snake_case, with `Args`/`Input`/`Params`/`Request` suffixes stripped) and the description from the class-level `@description`:
+
+```scala
+// name = "search", description = "Search documents"
+Tool.from[SearchArgs].handle[IO](args => IO.pure(ok("result")))
+```
+
+### No-input tools
+
+A `Tool("name")` without `.input[...]` takes `Unit`:
+
+```scala
+Tool("version").withDescription("Get server version").handle[IO](_ => IO.pure(ok("1.0.0")))
+```
+
+## The Four Handler Shapes
+
+Every tool attaches exactly one of four handlers:
+
+```scala
+// 1. Effectful
+endpoint.handle[IO](args => IO.pure(ok("done")))
+
+// 2. Effectful + ToolContext (sampling, elicitation, progress, logging)
+endpoint.handleWith[IO] { (args, ctx) =>
   for
     _        <- ctx.log(LogLevel.Info, "Processing")
     _        <- ctx.progress(0.5, Some(100))
     response <- ctx.sampling.createMessage(params)
   yield ok(response.content.toString)
-```
+}
 
-### Explicit name + description
+// 3. Streaming — on the plain request/response path the last emitted value is the result
+endpoint.stream[IO](args => database.search(args.query).map(r => ok(r.toString)))
 
-Use explicit names when the derived name doesn't match what you need:
-
-```scala
-// Full explicit
-Tool[IO, Args]("name", "desc")(args => IO.pure(ok("result")))
-
-// Custom name, description derived from @description
-Tool[IO, Args]("custom-name")(args => IO.pure(ok("result")))
-
-// No arguments
-Tool.text[IO]("ping", "Ping")("pong")
-
-// With context, explicit name
-Tool.withContext[IO, Args]("smart", "AI tool")((args, ctx) => ...)
-```
-
-The **context** variant gives your tool access to the MCP session: it can report progress to the client, write logs, and even request LLM completions from the client via **sampling** (a bidirectional MCP feature where the server asks the client's AI model for help).
-
-## Streaming Tools
-
-Tools can stream results incrementally using `fs2.Stream`:
-
-```scala
-// Typed arguments
-Tool.stream[IO, QueryArgs]("search", "Search documents")(args =>
-  database.search(args.query).map(r => ok(r.toString))
-)
-
-// No arguments
-Tool.stream[IO]("events", "Stream events")(eventSource.subscribe.map(e => ok(e.toString)))
-
-// `streamWithContext` hands the stream a `ToolContext` (progress, logging, sampling)
-Tool.streamWithContext[IO, QueryArgs]("smart-search", "Search with progress")((args, ctx) =>
+// 4. Streaming + ToolContext
+endpoint.streamWith[IO] { (args, ctx) =>
   database.search(args.query).evalTap(_ => ctx.progress(0.5, None)).map(r => ok(r.toString))
-)
+}
 ```
 
-Streaming tools require `Concurrent[F]`. The client receives results as they're produced via SSE or WebSocket.
+The **context** variants give your tool access to the MCP session: it can report progress to the client, write logs, request user input (**elicitation**), and even request LLM completions from the client via **sampling** (a bidirectional MCP feature where the server asks the client's AI model for help). See [Bidirectional Communication](../advanced/bidirectional.md).
+
+Streaming handlers require `Concurrent[F]` (all handlers do). The client receives progress and notifications as they're produced via SSE or WebSocket.
 
 ## Typed Output
 
-Tools can declare structured output schemas using `ToolOutput`:
+Declare a structured output with `.output[B]`. The output schema is advertised as `outputSchema` and results are encoded as `structuredContent`:
 
 ```scala
-import mcp4s.protocol.ToolOutput
-import io.circe.Encoder
-
 case class CalcResult(
   @description("The computed value") result: Double,
   @description("Operation performed") operation: String
-) derives ToolOutput, Encoder.AsObject
+) derives Schema
 
-Tool.typed[IO, CalcArgs, CalcResult]("calculate", "Calculate")(args =>
-  IO.pure(CalcResult(args.a + args.b, "add"))
-)
+val calculate = Tool("calculate")
+  .withDescription("Calculate")
+  .input[CalcArgs]
+  .output[CalcResult]
+  .handle[IO](args => IO.pure(CalcResult(args.a + args.b, "add")))
 ```
 
-The output schema is included in the tool definition, letting clients know the shape of the response. See [Type Derivation](../reference/type-derivation.md) for details.
+With `.output[B]` the handler returns `B` directly — no manual `ok(...)` wrapping. Primitive outputs (`String`, `Int`, `Double`, ...) are wrapped on the wire as `{"result": ...}`. Without `.output`, handlers return a raw `ToolResult` (built with `ok` / `error` / `content`).
+
+Typed outputs pair with the [typed client](services.md), which decodes `structuredContent` back into `B`.
+
+## Annotations
+
+Attach MCP tool annotations (hints like read-only or destructive) with `.withAnnotations`:
+
+```scala
+Tool("delete_file")
+  .withDescription("Delete a file")
+  .input[DeleteArgs]
+  .withAnnotations(ToolAnnotations(destructiveHint = Some(true)))
+  .handle[IO](args => ...)
+```
 
 ## Results
 
@@ -117,10 +127,12 @@ content(textContent("a"), textContent("b"))  // Multiple items
 
 ## Composition
 
-Tools compose with the `|+|` operator. This is the standard way to build up a tool set:
+Attaching a handler produces a `Tools[F]` value. Tools compose with the `|+|` operator — this is the standard way to build up a tool set:
 
 ```scala
 val tools = addTool |+| multiplyTool |+| divideTool
+
+val server = McpServer[IO](ServerInfo("calc", "1.0.0")).withTools(tools)
 ```
 
 ---

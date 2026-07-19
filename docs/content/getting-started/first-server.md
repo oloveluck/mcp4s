@@ -8,21 +8,27 @@ Tools are functions that AI clients can call. Each tool needs a name, a descript
 
 ```scala
 import cats.effect.*
-import mcp4s.server.mcp.*
+import mcp4s.server.dsl.*
 import mcp4s.protocol.*
 
 @description("Add two numbers")
-case class AddArgs(a: Double, b: Double) derives ToolInput
+case class AddArgs(a: Double, b: Double) derives Schema
 
 @description("Multiply two numbers")
-case class MultiplyArgs(a: Double, b: Double) derives ToolInput
+case class MultiplyArgs(a: Double, b: Double) derives Schema
 
 val tools =
-  Tool[IO, AddArgs](args => IO.pure(ok(s"${args.a + args.b}"))) |+|
-    Tool[IO, MultiplyArgs](args => IO.pure(ok(s"${args.a * args.b}")))
+  Tool.from[AddArgs].handle[IO](args => IO.pure(ok(s"${args.a + args.b}"))) |+|
+    Tool.from[MultiplyArgs].handle[IO](args => IO.pure(ok(s"${args.a * args.b}")))
 ```
 
-The tool name is derived from the class name (`AddArgs` → `"add"`, `MultiplyArgs` → `"multiply"`) and the description comes from the class-level `@description` annotation.
+`Tool.from[AddArgs]` derives the tool name from the class name (`AddArgs` → `"add"`, `MultiplyArgs` → `"multiply"`) and the description from the class-level `@description` annotation. For explicit control, spell it out:
+
+```scala
+Tool("add").withDescription("Add two numbers").input[AddArgs].handle[IO] { args =>
+  IO.pure(ok(s"${args.a + args.b}"))
+}
+```
 
 ## Add Resources
 
@@ -32,7 +38,7 @@ Resources expose data that AI clients can read. They're addressed by URI:
 val resources =
   Resource.text[IO]("file:///readme", "README")("Calculator Server v1.0") |+|
     Resource.template[IO]("api://users/{id}", "User", "Get user by ID")(uri =>
-      IO.pure(mcp.text(uri, s"""{"id":"${uri.split("/").last}"}"""))
+      IO.pure(text(uri, s"""{"id":"${uri.split("/").last}"}"""))
     )
 ```
 
@@ -41,11 +47,11 @@ val resources =
 Prompts are reusable message templates. Clients inject them into the AI's conversation:
 
 ```scala
-case class GreetArgs(name: String) derives PromptInput
+case class GreetArgs(name: String) derives Schema
 
 val prompts =
-  Prompt[IO]("help", "Get help")(user("How do I use this?")) |+|
-    Prompt[IO, GreetArgs]("greet", "Greet someone")(args =>
+  Prompt("help").withDescription("Get help").messages[IO](user("How do I use this?")) |+|
+    Prompt("greet").withDescription("Greet someone").input[GreetArgs].handle[IO](args =>
       IO.pure(messages(user(s"Hello, ${args.name}!")))
     )
 ```
@@ -53,32 +59,34 @@ val prompts =
 ## Build and Run
 
 ```scala
-val server = Server.from[IO](
-  info = ServerInfo("calculator", "1.0.0"),
-  tools = tools,
-  resources = resources,
-  prompts = prompts
-)
+import mcp4s.server.*
+
+val server = McpServer[IO](ServerInfo("calculator", "1.0.0"))
+  .withTools(tools)
+  .withResources(resources)
+  .withPrompts(prompts)
 
 // HTTP (production) — defaults to port 3000, path /mcp
-server.serveHttp()
+server.http().resource.useForever
 
 // HTTP on a custom port
-server.serveHttp(port"8080")
+import mcp4s.server.transport.HttpConfig
+import com.comcast.ip4s.*
+server.http(HttpConfig(port = port"8080")).resource.useForever
 
 // Stdio (Claude Desktop)
-server.runStdio
+server.stdio.run
 
 // WebSocket — defaults to port 3000, path /ws
-server.serveWebSocket()
-server.serveWebSocket(port"3001")
+server.webSocket().resource.useForever
 ```
 
-All of these come from `import mcp4s.server.syntax.*`.
+The same transport verbs are available on any `Server[F]` value (no import needed), so `Server.from(info, tools, resources, prompts)` — the low-level constructor — binds the same way.
 
-Everything is built from the composable DSL (`import mcp4s.server.mcp.*`): `Tool`,
-`Resource`, and `Prompt` values compose with `|+|`, and `Server.from` assembles them.
-For raw, untyped handlers use `Tools.single` / `Resources.single` / `Prompts.single`.
+Everything is built from the composable DSL (`import mcp4s.server.dsl.*`): `Tool`,
+`Resource`, and `Prompt` values compose with `|+|`, and `McpServer` assembles them.
+Capabilities are derived from what you register — a server with no resources won't advertise the
+`resources` capability.
 
 ## Test with MCP Inspector
 

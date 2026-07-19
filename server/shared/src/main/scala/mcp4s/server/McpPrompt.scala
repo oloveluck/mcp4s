@@ -82,33 +82,6 @@ object Prompts:
 /** Internal prompt factory. Use `Prompt` from `import mcp4s.server.dsl.*` instead. */
 private[server] object McpPrompt:
 
-  /** Create a prompt with PromptInput-based arguments */
-  def apply[F[_]: Concurrent, A: PromptInput](name: String, description: String)(
-      handler: A => F[GetPromptResult]
-  ): Prompts[F] =
-    val pi     = summon[PromptInput[A]]
-    val prompt = Prompt(name, Some(description), pi.arguments)
-    new Prompts[F]:
-      def list: F[List[Prompt]] = Applicative[F].pure(List(prompt))
-      def get(promptName: String, args: Map[String, String]): OptionT[F, GetPromptResult] =
-        if promptName == name then
-          pi.decode(args) match
-            case Right(a) => OptionT.liftF(handler(a))
-            case Left(err) =>
-              OptionT.liftF(Concurrent[F].raiseError(McpError.InvalidPromptArguments(name, err)))
-        else OptionT.none[F, GetPromptResult]
-
-  /** Create a prompt with no arguments */
-  def noArgs[F[_]: Concurrent](name: String, description: String)(
-      handler: F[GetPromptResult]
-  ): Prompts[F] =
-    val prompt = Prompt(name, Some(description), Nil)
-    new Prompts[F]:
-      def list: F[List[Prompt]] = Applicative[F].pure(List(prompt))
-      def get(promptName: String, args: Map[String, String]): OptionT[F, GetPromptResult] =
-        if promptName == name then OptionT.liftF(handler)
-        else OptionT.none[F, GetPromptResult]
-
   /** Create a prompt from a raw map handler */
   def raw[F[_]: Concurrent](
       name: String,

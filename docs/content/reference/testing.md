@@ -12,14 +12,20 @@ Test a full server with an in-memory client:
 
 ```scala
 import cats.effect.IO
+import io.circe.Encoder
 import munit.CatsEffectSuite
 import mcp4s.server.*
-import mcp4s.server.mcp.*
+import mcp4s.server.dsl.*
 import mcp4s.server.testing.*
 
 class MyServerSuite extends CatsEffectSuite:
 
-  val tools  = Tool[IO, AddArgs]("add", "Add")(args => IO.pure(ok(s"${args.a + args.b}")))
+  // Schema drives the tool; Encoder.AsObject lets tests pass typed arguments
+  case class AddArgs(a: Double, b: Double) derives Schema, Encoder.AsObject
+
+  val tools = Tool("add").withDescription("Add").input[AddArgs].handle[IO] { args =>
+    IO.pure(ok(s"${args.a + args.b}"))
+  }
   val server = Server.fromTools[IO](ServerInfo("test", "1.0.0"), tools)
 
   test("add tool returns correct result"):
@@ -60,13 +66,13 @@ Test tools directly without building a full server:
 
 ```scala
 import mcp4s.server.testing.*
-import mcp4s.server.mcp.*
-import mcp4s.protocol.*
+import mcp4s.server.testing.ToolsTest.*
+import mcp4s.server.dsl.*
 
 @description("Add two numbers")
-case class AddArgs(a: Double, b: Double) derives ToolInput
+case class AddArgs(a: Double, b: Double) derives Schema
 
-val tools = Tool[IO, AddArgs](args => IO.pure(ToolResult.text(s"${args.a + args.b}")))
+val tools = Tool.from[AddArgs].handle[IO](args => IO.pure(ok(s"${args.a + args.b}")))
 
 test("call tool directly"):
   for result <- tools.testCall("add", args("a" -> 3.0, "b" -> 2.0))

@@ -9,22 +9,45 @@ No networking is involved. The client writes JSON-RPC to the server's stdin and 
 ## Server
 
 ```scala
-object MyServer extends IOApp.Simple:
-  val tools  = Tool[IO, Args]("search", "Search files")(args => ...)
-  val server = Server.fromTools[IO](ServerInfo("my-server", "1.0.0"), tools)
+import cats.effect.*
+import mcp4s.server.*
+import mcp4s.server.dsl.*
+import mcp4s.protocol.*
 
-  def run = server.runStdio
+object MyServer extends IOApp.Simple:
+  val tools = Tool("search").withDescription("Search files").input[Args]
+    .handle[IO](args => ...)
+
+  val server = McpServer[IO](ServerInfo("my-server", "1.0.0")).withTools(tools)
+
+  def run = server.stdio.run
 ```
+
+`stdio.run` runs until stdin closes.
 
 ## Client
 
-To drive a server you spawn yourself as a subprocess (cross-platform):
+To drive a server you spawn yourself as a subprocess (cross-platform, no import needed):
 
 ```scala
-import mcp4s.client.syntax.*
-
-client.connectStdio("java", "-jar", "/path/to/server.jar").use: conn =>
+client.stdio("java", "-jar", "/path/to/server.jar").use: conn =>
   conn.callTool("search", args)
+```
+
+For working directory, environment, or timeouts, pass a full config:
+
+```scala
+import mcp4s.client.transport.StdioTransportConfig
+import mcp4s.transport.Timeouts
+import scala.concurrent.duration.*
+
+client.stdio(StdioTransportConfig(
+  command          = "node",
+  args             = List("server.js"),
+  workingDirectory = Some("/srv/mcp"),
+  env              = Map("LOG_LEVEL" -> "debug"),
+  timeouts         = Timeouts(request = 1.minute, init = 15.seconds)
+)).use(conn => ...)
 ```
 
 ## Claude Desktop Config
@@ -42,21 +65,8 @@ client.connectStdio("java", "-jar", "/path/to/server.jar").use: conn =>
 }
 ```
 
-With Mill:
-```json
-{
-  "mcpServers": {
-    "my-server": {
-      "command": "/path/to/project/mill",
-      "args": ["myserver.run"],
-      "cwd": "/path/to/project"
-    }
-  }
-}
-```
-
 ## Limitations
 
-- No bidirectional communication (no sampling/elicitation) — the server can't initiate requests back to the client
+- Plain request/response only — no server-initiated requests back to the client (no sampling/elicitation); use HTTP (SSE) or WebSocket for bidirectional features
 - Single client only — one process, one connection
 - Process exits when stdin closes

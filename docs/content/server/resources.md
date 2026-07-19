@@ -9,17 +9,17 @@ Clients discover available resources with `listResources`, then fetch them with 
 ## Constructors
 
 ```scala
-import mcp4s.server.mcp.*
+import mcp4s.server.dsl.*
 
 // Static text
 Resource.text[IO]("file:///readme", "README")("Hello world")
 
 // Dynamic (effectful)
-Resource[IO]("file:///status", "Status")(getStatus().map(s => mcp.text("file:///status", s)))
+Resource[IO]("file:///status", "Status")(getStatus().map(s => text("file:///status", s)))
 
 // Template (pattern matching)
 Resource.template[IO]("api://users/{id}", "User", "Get user by ID"): uri =>
-  fetchUser(uri.split("/").last).map(u => mcp.text(uri, u.toJson))
+  fetchUser(uri.split("/").last).map(u => text(uri, u.toJson))
 ```
 
 Templates use URI patterns with `{param}` placeholders. Clients discover templates via `listResourceTemplates` and substitute parameters to form concrete URIs.
@@ -28,13 +28,13 @@ Templates use URI patterns with `{param}` placeholders. Clients discover templat
 
 ```scala
 // Plain text
-mcp.text("uri", "text content")
+text("uri", "text content")
 
 // Binary (base64-encoded)
-mcp.blob("uri", base64Data, "image/png")
+blob("uri", base64Data, "image/png")
 ```
 
-Set MIME types when constructing resources (e.g. `text/plain`, `application/json`, `image/png`). Text resources default to `text/plain`.
+`text` and `blob` come from `mcp4s.server.dsl`. Set MIME types when constructing resources (e.g. `text/plain`, `application/json`, `image/png`). Text resources default to `text/plain`.
 
 ## Composition
 
@@ -51,8 +51,10 @@ val resources =
       getStatus().map(s => ResourceContent.text("file:///status", s))
     )
 
-Server.from[IO](ServerInfo("my-server", "1.0.0"), Tools.empty[IO], resources, Prompts.empty[IO])
+val server = McpServer[IO](ServerInfo("my-server", "1.0.0")).withResources(resources)
 ```
+
+A server with resources registered advertises the `resources` capability automatically.
 
 ## Subscribable Resources
 
@@ -61,16 +63,18 @@ Resources can notify clients when their content changes. Use `subscribable` with
 ```scala
 // Change-stream driven — notifies when the stream emits
 Resource.subscribable[IO]("db://status", "DB Status", dbChangeStream)(uri =>
-  getDbStatus().map(s => mcp.text(uri, s))
+  getDbStatus().map(s => text(uri, s))
 )
 
 // Polling — checks a condition on an interval
 Resource.polling[IO]("file:///config", "Config", 10.seconds, configChanged)(uri =>
-  readConfig().map(c => mcp.text(uri, c.toString))
+  readConfig().map(c => text(uri, c.toString))
 )
 ```
 
 Clients subscribe via `subscribeResource` and receive `notifications/resources/updated` when changes occur. This works with all persistent transports (HTTP with SSE, WebSocket, Stdio).
+
+The server advertises `resources.subscribe = true` only when at least one subscribable resource is registered — capabilities always reflect what's actually there.
 
 ## Template Example
 
@@ -79,7 +83,7 @@ A more realistic template exposing database records:
 ```scala
 Resource.template[IO]("db://orders/{orderId}", "Order", "Fetch order by ID"): uri =>
   orderRepo.findById(uri.split("/").last).flatMap:
-    case Some(order) => IO.pure(mcp.text(uri, order.toJson))
+    case Some(order) => IO.pure(text(uri, order.toJson))
     case None        => IO.raiseError(McpError.ResourceNotFound(uri))
 ```
 

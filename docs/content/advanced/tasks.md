@@ -24,7 +24,7 @@ conn.getTaskResult(taskId) // IO[TaskResult]
 Report progress during long operations using the tool context:
 
 ```scala
-Tool.withContext[IO, Args]("process", "Process data") { (args, ctx) =>
+Tool("process").withDescription("Process data").input[Args].handleWith[IO] { (args, ctx) =>
   for
     data <- loadData(args)
     results <- data.zipWithIndex.traverse { case (item, idx) =>

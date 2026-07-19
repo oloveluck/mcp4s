@@ -22,8 +22,21 @@ Tools are the primary way AI clients interact with servers — calling functions
 conn.listAllTools                        // IO[List[Tool]] (follows pagination)
 conn.listTools(cursor)                   // IO[(List[Tool], Option[String])] one page
 conn.callTool("name", args)              // IO[ToolResult]
-conn.callToolIfSupported("name", args)   // IO[Option[ToolResult]]
+conn.callToolIfSupported(ToolName("name"), args)  // IO[Option[ToolResult]]
 ```
+
+### Typed Calls
+
+With an endpoint definition (see [Services](../server/services.md)), calls are typed both ways — the input encodes via the endpoint's schema and the result decodes via its output schema:
+
+```scala
+import mcp4s.client.TypedClient.*
+
+conn.call(Calculator.add)(AddArgs(1, 2))               // IO[AddResult]
+conn.getPrompt(greetingEndpoint)(GreetArgs("Ada"))     // IO[GetPromptResult]
+```
+
+An `isError` result raises `McpError.ToolExecutionError` instead of being returned silently.
 
 ## Resources
 
@@ -33,7 +46,7 @@ Resources provide read access to server-side data via URIs:
 conn.listAllResources                // IO[List[Resource]]
 conn.listAllResourceTemplates        // IO[List[ResourceTemplate]]
 conn.readResource("uri")             // IO[ResourceContent]
-conn.readResourceIfSupported("uri")  // IO[Option[ResourceContent]]
+conn.readResourceIfSupported(ResourceUri("uri"))  // IO[Option[ResourceContent]]
 ```
 
 ## Prompts
@@ -43,7 +56,7 @@ Prompts return reusable message templates for the AI to use:
 ```scala
 conn.listAllPrompts                     // IO[List[Prompt]]
 conn.getPrompt("name", args)            // IO[GetPromptResult]
-conn.getPromptIfSupported("name", args) // IO[Option[GetPromptResult]]
+conn.getPromptIfSupported(PromptName("name"), args) // IO[Option[GetPromptResult]]
 ```
 
 ## Progress

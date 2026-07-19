@@ -14,6 +14,7 @@ enum McpError(val message: String) extends Exception(message):
   case ToolNotFound(name: String)
   case ResourceNotFound(uri: String)
   case InvalidToolArguments(name: String, reason: String)
+  case ToolExecutionError(name: String, detail: String)
   case MethodNotSupported(method: String)
   case NotInitialized
   // … and more
@@ -36,10 +37,11 @@ These are the JSON-RPC standard error codes used by MCP:
 Return errors from tools using `attempt`:
 
 ```scala
-Tool[IO, Args]("risky", "May fail"): args =>
+Tool("risky").withDescription("May fail").input[Args].handle[IO] { args =>
   doWork(args).attempt.map:
     case Right(r) => ok(r)
     case Left(e)  => error(e.getMessage)
+}
 ```
 
 ## Client-Side
@@ -52,17 +54,22 @@ conn.callTool("tool", args).attempt.flatMap:
   case Left(e)           => IO.println(s"Connection error: ${e.getMessage}")
 ```
 
+Typed calls (`conn.call(endpoint)(input)` via `TypedClient`) never return an `isError` result silently — they raise `McpError.ToolExecutionError(name, detail)` instead, so tool failures surface in the same channel as protocol errors.
+
 ## With http4s Middleware
 
 For HTTP transport, compose retry and timeout middleware on your `Client[F]`:
 
 ```scala
 import org.http4s.client.middleware.{Retry, RetryPolicy, Timeout}
+import mcp4s.client.transport.HttpTransportConfig
 import scala.concurrent.duration.*
 
 val retryPolicy = RetryPolicy[IO](RetryPolicy.exponentialBackoff(maxWait = 10.seconds, maxRetry = 3))
 val resilientClient = Timeout(30.seconds)(Retry(retryPolicy)(rawHttpClient))
 
-client.connectHttp("http://localhost:3000", resilientClient).use: conn =>
+client.http(HttpTransportConfig[IO]("http://localhost:3000/mcp"), resilientClient).use: conn =>
   conn.callTool("tool", args)
 ```
+
+Request and initialization timeouts are also built into every transport config via `timeouts = Timeouts(request = 5.minutes, init = 30.seconds)` (`mcp4s.transport.Timeouts`).

@@ -7,7 +7,9 @@ Most protocols are one-directional: clients request, servers respond. MCP is dif
 
 > For the full protocol details, see [Sampling](https://spec.modelcontextprotocol.io/specification/2025-03-26/client/sampling/) in the MCP specification.
 
-This means a tool can *think* (by requesting an LLM completion) and *ask* (by prompting the user) during execution. Bidirectional communication requires HTTP (SSE) or WebSocket transport.
+This means a tool can *think* (by requesting an LLM completion) and *ask* (by prompting the user) during execution.
+
+Bidirectional communication works over **both network transports**: on Streamable HTTP, server-initiated requests ride the SSE response stream and the client answers them on the same connection; on WebSocket they use the duplex socket directly. The client answers server-initiated requests on every network transport — the same shared connection runner drives both. Only **stdio** remains plain request/response.
 
 ## Sampling
 
@@ -15,23 +17,29 @@ Sampling lets a server request LLM completions from the client. This is useful f
 
 **Client** — Register a handler that delegates to your LLM:
 ```scala
-val client = McpClient.from[IO](
-  ClientInfo("my-client", "1.0.0"),
-  sampling = Some(Sampling[IO](params =>
+import mcp4s.client.*
+import mcp4s.client.mcp.*
+
+val client = McpClientBuilder[IO](ClientInfo("my-client", "1.0.0"))
+  .withSampling(Sampling[IO](params =>
     myLlm.complete(params.messages, params.maxTokens).map(r => message(r.text, r.model))
   ))
-)
 ```
 
-**Server** — Request a completion from within a tool:
+Adding the handler is what advertises the `sampling` capability — nothing else to configure.
+
+**Server** — Request a completion from within a tool, using a `handleWith` (context) handler:
 ```scala
-Tool.withContext[IO, Args]("smart", "AI tool"): (args, ctx) =>
+import mcp4s.server.dsl.*
+
+Tool("smart").withDescription("AI tool").input[Args].handleWith[IO] { (args, ctx) =>
   ctx.sampling
     .createMessage(CreateMessageParams(
       messages = List(SamplingMessage(Role.User, SamplingTextContent(args.query))),
       maxTokens = 500
     ))
     .map(r => ok(r.content.toString))
+}
 ```
 
 ## Elicitation
@@ -40,20 +48,27 @@ Elicitation lets a server ask the user for input before proceeding. This is esse
 
 **Client** — Register a handler that prompts the user:
 ```scala
-val client = McpClient.from[IO](
-  ClientInfo("my-client", "1.0.0"),
-  elicitation = Some(Elicitation[IO](params =>
-    askUser(params.message).map(r => if r.confirmed then accept(r.data) else decline)
-  ))
-)
+val client = McpClientBuilder[IO](ClientInfo("my-client", "1.0.0"))
+  .withElicitation(Elicitation[IO] {
+    case form: ElicitFormParams =>
+      askUser(form.message).map(r => if r.confirmed then accept(r.data) else decline)
+    case _: ElicitUrlParams => IO.pure(decline)
+  })
 ```
 
 **Server** — Ask the user for confirmation:
 ```scala
-Tool.withContext[IO, Args]("delete", "Delete file"): (args, ctx) =>
-  ctx.elicitation.elicit(ElicitParams(s"Delete ${args.path}?")).flatMap:
-    case ElicitResult.Accepted(_) => deleteFile(args.path).map(_ => ok("Deleted"))
-    case _                        => IO.pure(ok("Cancelled"))
+case class Confirm(confirmed: Boolean) derives Schema
+
+Tool("delete").withDescription("Delete file").input[Args].handleWith[IO] { (args, ctx) =>
+  ctx.elicitation
+    .elicit(ElicitFormParams(s"Delete ${args.path}?", Schema[Confirm].jsonSchema))
+    .flatMap { result =>
+      result.action match
+        case ElicitAction.Accept => deleteFile(args.path).as(ok("Deleted"))
+        case _                   => IO.pure(ok("Cancelled"))
+    }
+}
 ```
 
 ## Progress & Logging
@@ -61,8 +76,11 @@ Tool.withContext[IO, Args]("delete", "Delete file"): (args, ctx) =>
 Servers can also push progress updates and log messages to the client during tool execution:
 
 ```scala
-Tool.withContext[IO, Args]("work", "Do work"): (args, ctx) =>
+Tool("work").withDescription("Do work").input[Args].handleWith[IO] { (args, ctx) =>
   ctx.log(LogLevel.Info, "Starting") *>
     ctx.progress(0.5, Some(100)) *>
     doWork()
+}
 ```
+
+Streaming tools get the same context via `.streamWith[IO]((args, ctx) => ...)`.

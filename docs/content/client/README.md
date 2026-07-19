@@ -8,53 +8,77 @@ In the MCP architecture, clients are the active side — they initiate connectio
 
 ## Creating a Client
 
+`McpClientBuilder` is the one entry point — the mirror image of `McpServer` on the server side:
+
 ```scala
 import cats.effect.*
 import mcp4s.client.*
+import mcp4s.client.mcp.*
+import mcp4s.protocol.*
 import org.typelevel.otel4s.trace.Tracer
 
 given Tracer[IO] = Tracer.noop[IO]
 
-import mcp4s.client.mcp.*
-
-val client = McpClient.from[IO](
-  ClientInfo("my-client", "1.0.0"),
-  roots = Some(Roots[IO]("file:///workspace", "Workspace")),
-  sampling = Some(Sampling[IO](params => myLlm.complete(params))),
-  elicitation = Some(Elicitation[IO](params => askUser(params)))
-)
+val client = McpClientBuilder[IO](ClientInfo("my-client", "1.0.0"))
+  .withRoots(Roots[IO]("file:///workspace", "Workspace"))
+  .withSampling(Sampling[IO](params => myLlm.complete(params)))
+  .withElicitation(Elicitation[IO](params => askUser(params)))
 ```
 
 A `Tracer[IO]` is needed as a type-class instance. Use `Tracer.noop` to disable tracing, or provide a real tracer for distributed observability.
 
-**Roots** tell the server which directories the client has access to. **Sampling** and **elicitation** handlers enable bidirectional features where the server can request help from the client.
+**Roots** tell the server which directories the client has access to. **Sampling** and **elicitation** handlers enable bidirectional features where the server can request help from the client. Advertised client capabilities are **derived** from which handlers you add — no manual capability flags.
+
+`McpClient.from(info, roots, sampling, elicitation)` remains as the compositional alternative when you want a plain `McpClient[F]` value.
 
 ## Connecting
 
+Each transport is a verb on the builder (or on any `McpClient[F]`), returning a `Resource[F, McpConnection[F]]`:
+
 ```scala
-import mcp4s.client.syntax.*
+import mcp4s.client.syntax.*   // JVM-only verbs: webSocket, auto-Ember http
+import mcp4s.client.transport.*
 
 // Stdio — spawn a subprocess
-client.connectStdio("node", "server.js").use(conn => conn.callTool("add", args))
+client.stdio("node", "server.js").use(conn => conn.callTool("add", args))
 
 // HTTP — JVM one-liner (builds/manages an Ember client for you)
-client.connectHttp("http://localhost:3000").use(conn => conn.callTool("add", args))
+client.http("http://localhost:3000/mcp").use(conn => conn.callTool("add", args))
 
 // HTTP — cross-platform: bring your own http4s Client[F]
-client.connectHttp("http://localhost:3000", httpClient).use(conn => conn.callTool("add", args))
+client.http(HttpTransportConfig[IO]("http://localhost:3000/mcp"), httpClient)
+  .use(conn => conn.callTool("add", args))
 
 // WebSocket (JVM-only)
-client.connectWebSocket("ws://localhost:3000").use(conn => conn.callTool("add", args))
+client.webSocket("ws://localhost:3000/ws").use(conn => conn.callTool("add", args))
 ```
 
-The connection is a `Resource` — it handles initialization, capability negotiation, and cleanup automatically.
+Configs take the **full URI including the path** (`/mcp`, `/ws`). The connection is a `Resource` — it handles initialization, capability negotiation, and cleanup automatically.
 
-> `connectWebSocket` and the no-`Client` `connectHttp` are JVM-only. On JS/Native, use the
-> cross-platform `connectHttp(url, httpClient)` / `connectStdio` and supply a platform
-> `Client[F]`. For custom backends or middleware, call `HttpClientTransport` /
+> `webSocket` and the no-`Client` `http` overload are JVM-only (`import mcp4s.client.syntax.*`).
+> On JS/Native, use the cross-platform `http(config, httpClient)` / `stdio` and supply a
+> platform `Client[F]`. For custom backends, call `HttpClientTransport` /
 > `WebSocketClientTransport` / `StdioClientTransport` directly.
 
-## Retry & Timeout
+## Authentication & Timeouts
+
+The network transport configs carry auth and timeouts:
+
+```scala
+import mcp4s.client.transport.*
+import mcp4s.transport.Timeouts
+import scala.concurrent.duration.*
+
+val config = HttpTransportConfig[IO](
+  uri = "https://api.example.com/mcp",
+  auth = Some(McpAuth.Bearer("my-token")),
+  timeouts = Timeouts(request = 2.minutes, init = 10.seconds)
+)
+```
+
+`McpAuth.Bearer` sends a static bearer token; `McpAuth.TokenProvider(io)` resolves a fresh token before each request (use for refresh flows). The same `McpAuth` works for WebSocket, where it's sent on the upgrade request. `Timeouts` applies to every transport, including stdio.
+
+## Retry
 
 For HTTP transport, compose standard http4s middleware on your `Client[F]` before passing it to the transport:
 
@@ -65,12 +89,24 @@ import scala.concurrent.duration.*
 val retryPolicy = RetryPolicy[IO](RetryPolicy.exponentialBackoff(maxWait = 10.seconds, maxRetry = 3))
 val resilientClient = Timeout(30.seconds)(Retry(retryPolicy)(rawHttpClient))
 
-// Pass the wrapped client to the cross-platform connectHttp overload
-client.connectHttp("http://localhost:3000", resilientClient).use: conn =>
+// Pass the wrapped client to the cross-platform http overload
+client.http(HttpTransportConfig[IO]("http://localhost:3000/mcp"), resilientClient).use: conn =>
   conn.callTool("operation", args)
 ```
 
 For WebSocket/Stdio transports, reconnection (re-establishing the transport) is the appropriate strategy for connection failures rather than per-message retry.
+
+## Typed Calls
+
+If the server publishes an `McpService`, skip raw JSON entirely:
+
+```scala
+import mcp4s.client.TypedClient.*
+
+conn.call(Calculator.add)(AddArgs(1, 2))   // : IO[AddResult]
+```
+
+See [Services](../server/services.md).
 
 ## Guide Contents
 

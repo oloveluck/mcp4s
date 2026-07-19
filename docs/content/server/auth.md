@@ -1,10 +1,10 @@
 # HTTP Security
 
-MCP servers exposed over HTTP should be secured. mcp4s exposes raw `HttpRoutes[F]` via `HttpTransport.routes`, so you can compose standard http4s middleware — CORS, authentication, rate limiting — directly.
+MCP servers exposed over HTTP should be secured. mcp4s exposes raw `HttpRoutes[F]` via `server.http(config).routes`, so you can compose standard http4s middleware — CORS, authentication, rate limiting — directly.
 
 ## Composable Routes
 
-Use `HttpTransport.routes` to get the raw MCP routes, then wrap them with any http4s middleware:
+Use `server.http(config).routes` to get the raw MCP routes, then wrap them with any http4s middleware:
 
 ```scala
 import cats.data.{Kleisli, OptionT}
@@ -29,7 +29,7 @@ val authUser: Kleisli[OptionT[IO, *], Request[IO], String] =
 
 val bearerAuth: AuthMiddleware[IO, String] = AuthMiddleware(authUser)
 
-HttpTransport.routes[IO](server).flatMap: mcpRoutes =>
+server.http(HttpConfig[IO]()).routes.flatMap: mcpRoutes =>
   // 2. Wrap MCP routes with bearer-token auth
   val authed = bearerAuth(AuthedRoutes(req => mcpRoutes.run(req.req)))
   // 3. Apply CORS
@@ -39,11 +39,13 @@ HttpTransport.routes[IO](server).flatMap: mcpRoutes =>
 
 ## Middleware
 
-Since `HttpTransport.routes` returns standard `HttpRoutes[F]`, any http4s middleware works out of the box.
+Since `server.http(config).routes` returns standard `HttpRoutes[F]` (in a `Resource`), any http4s middleware works out of the box.
 
 ### Authentication
 
 Use `org.http4s.server.AuthMiddleware` with a `Kleisli` that extracts credentials from the request. The example above shows a simple bearer token check — for production use, swap the token comparison for JWT validation using a library like [http4s-jwt-auth](https://github.com/profunktor/http4s-jwt-auth).
+
+On the client side, pass an `McpAuth` in the transport config to send the matching `Authorization: Bearer` header — see the [HTTP transport](../transports/http.md#authentication) guide.
 
 ### CORS
 
@@ -77,11 +79,11 @@ val sessionConfig = SessionConfig(
   requestTimeout = 5.minutes
 )
 
-server.serveHttp(HttpConfig(
+server.http(HttpConfig(
   port = port"3000",
   enableSessions = true,
   sessionConfig = sessionConfig
-)).useForever
+)).resource.useForever
 ```
 
 ## DNS Rebinding Protection
