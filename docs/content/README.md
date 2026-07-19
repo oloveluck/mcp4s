@@ -12,7 +12,7 @@ MCP defines three core primitives:
 - **Resources** — Data the AI can read (files, database records, API responses)
 - **Prompts** — Reusable message templates (code review templates, analysis workflows)
 
-> Learn more: [MCP introduction](https://modelcontextprotocol.io/introduction) | [Full specification](https://spec.modelcontextprotocol.io/specification/2025-03-26/)
+> Learn more: [MCP introduction](https://modelcontextprotocol.io/introduction) | [Full specification](https://modelcontextprotocol.io/specification/2025-11-25/)
 
 ## Quick Example
 
@@ -30,7 +30,7 @@ val tools = Tool.from[AddArgs].handle[IO](args => IO.pure(ok(s"${args.a + args.b
 val server = McpServer[IO](ServerInfo("calculator", "1.0.0")).withTools(tools)
 ```
 
-## What mcp4s provides
+## What mcp4s Provides
 
 - **One unified `Schema`** — `derives Schema` describes a type once; the JSON Schema, encoder, decoder, and prompt-argument metadata are all derived from it and can never disagree
 - **Endpoint definitions shared by both sides** — define a `Tool`/`Prompt` endpoint once, attach a handler on the server, call it type-safely from the client (`McpService` + `TypedClient`)

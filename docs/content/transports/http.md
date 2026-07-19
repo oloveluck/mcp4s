@@ -2,7 +2,7 @@
 
 MCP over HTTP uses a request/response model with **Server-Sent Events (SSE)** for server-to-client messages. This is the most common transport for production deployments — it works through load balancers, firewalls, and proxies without special configuration.
 
-> For the full protocol details, see [Streamable HTTP Transport](https://spec.modelcontextprotocol.io/specification/2025-03-26/transport/http/) in the MCP specification.
+> For the full protocol details, see [Streamable HTTP Transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http) in the MCP specification.
 
 The client sends JSON-RPC requests via HTTP POST. When the server responds with an SSE stream, every event on it — progress notifications, server-initiated requests such as sampling and elicitation, and the final response — is surfaced to the client, so **bidirectional flows work exactly as they do over WebSocket**.
 
@@ -25,6 +25,16 @@ server.http(HttpConfig(
 ```
 
 `server.http(...)` is available on `McpServer` and on any `Server[F]` — no import needed. `.resource` gives you the bound http4s `Server` as a managed `Resource`; `.run` is shorthand for `.resource.useForever`.
+
+### HttpConfig
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `host` | `Host` | `host"0.0.0.0"` | Bind address (ip4s type-safe) |
+| `port` | `Port` | `port"3000"` | Listen port (ip4s type-safe) |
+| `path` | `String` | `"mcp"` | MCP endpoint path |
+| `enableSessions` | `Boolean` | `true` | Session management via `Mcp-Session-Id` |
+| `sessionConfig` | `SessionConfig` | `SessionConfig.default` | Session timeout (30 min), max queue size (1000), request timeout (5 min), max sessions (1000) |
 
 ### Composable Routes
 

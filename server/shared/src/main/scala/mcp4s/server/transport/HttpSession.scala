@@ -39,7 +39,12 @@ final class HttpSession[F[_]] private (
     lastAccessedRef: Ref[F, FiniteDuration],
     val outQueue: Queue[F, JsonRpcMessage],
     session: ServerSession[F],
-    val config: SessionConfig
+    val config: SessionConfig,
+    /** Progress tokens of the streaming requests currently in flight on this session. The
+      * out-queue is shared, so each SSE poller uses this to hand a foreign stream's progress
+      * events back instead of emitting (and possibly losing) them.
+      */
+    val activeProgressTokens: Ref[F, Set[RequestId]]
 )(using F: Async[F]):
 
   /** Get the last access time for this session, as a duration since the epoch */
@@ -101,6 +106,7 @@ object HttpSession:
       session         <- ServerSession.create[F](outQueue.offer, config.requestTimeout, tracer)
       now             <- Async[F].realTime
       lastAccessedRef <- Ref.of[F, FiniteDuration](now)
+      activeTokens    <- Ref.of[F, Set[RequestId]](Set.empty)
 
       // Context factory with full capabilities; progressToken from _meta is used for
       // progress notifications when provided.
@@ -115,4 +121,13 @@ object HttpSession:
         )
 
       dispatcher <- Dispatcher.withContext[F](server, contextFactory)
-    yield new HttpSession[F](id, dispatcher, now, lastAccessedRef, outQueue, session, config)
+    yield new HttpSession[F](
+      id,
+      dispatcher,
+      now,
+      lastAccessedRef,
+      outQueue,
+      session,
+      config,
+      activeTokens
+    )

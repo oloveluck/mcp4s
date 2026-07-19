@@ -4,7 +4,7 @@ An MCP server is a program that exposes capabilities — **tools**, **resources*
 
 Servers can run over HTTP, WebSocket, or Stdio (for Claude Desktop integration). A single server can serve multiple clients simultaneously.
 
-### Common Patterns
+## Common Patterns
 
 - **Claude Desktop tool servers** — Expose tools via stdio so Claude Desktop can call them locally
 - **HTTP microservices** — Run MCP servers as standalone services that AI agents call over the network

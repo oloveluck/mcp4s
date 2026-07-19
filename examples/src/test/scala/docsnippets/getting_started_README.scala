@@ -39,17 +39,14 @@ object scope_1:
 
     def run = server.http().run
 
-  // ---- snippet at line 52
+  // ---- snippet at line 50
   import cats.effect.*
   import io.circe.Json, io.circe.syntax.*
   import mcp4s.client.*
   import mcp4s.client.syntax.*
   import mcp4s.protocol.*
-  import org.typelevel.otel4s.trace.Tracer
 
   object MyClient extends IOApp.Simple:
-    given Tracer[IO] = Tracer.noop[IO]
-
     val client = McpClientBuilder[IO](ClientInfo("my-client", "1.0.0"))
 
     def run = client.http("http://localhost:3000/mcp").use: conn =>
@@ -57,14 +54,22 @@ object scope_1:
         .callTool("add", Json.obj("a" -> 5.asJson, "b" -> 3.asJson))
         .flatMap(r => IO.println(s"Result: $r"))
 
-  // ---- snippet at line 76
+  // ---- snippet at line 72
   case class Args(query: String, limit: Option[Int]) derives Schema
 
-  // ---- snippet at line 81
-  val addTool, multiplyTool, divideTool = Tools.empty[IO]   // stand-ins for your Tool definitions
-  val tools = addTool |+| multiplyTool |+| divideTool
+object scope_2:
+  import stubs.{*, given}
+  // ---- snippet at line 78
+  import mcp4s.server.dsl.*
+
+  val version = Tool("version").withDescription("Server version").handle[IO](_ => IO.pure(ok("1.0.0")))
+  val ping    = Tool("ping").withDescription("Health check").handle[IO](_ => IO.pure(ok("pong")))
+  val tools   = version |+| ping
 
   // ---- snippet at line 87
+  import io.circe.syntax.*
+  import mcp4s.client.syntax.*
+
   client.http("http://localhost:3000/mcp").use: conn =>
     conn.callTool("add", Json.obj("a" -> 5.asJson, "b" -> 3.asJson))
 

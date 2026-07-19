@@ -2,7 +2,7 @@
 
 MCP **resources** expose data to AI clients via URIs. While tools let AI *do* things, resources let AI *read* things — files, database records, API responses, configuration, or any content that can be addressed by a URI.
 
-> For the full protocol details, see [Resources](https://spec.modelcontextprotocol.io/specification/2025-03-26/server/resources/) in the MCP specification.
+> For the full protocol details, see [Resources](https://modelcontextprotocol.io/specification/2025-11-25/server/resources) in the MCP specification.
 
 Clients discover available resources with `listResources`, then fetch them with `readResource("uri")`. Resources can be **static** (fixed URI) or **templates** (URI pattern with parameters like `api://users/{id}`).
 

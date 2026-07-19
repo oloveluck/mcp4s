@@ -6,7 +6,7 @@
 
 In MCP, a **server** exposes tools, resources, and prompts. A **client** connects to servers and uses them.
 
-This guide gets you running with both.
+This guide gets you running with both. For deeper walkthroughs, see [Your First Server](first-server.md) and [Your First Client](first-client.md).
 
 ## Installation
 
@@ -73,7 +73,10 @@ case class Args(query: String, limit: Option[Int]) derives Schema
 ```
 
 **Composable APIs** — Combine with `|+|`:
+<!-- doc-snippet: reset -->
 ```scala
+import mcp4s.server.dsl.*
+
 val version = Tool("version").withDescription("Server version").handle[IO](_ => IO.pure(ok("1.0.0")))
 val ping    = Tool("ping").withDescription("Health check").handle[IO](_ => IO.pure(ok("pong")))
 val tools   = version |+| ping
@@ -81,6 +84,9 @@ val tools   = version |+| ping
 
 **Resource safety** — Connections clean up automatically:
 ```scala
+import io.circe.syntax.*
+import mcp4s.client.syntax.*
+
 client.http("http://localhost:3000/mcp").use: conn =>
   conn.callTool("add", Json.obj("a" -> 5.asJson, "b" -> 3.asJson))
 ```

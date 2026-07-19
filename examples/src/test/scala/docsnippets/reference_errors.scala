@@ -42,14 +42,3 @@ object scope_1:
     case Left(e: McpError) => IO.println(s"Protocol error: ${e.message}")
     case Left(e)           => IO.println(s"Connection error: ${e.getMessage}")
 
-  // ---- snippet at line 70
-  import org.http4s.client.middleware.{Retry, RetryPolicy}
-  import mcp4s.client.transport.HttpTransportConfig
-  import scala.concurrent.duration.*
-
-  val retryPolicy = RetryPolicy[IO](RetryPolicy.exponentialBackoff(maxWait = 10.seconds, maxRetry = 3))
-  val resilientClient = Retry(retryPolicy)(httpClient)
-
-  client.http(HttpTransportConfig[IO]("http://localhost:3000/mcp"), resilientClient).use: conn =>
-    conn.callTool("tool", Json.obj())
-

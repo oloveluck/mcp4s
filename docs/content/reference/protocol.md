@@ -2,7 +2,7 @@
 
 MCP uses **JSON-RPC 2.0** for all communication. Every message is a JSON-RPC request, response, error, or notification. This page documents the core protocol types as they appear in mcp4s.
 
-> For the full protocol specification, see [spec.modelcontextprotocol.io](https://spec.modelcontextprotocol.io/specification/2025-03-26/).
+> For the full protocol specification, see [modelcontextprotocol.io](https://modelcontextprotocol.io/specification/2025-11-25/).
 
 ## JSON-RPC
 
@@ -57,9 +57,10 @@ During initialization, client and server declare what they support:
 <!-- doc-snippet: skip -->
 ```scala
 case class ClientCapabilities(roots: Option[RootsCapability], sampling: Option[SamplingCapability],
-                              elicitation: Option[ElicitationCapability])
+                              elicitation: Option[ElicitationCapability], /* tasks, experimental */)
 case class ServerCapabilities(tools: Option[ToolsCapability], resources: Option[ResourcesCapability],
-                              prompts: Option[PromptsCapability], logging: Option[LoggingCapability])
+                              prompts: Option[PromptsCapability], logging: Option[LoggingCapability],
+                              /* completions, tasks, experimental */)
 ```
 
 mcp4s derives these from what you register: a tools-only server advertises only `tools`, and a

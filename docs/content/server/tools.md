@@ -2,7 +2,7 @@
 
 Tools are the most important MCP primitive. A **tool** is a function that an AI model can call — search a database, send an email, create a file, run a calculation. When you register a tool on a server, AI clients can discover it, see its parameter schema, and invoke it.
 
-> For the full protocol details, see [Tools](https://spec.modelcontextprotocol.io/specification/2025-03-26/server/tools/) in the MCP specification.
+> For the full protocol details, see [Tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) in the MCP specification.
 
 Tools have a **name**, a **description** (so the AI knows when to use it), and a typed **input schema** (so the AI knows what arguments to pass). The description matters — it's the primary way the AI decides whether to call your tool.
 

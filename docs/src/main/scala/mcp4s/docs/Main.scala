@@ -18,7 +18,7 @@ object Main extends IOApp:
       title = Some("mcp4s"),
       description = Some("MCP (Model Context Protocol) for Scala"),
       language = Some("en"),
-      version = Some("0.1.8")
+      version = Some("0.2.0")
     )
     .all.themeColors(
       primary = Color.hex("d4d4d8"),
@@ -76,6 +76,9 @@ object Main extends IOApp:
       .from(Markdown)
       .to(HTML)
       .using(Markdown.GitHubFlavor, SyntaxHighlighting)
+      // Pass HTML comments (e.g. the <!-- doc-snippet: ... --> markers used by
+      // scripts/snippet_harness.py) through verbatim instead of escaping them into visible text.
+      .withRawContent
       .parallel[IO]
       .withTheme(theme)
       .build

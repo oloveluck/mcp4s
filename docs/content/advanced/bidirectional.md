@@ -5,11 +5,11 @@ Most protocols are one-directional: clients request, servers respond. MCP is dif
 - **Sampling** — The server asks the client's AI model to generate a completion
 - **Elicitation** — The server asks the user for input (confirmation, choices, free text)
 
-> For the full protocol details, see [Sampling](https://spec.modelcontextprotocol.io/specification/2025-03-26/client/sampling/) in the MCP specification.
+> For the full protocol details, see [Sampling](https://modelcontextprotocol.io/specification/2025-11-25/client/sampling) in the MCP specification.
 
 This means a tool can *think* (by requesting an LLM completion) and *ask* (by prompting the user) during execution.
 
-Bidirectional communication works over **both network transports**: on Streamable HTTP, server-initiated requests ride the SSE response stream and the client answers them on the same connection; on WebSocket they use the duplex socket directly. The client answers server-initiated requests on every network transport — the same shared connection runner drives both. Only **stdio** remains plain request/response.
+Bidirectional communication works over **both network transports**: on Streamable HTTP, server-initiated requests ride the SSE response stream and the client answers them on the same connection; on WebSocket they use the duplex socket directly — the same shared connection runner drives both. Only **stdio** remains plain request/response.
 
 ## Sampling
 

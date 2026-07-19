@@ -83,21 +83,7 @@ val config = HttpTransportConfig[IO](
 
 ## Retry
 
-For HTTP transport, compose standard http4s middleware on your `Client[F]` before passing it to the transport:
-
-```scala
-import org.http4s.client.middleware.{Retry, RetryPolicy}
-import scala.concurrent.duration.*
-
-val retryPolicy = RetryPolicy[IO](RetryPolicy.exponentialBackoff(maxWait = 10.seconds, maxRetry = 3))
-val resilientClient = Retry(retryPolicy)(httpClient)   // httpClient: your http4s Client[IO]
-
-// Pass the wrapped client to the cross-platform http overload
-client.http(HttpTransportConfig[IO]("http://localhost:3000/mcp"), resilientClient).use: conn =>
-  conn.callTool("operation", args)
-```
-
-For WebSocket/Stdio transports, reconnection (re-establishing the transport) is the appropriate strategy for connection failures rather than per-message retry.
+For HTTP, compose standard http4s retry middleware on the `Client[F]` you pass to the transport — see [HTTP transport: Retry](../transports/http.md#retry). For WebSocket/Stdio, reconnection (re-acquiring the connection `Resource`) is the appropriate strategy rather than per-message retry.
 
 ## Typed Calls
 

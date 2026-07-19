@@ -38,7 +38,7 @@ object scope_1:
     enableSessions = true
   )).resource.useForever
 
-  // ---- snippet at line 34
+  // ---- snippet at line 44
   import org.http4s.HttpRoutes
   import org.http4s.server.middleware.CORS
   import org.http4s.server.Router
@@ -52,7 +52,7 @@ object scope_1:
     val allRoutes = withCors <+> myAppRoutes
     EmberServerBuilder.default[IO].withHttpApp(Router("/" -> allRoutes).orNotFound).build
 
-  // ---- snippet at line 53
+  // ---- snippet at line 63
   import mcp4s.client.syntax.*      // JVM-only convenience overloads
   import mcp4s.client.transport.*
 
@@ -62,7 +62,7 @@ object scope_1:
   // Cross-platform — bring your own http4s Client[F]
   client.http(HttpTransportConfig[IO]("http://localhost:3000/mcp"), httpClient).use(conn => conn.listAllTools)
 
-  // ---- snippet at line 77
+  // ---- snippet at line 87
   def fetchToken: IO[String] = ???   // your token refresh flow
 
   val config = HttpTransportConfig[IO](
@@ -73,7 +73,7 @@ object scope_1:
   // or resolve a fresh token before each request:
   val refreshing = config.copy(auth = Some(McpAuth.TokenProvider(fetchToken)))
 
-  // ---- snippet at line 94
+  // ---- snippet at line 104
   import org.http4s.client.middleware.{Retry, RetryPolicy}
   import scala.concurrent.duration.*
 

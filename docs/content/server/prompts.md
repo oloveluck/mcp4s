@@ -2,7 +2,7 @@
 
 MCP **prompts** are reusable message templates that clients can discover and use. While tools let AI *do* things and resources let AI *read* things, prompts give AI pre-built *workflows* — a code review template, an analysis checklist, a structured debugging flow.
 
-> For the full protocol details, see [Prompts](https://spec.modelcontextprotocol.io/specification/2025-03-26/server/prompts/) in the MCP specification.
+> For the full protocol details, see [Prompts](https://modelcontextprotocol.io/specification/2025-11-25/server/prompts) in the MCP specification.
 
 Prompts return a list of messages (user/assistant turns) that the client inserts into the AI's conversation. They can be static or take arguments for customization.
 

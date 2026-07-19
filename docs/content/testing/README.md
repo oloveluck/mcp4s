@@ -1,4 +1,4 @@
-# Testing your MCP server
+# Testing Your MCP Server
 
 `mcp4s-testkit` is a published, reusable toolkit for testing MCP servers and clients — both
 mcp4s itself and any server you build with the library. It has three layers:
@@ -16,7 +16,7 @@ libraryDependencies += "io.github.oloveluck" %% "mcp4s-testkit" % "<version>" % 
 testFrameworks += new TestFramework("weaver.framework.CatsEffect")
 ```
 
-## Compliance profile
+## Compliance Profile
 
 Extend `McpComplianceSuite`, point it at your `Server[IO]`, and describe how to exercise it with
 a `ComplianceProfile`. The suite reads your server's declared `ServerCapabilities` to decide

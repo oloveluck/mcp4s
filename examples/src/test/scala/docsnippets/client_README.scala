@@ -68,18 +68,7 @@ object scope_1:
     timeouts = Timeouts(request = 2.minutes, init = 10.seconds)
   )
 
-  // ---- snippet at line 89
-  import org.http4s.client.middleware.{Retry, RetryPolicy}
-  import scala.concurrent.duration.*
-
-  val retryPolicy = RetryPolicy[IO](RetryPolicy.exponentialBackoff(maxWait = 10.seconds, maxRetry = 3))
-  val resilientClient = Retry(retryPolicy)(httpClient)   // httpClient: your http4s Client[IO]
-
-  // Pass the wrapped client to the cross-platform http overload
-  client.http(HttpTransportConfig[IO]("http://localhost:3000/mcp"), resilientClient).use: conn =>
-    conn.callTool("operation", args)
-
-  // ---- snippet at line 107
+  // ---- snippet at line 93
   import mcp4s.client.TypedClient.*
   import mcp4s.schema.{Schema, Tool as ToolDef}
 

@@ -282,6 +282,12 @@ object HttpTransport:
     * Deferred is complete, we know all notifications have been enqueued (since they are enqueued
     * before the tool handler returns), so a final drainQueue is guaranteed to capture any
     * stragglers.
+    *
+    * The out-queue is shared by every in-flight request on the session, so a progress
+    * notification belonging to a *different* concurrent request may surface here. Emitting it on
+    * this stream would lose it if this stream is closed early (e.g. the owning call was
+    * cancelled), so progress events whose token belongs to another active stream are re-offered
+    * for that stream's poller to pick up.
     */
   private def handleStreamingRequest[F[_]: Async](
       session: HttpSession[F],
@@ -296,19 +302,53 @@ object HttpTransport:
     def toSSE(msg: JsonRpcMessage): ServerSentEvent =
       ServerSentEvent(data = Some(msg.asJson.noSpaces), eventType = Some("message"))
 
+    // The progress token this stream owns: _meta.progressToken if the client set one,
+    // otherwise the request id (the McpConnection client uses its request id as token).
+    val myToken: Option[RequestId] = message match
+      case req: JsonRpcRequest =>
+        val metaToken = req.params
+          .flatMap(_.hcursor.downField("_meta").downField("progressToken").as[RequestId].toOption)
+        metaToken.orElse(Some(req.id))
+      case _ => None
+
+    // A progress event for another ACTIVE stream must not be emitted here; hand it back.
+    def foreignToken(msg: JsonRpcMessage): F[Boolean] =
+      msg match
+        case JsonRpcNotification(McpMethod.Progress, Some(params)) =>
+          params.as[ProgressParams].toOption.map(_.progressToken) match
+            case Some(token) if !myToken.contains(token) =>
+              session.activeProgressTokens.get.map(_.contains(token))
+            case _ => Async[F].pure(false)
+        case _ => Async[F].pure(false)
+
+    def register: F[Unit]   = myToken.traverse_(t => session.activeProgressTokens.update(_ + t))
+    def deregister: F[Unit] = myToken.traverse_(t => session.activeProgressTokens.update(_ - t))
+
     Deferred[F, Either[Throwable, Option[JsonRpcMessage]]].flatMap { dispatchResult =>
       val sseStream: Stream[F, ServerSentEvent] =
         // Start dispatch in a background fiber; result (or error) completes the Deferred
         Stream.bracket(
-          session.dispatcher.dispatch(message).attempt.flatMap(dispatchResult.complete).void.start
-        )(_.cancel) >> {
+          register *>
+            session.dispatcher.dispatch(message).attempt.flatMap(dispatchResult.complete).void.start
+        )(fiber => deregister *> fiber.cancel) >> {
           // Poll the queue with non-destructive tryTake/tryGet to avoid a race
           // condition where queue.take consumes an item that is then lost when
           // race() picks dispatchResult.get as the winner.
+          def emitOrReoffer(msg: JsonRpcMessage): Stream[F, ServerSentEvent] =
+            Stream.eval(foreignToken(msg)).flatMap {
+              case true =>
+                // Another live stream owns this event; put it back and yield briefly.
+                Stream.exec(
+                  session.outQueue.offer(msg) *>
+                    Async[F].sleep(scala.concurrent.duration.Duration(1, "ms"))
+                )
+              case false => Stream.emit(toSSE(msg))
+            }
+
           def pollQueue: Stream[F, ServerSentEvent] =
             Stream.eval(session.outQueue.tryTake).flatMap {
               case Some(msg) =>
-                Stream.emit(toSSE(msg)) ++ pollQueue
+                emitOrReoffer(msg) ++ pollQueue
               case None =>
                 Stream.eval(dispatchResult.tryGet).flatMap {
                   case Some(result) =>
@@ -316,7 +356,7 @@ object HttpTransport:
                     // handler returned, so drain the queue to capture any remaining items,
                     // then emit the response (or propagate the error).
                     Stream.eval(drainQueue(session)).flatMap { remaining =>
-                      Stream.emits(remaining.map(toSSE))
+                      Stream.emits(remaining).flatMap(emitOrReoffer)
                     } ++ (result match
                       case Right(Some(response)) => Stream.emit(toSSE(response))
                       case Right(None)           => Stream.empty

@@ -2,7 +2,7 @@
 
 The Stdio transport communicates over standard input/output — the client spawns the server as a subprocess. This is the transport used by **Claude Desktop** and other desktop AI clients that manage server processes locally.
 
-> For the full protocol details, see [Stdio Transport](https://spec.modelcontextprotocol.io/specification/2025-03-26/transport/stdio/) in the MCP specification.
+> For the full protocol details, see [Stdio Transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#stdio) in the MCP specification.
 
 No networking is involved. The client writes JSON-RPC to the server's stdin and reads responses from stdout.
 

@@ -85,10 +85,7 @@ server.webSocket().resource.useForever
 
 The same transport verbs are available on any `Server[F]` value (no import needed), so `Server.from(info, tools, resources, prompts)` — the low-level constructor — binds the same way.
 
-Everything is built from the composable DSL (`import mcp4s.server.dsl.*`): `Tool`,
-`Resource`, and `Prompt` values compose with `|+|`, and `McpServer` assembles them.
-Capabilities are derived from what you register — a server with no resources won't advertise the
-`resources` capability.
+Capabilities are derived from what you register — a server with no resources won't advertise the `resources` capability. See the [Server Guide](../server/README.md) for the full construction and composition story.
 
 ## Test with MCP Inspector
 
