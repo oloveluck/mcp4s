@@ -27,9 +27,9 @@ import mcp4s.protocol.*
   *
   * @example
   *   {{{
-  * import mcp4s.server.mcp.*
+  * import mcp4s.server.dsl.*
   *
-  * Tool.withContext[IO, Args]("smart-calc", "Calculate with LLM help") { (args, ctx) =>
+  * Tool("smart-calc").withDescription("Calculate with LLM help").input[Args].handleWith[IO] { (args, ctx) =>
   *   for
   *     _ <- ctx.log(LogLevel.Info, "Starting calculation")
   *     _ <- ctx.progress(0.5, Some(1.0))

@@ -112,7 +112,7 @@ class IntegrationSpec extends CatsEffectSuite:
       .flatMap: httpClient =>
         HttpClientTransport.connect[IO](
           testClient,
-          HttpClientConfig[IO](s"http://localhost:$serverPort"),
+          HttpTransportConfig[IO](s"http://localhost:$serverPort/mcp"),
           httpClient
         )
 

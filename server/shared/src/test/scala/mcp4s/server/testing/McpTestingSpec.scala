@@ -27,18 +27,22 @@ import munit.CatsEffectSuite
 
 class McpTestingSpec extends CatsEffectSuite:
 
+  import mcp4s.server.dsl.*
+
   // === ToolsTest Extension Tests ===
 
-  case class CalcArgs(a: Double, b: Double) derives ToolInput
+  case class CalcArgs(a: Double, b: Double) derives Schema
 
   val calcTools: Tools[IO] =
-    McpTool.pureText[IO, CalcArgs]("add", "Add")(args => TestNum.str(args.a + args.b)) |+|
-      McpTool.pureText[IO, CalcArgs]("subtract", "Subtract") { args =>
-        TestNum.str(args.a - args.b)
+    Tool("add").withDescription("Add").input[CalcArgs].handle[IO] { args =>
+      IO.pure(ok(TestNum.str(args.a + args.b)))
+    } |+|
+      Tool("subtract").withDescription("Subtract").input[CalcArgs].handle[IO] { args =>
+        IO.pure(ok(TestNum.str(args.a - args.b)))
       }
 
   test("testCall with typed arguments") {
-    case class AddArgs(a: Double, b: Double) derives ToolInput, Encoder.AsObject
+    case class AddArgs(a: Double, b: Double) derives Encoder.AsObject
 
     for
       result <- calcTools.testCall("add", AddArgs(3.0, 2.0))
@@ -145,10 +149,8 @@ class McpTestingSpec extends CatsEffectSuite:
   val testServer: Server[IO] = Server.from[IO](
     info = ServerInfo("test-server", "1.0.0"),
     tools = calcTools,
-    resources = McpResource[IO]("test://readme", "README")("Hello world"),
-    prompts = McpPrompt.noArgs[IO]("greet", "Greet") {
-      IO.pure(GetPromptResult(None, List(PromptMessage(Role.User, TextContent("Hi")))))
-    }
+    resources = Resource.text[IO]("test://readme", "README")("Hello world"),
+    prompts = Prompt("greet").withDescription("Greet").messages[IO](user("Hi"))
   )
 
   test("ServerTest.sync creates test client") {
@@ -167,7 +169,7 @@ class McpTestingSpec extends CatsEffectSuite:
   }
 
   test("ServerTest calls tools with typed args") {
-    case class CalcArgs(a: Double, b: Double) derives ToolInput, Encoder.AsObject
+    case class CalcArgs(a: Double, b: Double) derives Encoder.AsObject
 
     ServerTest(testServer).use: client =>
       for

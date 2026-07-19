@@ -53,6 +53,11 @@ trait Tools[F[_]]:
   /** Call a tool with context, returning None if not handled */
   def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult]
 
+  /** True when no tools are registered. Used to derive server capabilities: a server built from
+    * empty routes does not advertise the `tools` capability.
+    */
+  def isEmpty: Boolean = false
+
 object Tools:
 
   /** Create tool routes from a single tool (ignores context) */
@@ -84,10 +89,12 @@ object Tools:
     new Tools[F]:
       def list: F[List[Tool]] = Applicative[F].pure(Nil)
       def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] = OptionT.none
+      override def isEmpty: Boolean = true
 
   /** Combine two Tools instances (first match wins) */
   def combine[F[_]: Concurrent](x: Tools[F], y: Tools[F]): Tools[F] =
     new Tools[F]:
+      override def isEmpty: Boolean = x.isEmpty && y.isEmpty
       def list: F[List[Tool]] =
         for
           xTools <- x.list

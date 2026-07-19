@@ -77,14 +77,14 @@ object Server:
   /** Create a server declaratively from composed parts.
     *
     * {{{
-    * import mcp4s.server.mcp.*
+    * import mcp4s.server.dsl.*
     *
-    * case class CalcArgs(a: Double, b: Double) derives ToolInput
-    * val add = Tool[IO, CalcArgs]("add", "Add") { args =>
+    * case class CalcArgs(a: Double, b: Double) derives Schema
+    * val add = Tool.from[CalcArgs].withDescription("Add").handle[IO] { args =>
     *   IO.pure(ToolResult.text(s"${args.a + args.b}"))
     * }
     * val readme = Resource.text[IO]("file:///readme", "README")("Hello")
-    * val greet = Prompt[IO]("greet", "Greet")(user("Hello!"))
+    * val greet = Prompt("greet").withDescription("Greet").messages[IO](user("Hello!"))
     *
     * val server = Server.from[IO](
     *   info      = ServerInfo("calc", "1.0.0"),
@@ -224,13 +224,14 @@ final private class DeclarativeServer[F[_]: Concurrent](
 ) extends Server[F]:
 
   val capabilities: ServerCapabilities =
-    // Capabilities are determined lazily based on what's registered.
-    // Since we can't peek inside at construction time without running F,
-    // we optimistically declare all capabilities that have registered handlers.
+    // Derived from what is actually registered: empty routes advertise no capability,
+    // and resources.subscribe reflects whether any resource is subscribable.
     ServerCapabilities(
-      tools = Some(ToolsCapability()),
-      resources = Some(ResourcesCapability(subscribe = Some(true))),
-      prompts = Some(PromptsCapability()),
+      tools = if tools.isEmpty then None else Some(ToolsCapability()),
+      resources =
+        if resources.isEmpty then None
+        else Some(ResourcesCapability(subscribe = Some(resources.supportsSubscribe))),
+      prompts = if prompts.isEmpty then None else Some(PromptsCapability()),
       logging = Some(LoggingCapability()),
       completions = Some(CompletionsCapability())
     )

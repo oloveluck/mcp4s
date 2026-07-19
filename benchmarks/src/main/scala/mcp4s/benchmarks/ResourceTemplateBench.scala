@@ -28,7 +28,7 @@ import org.openjdk.jmh.annotations.*
 import org.typelevel.otel4s.trace.Tracer
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
-import mcp4s.server.{mcp, Dispatcher, Prompts, Server, Tools}
+import mcp4s.server.{dsl, Dispatcher, Prompts, Server, Tools}
 
 /** A `resources/read` against a URI-template resource.
   *
@@ -51,7 +51,7 @@ class ResourceTemplateBench:
 
   @Setup
   def setup(): Unit =
-    val resources = mcp.Resource.template[IO]("bench://item/{id}", "Item", "Benchmark item") {
+    val resources = dsl.Resource.template[IO]("bench://item/{id}", "Item", "Benchmark item") {
       uri =>
         IO.pure(ResourceContent.text(uri, "ok"))
     }

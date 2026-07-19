@@ -21,10 +21,10 @@ import fs2.io.process.Processes
 import org.http4s.client.Client
 import org.typelevel.otel4s.trace.Tracer
 import mcp4s.client.transport.{
-  HttpClientConfig,
+  HttpTransportConfig,
   HttpClientTransport,
-  StdioClientConfig,
-  StdioClientTransport
+  StdioClientTransport,
+  StdioTransportConfig
 }
 
 /** Cross-platform transport-selection extensions for [[McpClient]].
@@ -43,17 +43,17 @@ trait ClientSyntax:
     /** Connect by spawning a subprocess and speaking JSON-RPC over its stdin/stdout.
       *
       * {{{
-      * client.connectStdio(StdioClientConfig("node", List("server.js"))).use { conn => ... }
+      * client.connectStdio(StdioTransportConfig("node", List("server.js"))).use { conn => ... }
       * }}}
       */
-    def connectStdio(config: StdioClientConfig)(using Async[F], Processes[F])(using
+    def connectStdio(config: StdioTransportConfig)(using Async[F], Processes[F])(using
         tracer: Tracer[F] = Tracer.noop[F]
     ): Resource[F, McpConnection[F]] =
       StdioClientTransport.connect[F](client, config)
 
     /** Connect by spawning `command` with `args` (other settings default).
       *
-      * For tracing, use the `StdioClientConfig` overload with a `given Tracer[F]` in scope.
+      * For tracing, use the `StdioTransportConfig` overload with a `given Tracer[F]` in scope.
       *
       * {{{
       * client.connectStdio("node", "server.js").use { conn => ... }
@@ -63,7 +63,7 @@ trait ClientSyntax:
         Async[F],
         Processes[F]
     ): Resource[F, McpConnection[F]] =
-      connectStdio(StdioClientConfig(command, args.toList))
+      connectStdio(StdioTransportConfig(command, args.toList))
 
     /** Connect over Streamable HTTP using a caller-provided http4s `Client[F]`.
       *
@@ -71,17 +71,17 @@ trait ClientSyntax:
       * JVM, see the no-`Client` overload that builds an Ember client for you.
       *
       * {{{
-      * client.connectHttp(HttpClientConfig("http://localhost:3000"), httpClient).use { ... }
+      * client.connectHttp(HttpTransportConfig("http://localhost:3000/mcp"), httpClient).use { ... }
       * }}}
       */
-    def connectHttp(config: HttpClientConfig[F], httpClient: Client[F])(using Async[F])(using
+    def connectHttp(config: HttpTransportConfig[F], httpClient: Client[F])(using Async[F])(using
         tracer: Tracer[F] = Tracer.noop[F]
     ): Resource[F, McpConnection[F]] =
       HttpClientTransport.connect[F](client, config, httpClient)
 
     /** Connect over Streamable HTTP at `baseUrl` using a caller-provided http4s `Client[F]`.
       *
-      * For tracing, use the `HttpClientConfig` overload with a `given Tracer[F]` in scope.
+      * For tracing, use the `HttpTransportConfig` overload with a `given Tracer[F]` in scope.
       *
       * {{{
       * client.connectHttp("http://localhost:3000", httpClient).use { conn => ... }
@@ -90,4 +90,4 @@ trait ClientSyntax:
     def connectHttp(baseUrl: String, httpClient: Client[F])(using
         Async[F]
     ): Resource[F, McpConnection[F]] =
-      connectHttp(HttpClientConfig[F](baseUrl), httpClient)
+      connectHttp(HttpTransportConfig[F](s"$baseUrl/mcp"), httpClient)

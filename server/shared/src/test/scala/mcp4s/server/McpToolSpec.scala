@@ -25,22 +25,24 @@ import munit.CatsEffectSuite
 
 class McpToolSpec extends CatsEffectSuite:
 
+  import mcp4s.server.dsl.*
+
   private val minimalCtx =
     ToolContext.minimal[IO](SamplingRequester.unsupported[IO], RequestId.NullId)
 
   case class CalcArgs(
       @description("First number") a: Double,
       @description("Second number") b: Double
-  ) derives ToolInput
+  ) derives Schema
 
-  // === McpTool composition Tests ===
+  // === Tool composition Tests ===
 
-  test("McpTool values compose with |+|") {
-    val add = McpTool[IO, CalcArgs]("add", "Add") { args =>
+  test("Tool values compose with |+|") {
+    val add = Tool("add").withDescription("Add").input[CalcArgs].handle[IO] { args =>
       IO.pure(ToolResult.text(TestNum.str(args.a + args.b)))
     }
 
-    val subtract = McpTool[IO, CalcArgs]("subtract", "Subtract") { args =>
+    val subtract = Tool("subtract").withDescription("Subtract").input[CalcArgs].handle[IO] { args =>
       IO.pure(ToolResult.text(TestNum.str(args.a - args.b)))
     }
 
@@ -60,8 +62,8 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpTool.noArgs creates tool with empty schema") {
-    val ping = McpTool.noArgs[IO]("ping", "Ping") {
+  test("no-input tool advertises the empty object schema") {
+    val ping = Tool("ping").withDescription("Ping").handle[IO] { _ =>
       IO.pure(ToolResult.text("pong"))
     }
 
@@ -73,18 +75,18 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === McpTool with ToolInput ===
+  // === Tool with derived Schema ===
 
-  case class ReadArgs(@description("File path") path: String) derives ToolInput
+  case class ReadArgs(@description("File path") path: String) derives Schema
 
-  test("McpTool.annotated creates tool with annotations") {
-    val readTool = McpTool.annotated[IO, ReadArgs](
-      "read",
-      "Read data",
-      ToolAnnotations.readOnly()
-    ) { args =>
-      IO.pure(ToolResult.text(s"data from ${args.path}"))
-    }
+  test("withAnnotations creates tool with annotations") {
+    val readTool = Tool("read")
+      .withDescription("Read data")
+      .input[ReadArgs]
+      .withAnnotations(ToolAnnotations.readOnly())
+      .handle[IO] { args =>
+        IO.pure(ToolResult.text(s"data from ${args.path}"))
+      }
 
     for
       tools <- readTool.list
@@ -93,8 +95,8 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpTool works with derived ToolInput") {
-    val add = McpTool[IO, CalcArgs]("add", "Add") { args =>
+  test("Tool works with derived Schema") {
+    val add = Tool("add").withDescription("Add").input[CalcArgs].handle[IO] { args =>
       IO.pure(ToolResult.text(TestNum.str(args.a + args.b)))
     }
 
@@ -107,10 +109,10 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === McpTool with typed output ===
+  // === Tool with typed output ===
 
-  test("McpTool.typed creates tool with output schema") {
-    val add = McpTool.typed[IO, CalcArgs, Double]("add", "Add") { args =>
+  test("output[B] creates tool with output schema") {
+    val add = Tool("add").withDescription("Add").input[CalcArgs].output[Double].handle[IO] { args =>
       IO.pure(args.a + args.b)
     }
 
@@ -127,15 +129,13 @@ class McpToolSpec extends CatsEffectSuite:
   // === Declarative Server.from Tests ===
 
   test("Server.from creates server from composed parts") {
-    val add = McpTool[IO, CalcArgs]("add", "Add") { args =>
+    val add = Tool("add").withDescription("Add").input[CalcArgs].handle[IO] { args =>
       IO.pure(ToolResult.text(TestNum.str(args.a + args.b)))
     }
 
-    val readme = McpResource[IO]("test://readme", "README")("Hello world")
+    val readme = Resource.text[IO]("test://readme", "README")("Hello world")
 
-    val greeting = McpPrompt.noArgs[IO]("greet", "Greet") {
-      IO.pure(GetPromptResult(None, List(PromptMessage(Role.User, TextContent("Hi")))))
-    }
+    val greeting = Prompt("greet").withDescription("Greet").messages[IO](user("Hi"))
 
     val server = Server.from[IO](
       info = ServerInfo("test", "1.0.0"),
@@ -161,11 +161,11 @@ class McpToolSpec extends CatsEffectSuite:
   }
 
   test("Server.fromTools composes multiple tools with |+|") {
-    val add = McpTool[IO, CalcArgs]("add", "Add") { args =>
+    val add = Tool("add").withDescription("Add").input[CalcArgs].handle[IO] { args =>
       IO.pure(ToolResult.text(TestNum.str(args.a + args.b)))
     }
 
-    val mul = McpTool[IO, CalcArgs]("multiply", "Multiply") { args =>
+    val mul = Tool("multiply").withDescription("Multiply").input[CalcArgs].handle[IO] { args =>
       IO.pure(ToolResult.text(TestNum.str(args.a * args.b)))
     }
 
@@ -226,11 +226,11 @@ class McpToolSpec extends CatsEffectSuite:
 
   // === Pure Helper Method Tests ===
 
-  test("McpTool.pureText creates tool with pure string handler") {
-    case class EchoArgs(message: String) derives ToolInput
+  test("pure string handlers via ok(...)") {
+    case class EchoArgs(message: String) derives Schema
 
-    val echo = McpTool.pureText[IO, EchoArgs]("echo", "Echo input") { args =>
-      s"Echo: ${args.message}"
+    val echo = Tool("echo").withDescription("Echo input").input[EchoArgs].handle[IO] { args =>
+      IO.pure(ok(s"Echo: ${args.message}"))
     }
 
     val json = Json.obj("message" -> Json.fromString("hello"))
@@ -240,9 +240,9 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpTool.pureTextNoArgs creates no-arg tool with pure result") {
-    val version = McpTool.pureTextNoArgs[IO]("version", "Get version") {
-      "1.0.0"
+  test("no-arg tool with pure result") {
+    val version = Tool("version").withDescription("Get version").handle[IO] { _ =>
+      IO.pure(ok("1.0.0"))
     }
 
     for
@@ -317,15 +317,16 @@ class McpToolSpec extends CatsEffectSuite:
 
   // === Context-Aware Tool Composition Tests ===
 
-  test("McpTool.withContext returns Tools for composition") {
-    case class QueryArgs(query: String) derives ToolInput
+  test("handleWith returns Tools for composition") {
+    case class QueryArgs(query: String) derives Schema
 
-    val regular = McpTool.pureText[IO, CalcArgs]("add", "Add") { args =>
-      TestNum.str(args.a + args.b)
+    val regular = Tool("add").withDescription("Add").input[CalcArgs].handle[IO] { args =>
+      IO.pure(ok(TestNum.str(args.a + args.b)))
     }
 
-    val contextAware = McpTool.withContext[IO, QueryArgs]("smart", "Smart") { (args, _) =>
-      IO.pure(ToolResult.text(s"Query: ${args.query}"))
+    val contextAware = Tool("smart").withDescription("Smart").input[QueryArgs].handleWith[IO] {
+      (args, _) =>
+        IO.pure(ToolResult.text(s"Query: ${args.query}"))
     }
 
     // Should compile: regular and context tools compose together
@@ -343,8 +344,8 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpTool.withContextNoArgs works without typed args") {
-    val pingTool = McpTool.withContextNoArgs[IO]("ping", "Ping with context") { ctx =>
+  test("handleWith works without typed args") {
+    val pingTool = Tool("ping").withDescription("Ping with context").handleWith[IO] { (_, ctx) =>
       IO.pure(ToolResult.text(s"pong (request: ${ctx.requestId})"))
     }
 

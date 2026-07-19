@@ -25,7 +25,7 @@ import munit.CatsEffectSuite
 
 class McpDslSpec extends CatsEffectSuite:
 
-  import mcp4s.server.mcp.*
+  import mcp4s.server.dsl.*
 
   private val minimalCtx =
     ToolContext.minimal[IO](SamplingRequester.unsupported[IO], RequestId.NullId)
@@ -119,9 +119,9 @@ class McpDslSpec extends CatsEffectSuite:
 
   // === Tool Constructor Tests ===
 
-  test("Tool.text creates tool with pure string handler (no args)") {
-    val version = Tool.text[IO]("version", "Get version") {
-      "1.0.0"
+  test("Tool with pure string handler (no args)") {
+    val version = Tool("version").withDescription("Get version").handle[IO] { _ =>
+      IO.pure(ok("1.0.0"))
     }
 
     for
@@ -134,11 +134,11 @@ class McpDslSpec extends CatsEffectSuite:
     yield ()
   }
 
-  case class EchoArgs(message: String) derives ToolInput
+  case class EchoArgs(message: String) derives Schema
 
-  test("Tool.text creates tool with pure string handler (with args)") {
-    val echo = Tool.text[IO, EchoArgs]("echo", "Echo message") { args =>
-      s"Echo: ${args.message}"
+  test("Tool with pure string handler (with args)") {
+    val echo = Tool("echo").withDescription("Echo message").input[EchoArgs].handle[IO] { args =>
+      IO.pure(ok(s"Echo: ${args.message}"))
     }
 
     val json = Json.obj("message" -> "hello".asJson)
@@ -148,10 +148,10 @@ class McpDslSpec extends CatsEffectSuite:
     yield ()
   }
 
-  case class AddArgs(a: Double, b: Double) derives ToolInput
+  case class AddArgs(a: Double, b: Double) derives Schema
 
-  test("Tool.apply creates tool with effectful handler (with args)") {
-    val add = Tool[IO, AddArgs]("add", "Add numbers") { args =>
+  test("Tool creates tool with effectful handler (with args)") {
+    val add = Tool("add").withDescription("Add numbers").input[AddArgs].handle[IO] { args =>
       IO.pure(ok(TestNum.str(args.a + args.b)))
     }
 
@@ -162,8 +162,8 @@ class McpDslSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("Tool.withContext creates context-aware tool (no args)") {
-    val logTool = Tool.withContext[IO]("log", "Log something") { ctx =>
+  test("Tool.handleWith creates context-aware tool (no args)") {
+    val logTool = Tool("log").withDescription("Log something").handleWith[IO] { (_, ctx) =>
       IO.pure(ok(s"Request: ${ctx.requestId}"))
     }
 
@@ -176,11 +176,12 @@ class McpDslSpec extends CatsEffectSuite:
     yield ()
   }
 
-  case class QueryArgs(query: String) derives ToolInput
+  case class QueryArgs(query: String) derives Schema
 
-  test("Tool.withContext creates context-aware tool (with args)") {
-    val smart = Tool.withContext[IO, QueryArgs]("smart", "Smart query") { (args, ctx) =>
-      IO.pure(ok(s"Query: ${args.query}, Request: ${ctx.requestId}"))
+  test("Tool.handleWith creates context-aware tool (with args)") {
+    val smart = Tool("smart").withDescription("Smart query").input[QueryArgs].handleWith[IO] {
+      (args, ctx) =>
+        IO.pure(ok(s"Query: ${args.query}, Request: ${ctx.requestId}"))
     }
 
     val json = Json.obj("query" -> "test".asJson)
@@ -244,8 +245,8 @@ class McpDslSpec extends CatsEffectSuite:
 
   // === Prompt Constructor Tests ===
 
-  test("Prompt.apply creates prompt with messages (no args)") {
-    val greeting = Prompt[IO]("greet", "A greeting")(
+  test("Prompt.messages creates prompt with messages (no args)") {
+    val greeting = Prompt("greet").withDescription("A greeting").messages[IO](
       user("Hello!"),
       assistant("Hi there!")
     )
@@ -263,9 +264,9 @@ class McpDslSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("Prompt.withDesc creates prompt with description") {
-    val help = Prompt.withDesc[IO]("help", "Help prompt", "Get help with the system")(
-      user("How can I help you?")
+  test("Prompt.static creates prompt with result description") {
+    val help = Prompt("help").withDescription("Help prompt").static[IO](
+      messages("Get help with the system")(user("How can I help you?"))
     )
 
     for
@@ -275,11 +276,12 @@ class McpDslSpec extends CatsEffectSuite:
     yield ()
   }
 
-  case class GreetArgs(name: String) derives PromptInput
+  case class GreetArgs(name: String) derives Schema
 
-  test("Prompt.apply creates prompt with typed args") {
-    val greet = Prompt[IO, GreetArgs]("greet", "Greet someone") { args =>
-      IO.pure(messages(user(s"Hello, ${args.name}!")))
+  test("Prompt.handle creates prompt with typed args") {
+    val greet = Prompt("greet").withDescription("Greet someone").input[GreetArgs].handle[IO] {
+      args =>
+        IO.pure(messages(user(s"Hello, ${args.name}!")))
     }
 
     for
@@ -307,8 +309,8 @@ class McpDslSpec extends CatsEffectSuite:
   // === Composition Tests ===
 
   test("tools compose with |+|") {
-    val tool1    = Tool.text[IO]("t1", "Tool 1")("result1")
-    val tool2    = Tool.text[IO]("t2", "Tool 2")("result2")
+    val tool1    = Tool("t1").withDescription("Tool 1").handle[IO](_ => IO.pure(ok("result1")))
+    val tool2    = Tool("t2").withDescription("Tool 2").handle[IO](_ => IO.pure(ok("result2")))
     val combined = tool1 |+| tool2
 
     for
@@ -337,8 +339,8 @@ class McpDslSpec extends CatsEffectSuite:
   }
 
   test("prompts compose with |+|") {
-    val p1       = Prompt[IO]("p1", "Prompt 1")(user("Prompt 1 content"))
-    val p2       = Prompt[IO]("p2", "Prompt 2")(user("Prompt 2 content"))
+    val p1       = Prompt("p1").withDescription("Prompt 1").messages[IO](user("Prompt 1 content"))
+    val p2       = Prompt("p2").withDescription("Prompt 2").messages[IO](user("Prompt 2 content"))
     val combined = p1 |+| p2
 
     for
@@ -361,8 +363,8 @@ class McpDslSpec extends CatsEffectSuite:
 
   test("composed tools work with Server.fromTools") {
     val tools =
-      Tool.text[IO]("echo", "Echo")("echo") |+|
-        Tool.text[IO]("ping", "Ping")("pong")
+      Tool("echo").withDescription("Echo").handle[IO](_ => IO.pure(ok("echo"))) |+|
+        Tool("ping").withDescription("Ping").handle[IO](_ => IO.pure(ok("pong")))
 
     val server = Server.fromTools[IO](ServerInfo("test", "1.0.0"), tools)
 
@@ -400,8 +402,10 @@ class McpDslSpec extends CatsEffectSuite:
 
   test("composed prompts work with Server.from") {
     val prompts =
-      Prompt[IO]("greet", "Greet")(user("Hello!")) |+|
-        Prompt.withDesc[IO]("help", "Help", "Get help")(user("How can I help?"))
+      Prompt("greet").withDescription("Greet").messages[IO](user("Hello!")) |+|
+        Prompt("help")
+          .withDescription("Help")
+          .static[IO](messages("Get help")(user("How can I help?")))
 
     val server =
       Server.from[IO](ServerInfo("test", "1.0.0"), Tools.empty[IO], Resources.empty[IO], prompts)
@@ -417,9 +421,9 @@ class McpDslSpec extends CatsEffectSuite:
   }
 
   test("Server.from works with DSL-created values") {
-    val tools     = Tool.text[IO]("echo", "Echo")("echo")
+    val tools     = Tool("echo").withDescription("Echo").handle[IO](_ => IO.pure(ok("echo")))
     val resources = Resource.text[IO]("test://readme", "README")("Hello")
-    val prompts   = Prompt[IO]("greet", "Greet")(user("Hello!"))
+    val prompts   = Prompt("greet").withDescription("Greet").messages[IO](user("Hello!"))
 
     val server = Server.from[IO](
       info = ServerInfo("test", "1.0.0"),

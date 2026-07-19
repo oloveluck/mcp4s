@@ -27,11 +27,11 @@ import mcp4s.protocol.*
   * Prompts are standalone typed values that compose via `|+|`.
   *
   * {{{
-  * import mcp4s.server.mcp.*
+  * import mcp4s.server.dsl.*
   *
-  * case class GreetArgs(name: String) derives PromptInput
+  * case class GreetArgs(name: String) derives Schema
   *
-  * val greeting = Prompt[IO, GreetArgs]("greet", "Greet someone") { args =>
+  * val greeting = Prompt.from[GreetArgs].withDescription("Greet someone").handle[IO] { args =>
   *   IO.pure(messages(user(s"Hi ${args.name}")))
   * }
   * }}}
@@ -43,6 +43,9 @@ trait Prompts[F[_]]:
   /** Get a prompt by name, returning None if not handled */
   def get(name: String, arguments: Map[String, String]): OptionT[F, GetPromptResult]
 
+  /** True when no prompts are registered. Used to derive server capabilities. */
+  def isEmpty: Boolean = false
+
 object Prompts:
 
   def empty[F[_]: Applicative]: Prompts[F] =
@@ -50,6 +53,7 @@ object Prompts:
       def list: F[List[Prompt]] = Applicative[F].pure(Nil)
       def get(name: String, arguments: Map[String, String]): OptionT[F, GetPromptResult] =
         OptionT.none
+      override def isEmpty: Boolean = true
 
   /** Create prompt routes from a raw Prompt definition and a map-based handler. */
   def single[F[_]: Concurrent](prompt: Prompt)(
@@ -59,6 +63,7 @@ object Prompts:
 
   def combine[F[_]: Concurrent](x: Prompts[F], y: Prompts[F]): Prompts[F] =
     new Prompts[F]:
+      override def isEmpty: Boolean = x.isEmpty && y.isEmpty
       def list: F[List[Prompt]] =
         for
           xPrompts <- x.list
@@ -74,7 +79,7 @@ object Prompts:
     def combine(x: Prompts[F], y: Prompts[F]): Prompts[F] =
       Prompts.combine(x, y)
 
-/** Internal prompt factory. Use `Prompt` from `import mcp4s.server.mcp.*` instead. */
+/** Internal prompt factory. Use `Prompt` from `import mcp4s.server.dsl.*` instead. */
 private[server] object McpPrompt:
 
   /** Create a prompt with PromptInput-based arguments */

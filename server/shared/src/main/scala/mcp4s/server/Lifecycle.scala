@@ -28,12 +28,11 @@ import mcp4s.protocol.*
   *
   * Example:
   * {{{
-  * import mcp4s.server.mcp.*
+  * import mcp4s.server.dsl.*
   *
   * // Use McpLifecycleTool for tools that need managed resources:
-  * val dbTool = McpLifecycleTool[IO, QueryArgs, Connection](
-  *   "query",
-  *   "Run SQL query",
+  * val dbTool = McpLifecycleTool(
+  *   Tool.from[QueryArgs].withDescription("Run SQL query"),
   *   acquire = Database.connection(config)
   * ) { (args, conn) =>
   *   conn.execute(args.sql).map(ToolResult.text)
@@ -106,6 +105,8 @@ object ServerLifecycle:
 
 /** Namespace for lifecycle-aware tool creation */
 object McpLifecycleTool:
+  import dsl.{handle, handleWith}
+  import mcp4s.schema.ToolEndpoint
 
   /** Create a tool with an acquired resource.
     *
@@ -114,68 +115,34 @@ object McpLifecycleTool:
     *
     * Example:
     * {{{
-    * val dbTools: Resource[IO, Tools[IO]] = McpLifecycleTool[IO, QueryArgs, HikariDataSource](
-    *   "query",
-    *   "Run SQL query",
+    * case class QueryArgs(sql: String) derives Schema
+    *
+    * val dbTools: Resource[IO, Tools[IO]] = McpLifecycleTool(
+    *   Tool.from[QueryArgs].withDescription("Run SQL query"),
     *   acquire = HikariCP.resource(config)
     * ) { (args, dataSource) =>
-    *   IO.blocking {
-    *     val conn = dataSource.getConnection()
-    *     try {
-    *       val stmt = conn.createStatement()
-    *       val rs = stmt.executeQuery(args.sql)
-    *       ToolResult.text(formatResults(rs))
-    *     } finally {
-    *       conn.close()
-    *     }
-    *   }
+    *   IO.blocking(runQuery(dataSource, args.sql))
     * }
     * }}}
     */
-  def apply[F[_]: Concurrent, A: ToolInput, R](
-      name: String,
-      description: String,
+  def apply[F[_]: Concurrent, I, O, R](
+      endpoint: ToolEndpoint[I, O],
       acquire: CatsResource[F, R]
-  )(handler: (A, R) => F[ToolResult]): CatsResource[F, Tools[F]] =
+  )(handler: (I, R) => F[O]): CatsResource[F, Tools[F]] =
     acquire.map: resource =>
-      McpTool[F, A](name, description): args =>
-        handler(args, resource)
-
-  /** Create a no-args tool with an acquired resource.
-    *
-    * Example:
-    * {{{
-    * val statusTool: Resource[IO, Tools[IO]] = McpLifecycleTool.noArgs[IO, HttpClient](
-    *   "health",
-    *   "Check service health",
-    *   acquire = HttpClient.resource
-    * ) { client =>
-    *   client.get("http://service/health").map(resp => ToolResult.text(resp.body))
-    * }
-    * }}}
-    */
-  def noArgs[F[_]: Concurrent, R](
-      name: String,
-      description: String,
-      acquire: CatsResource[F, R]
-  )(handler: R => F[ToolResult]): CatsResource[F, Tools[F]] =
-    acquire.map: resource =>
-      McpTool.noArgs[F](name, description):
-        handler(resource)
+      endpoint.handle[F](args => handler(args, resource))
 
   /** Create a context-aware tool with an acquired resource.
     *
     * The handler receives the ToolContext for server-to-client operations, as well as the acquired
     * resource.
     */
-  def withContext[F[_]: Concurrent, A: ToolInput, R](
-      name: String,
-      description: String,
+  def withContext[F[_]: Concurrent, I, O, R](
+      endpoint: ToolEndpoint[I, O],
       acquire: CatsResource[F, R]
-  )(handler: (A, R, ToolContext[F]) => F[ToolResult]): CatsResource[F, Tools[F]] =
+  )(handler: (I, R, ToolContext[F]) => F[O]): CatsResource[F, Tools[F]] =
     acquire.map: resource =>
-      McpTool.withContext[F, A](name, description): (args, ctx) =>
-        handler(args, resource, ctx)
+      endpoint.handleWith[F]((args, ctx) => handler(args, resource, ctx))
 
   /** Combine multiple lifecycle tools into a single resource.
     *

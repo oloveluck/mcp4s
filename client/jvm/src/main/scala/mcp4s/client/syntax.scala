@@ -20,7 +20,7 @@ import cats.effect.{Async, Resource}
 import fs2.io.net.Network
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.client.transport.{HttpClientConfig, WebSocketClientConfig, WebSocketClientTransport}
+import mcp4s.client.transport.{HttpTransportConfig, WebSocketClientTransport, WebSocketTransportConfig}
 
 /** Transport-selection extensions for [[McpClient]] (`import mcp4s.client.syntax.*`).
   *
@@ -36,24 +36,24 @@ object syntax extends ClientSyntax:
     /** Connect over WebSocket (JVM-only). Manages the http4s `JdkWSClient` internally.
       *
       * {{{
-      * client.connectWebSocket(WebSocketClientConfig("ws://localhost:3000")).use { ... }
+      * client.connectWebSocket(WebSocketTransportConfig("ws://localhost:3000/ws")).use { ... }
       * }}}
       */
-    def connectWebSocket(config: WebSocketClientConfig)(using Async[F])(using
+    def connectWebSocket(config: WebSocketTransportConfig[F])(using Async[F])(using
         tracer: Tracer[F] = Tracer.noop[F]
     ): Resource[F, McpConnection[F]] =
       WebSocketClientTransport.connect[F](client, config)
 
     /** Connect over WebSocket at `url` (other settings default; JVM-only).
       *
-      * For tracing, use the `WebSocketClientConfig` overload with a `given Tracer[F]` in scope.
+      * For tracing, use the `WebSocketTransportConfig` overload with a `given Tracer[F]` in scope.
       *
       * {{{
       * client.connectWebSocket("ws://localhost:3000").use { conn => ... }
       * }}}
       */
     def connectWebSocket(url: String)(using Async[F]): Resource[F, McpConnection[F]] =
-      connectWebSocket(WebSocketClientConfig(url))
+      connectWebSocket(WebSocketTransportConfig[F](s"$url/ws"))
 
     /** Connect over Streamable HTTP, building and managing an Ember client for you (JVM-only).
       *
@@ -62,10 +62,10 @@ object syntax extends ClientSyntax:
       * `Client[F]` with a `given Tracer[F]` in scope.
       *
       * {{{
-      * client.connectHttp(HttpClientConfig("http://localhost:3000")).use { conn => ... }
+      * client.connectHttp(HttpTransportConfig("http://localhost:3000/mcp")).use { conn => ... }
       * }}}
       */
-    def connectHttp(config: HttpClientConfig[F])(using
+    def connectHttp(config: HttpTransportConfig[F])(using
         Async[F],
         Network[F]
     ): Resource[F, McpConnection[F]] =
@@ -78,4 +78,4 @@ object syntax extends ClientSyntax:
       * }}}
       */
     def connectHttp(baseUrl: String)(using Async[F], Network[F]): Resource[F, McpConnection[F]] =
-      connectHttp(HttpClientConfig[F](baseUrl))
+      connectHttp(HttpTransportConfig[F](s"$baseUrl/mcp"))

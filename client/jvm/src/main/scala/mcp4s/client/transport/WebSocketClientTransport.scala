@@ -16,35 +16,30 @@
 
 package mcp4s.client.transport
 
-import cats.effect.{Async, Ref, Resource as CatsResource}
+import cats.effect.{Async, Resource as CatsResource}
 import cats.effect.std.Queue
 import cats.effect.syntax.all.*
 import cats.syntax.all.*
 import fs2.Stream
-import io.circe.*
 import io.circe.parser.*
 import io.circe.syntax.*
-import org.http4s.Uri
-import org.http4s.client.websocket.{WSClient, WSDataFrame, WSFrame, WSRequest}
+import org.http4s.{Headers, Uri}
+import org.http4s.client.websocket.{WSClient, WSFrame, WSRequest}
 import org.http4s.jdkhttpclient.JdkWSClient
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.RequestCorrelator
-import mcp4s.client.{ClientDispatcher, McpClient, McpConnection}
+import mcp4s.client.{ConnectionRunner, McpClient, McpConnection}
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
+import mcp4s.transport.{McpChannel, Timeouts}
 
-/** WebSocket transport configuration for MCP clients */
-final case class WebSocketClientConfig(
-    url: String,
-    path: String = "ws",
+/** WebSocket transport configuration for MCP clients. */
+final case class WebSocketTransportConfig[F[_]](
+    uri: String,
+    /** Authentication sent as a Bearer token on the upgrade request. */
+    auth: Option[McpAuth[F]] = None,
     /** Maximum queue size for outgoing messages (bounded queue with backpressure) */
-    maxQueueSize: Int = 1000,
-    /** Request timeout for pending operations */
-    requestTimeout: scala.concurrent.duration.FiniteDuration =
-      scala.concurrent.duration.FiniteDuration(5, "min"),
-    /** Timeout for the entire initialization sequence (connect + initialize handshake) */
-    initTimeout: scala.concurrent.duration.FiniteDuration =
-      scala.concurrent.duration.FiniteDuration(30, "s")
+    maxQueueSize: Int = 1024,
+    timeouts: Timeouts = Timeouts.default
 )
 
 /** WebSocket transport for MCP clients.
@@ -57,139 +52,56 @@ final case class WebSocketClientConfig(
   */
 object WebSocketClientTransport:
 
-  /** Connect to a WebSocket MCP server.
-    *
-    * @param client
-    *   The MCP client configuration
-    * @param config
-    *   WebSocket transport configuration
-    * @param tracer
-    *   OpenTelemetry tracer for distributed tracing
-    */
-  def connect[F[_]: Async](
-      client: McpClient[F],
-      config: WebSocketClientConfig
-  )(using Tracer[F]): CatsResource[F, McpConnection[F]] =
-    for
-      wsClient         <- CatsResource.eval(JdkWSClient.simple[F])
-      clientDispatcher <- CatsResource.eval(ClientDispatcher[F](client))
-      connection <- establishConnection(
-        client,
-        wsClient,
-        clientDispatcher,
-        config,
-        summon[Tracer[F]]
-      )
-    yield connection
+  /** Build a [[ClientTransport]] for the given WebSocket configuration. */
+  def apply[F[_]: Async](config: WebSocketTransportConfig[F]): ClientTransport[F] =
+    new ClientTransport[F]:
+      def open: CatsResource[F, McpChannel[F]] =
+        for
+          wsClient <- CatsResource.eval(JdkWSClient.simple[F])
+          channel  <- openWith(wsClient, config)
+        yield channel
 
-  private def establishConnection[F[_]: Async](
-      client: McpClient[F],
+  /** Build a [[ClientTransport]] using a caller-supplied `WSClient` (e.g. for testing). */
+  def apply[F[_]: Async](
       wsClient: WSClient[F],
-      clientDispatcher: ClientDispatcher[F],
-      config: WebSocketClientConfig,
-      tracer: Tracer[F]
-  ): CatsResource[F, McpConnection[F]] =
-    val uri = Uri.unsafeFromString(s"${config.url}/${config.path}")
+      config: WebSocketTransportConfig[F]
+  ): ClientTransport[F] =
+    new ClientTransport[F]:
+      def open: CatsResource[F, McpChannel[F]] = openWith(wsClient, config)
 
+  private def openWith[F[_]: Async](
+      wsClient: WSClient[F],
+      config: WebSocketTransportConfig[F]
+  ): CatsResource[F, McpChannel[F]] =
+    val uri = Uri.unsafeFromString(config.uri)
     for
-      // Correlates server responses back to in-flight client requests.
-      correlator <- CatsResource.eval(RequestCorrelator[F])
-      // Queue for outgoing data frames (bounded, with backpressure).
-      outQueue <- CatsResource.eval(Queue.bounded[F, WSDataFrame](config.maxQueueSize))
-      // Indirection for progress handlers - set after connection creation.
-      progressHandlersRef <- CatsResource.eval(
-        Ref.of[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]](None)
-      )
-
-      // Establish the live WebSocket connection (high-level: control frames handled for us).
-      wsConn <- wsClient.connectHighLevel(WSRequest(uri))
-
-      // Fail all pending requests when the connection closes.
-      cleanupPendingRequests = correlator.cancelAll(JsonRpcError(-32000, "Connection closed", None))
-
-      handleIncoming = (text: String) =>
-        decode[JsonRpcMessage](text) match
-          case Right(response: JsonRpcResponse) =>
-            correlator.complete(response.id, response.result)
-
-          case Right(errorResponse: JsonRpcErrorResponse) =>
-            correlator.fail(errorResponse.id, errorResponse.error)
-
-          case Right(request: JsonRpcRequest) =>
-            clientDispatcher.dispatch(request).flatMap {
-              case Some(response) => outQueue.offer(WSFrame.Text(response.asJson.noSpaces))
-              case None           => Async[F].unit
-            }
-
-          case Right(notif: JsonRpcNotification) if notif.method == McpMethod.Progress =>
-            val pp = notif.params.flatMap(_.as[ProgressParams].toOption)
-            pp.traverse_ { p =>
-              progressHandlersRef.get.flatMap(_.traverse_ { handlers =>
-                handlers.get.flatMap(_.get(p.progressToken).traverse_(_(p)))
-              })
-            }
-
-          case Right(_: JsonRpcNotification) => Async[F].unit
-          case Left(_)                       => Async[F].unit
-
-      sendRequest = (req: JsonRpcRequest) =>
-        correlator.request(req.id, config.requestTimeout):
-          outQueue.offer(WSFrame.Text(req.asJson.noSpaces))
-
-      sendNotification = (notif: JsonRpcNotification) =>
-        outQueue.offer(WSFrame.Text(notif.asJson.noSpaces))
+      headers  <- CatsResource.eval(McpAuth.applyTo(config.auth, Headers.empty))
+      wsConn   <- wsClient.connectHighLevel(WSRequest(uri, headers, org.http4s.Method.GET))
+      outQueue <- CatsResource.eval(Queue.bounded[F, String](config.maxQueueSize))
 
       // Pump outgoing frames from the queue to the socket.
-      _ <- Stream.fromQueueUnterminated(outQueue).evalMap(wsConn.send).compile.drain.background
-
-      // Process incoming frames; clean up pending requests when the stream ends (socket closed).
-      _ <- wsConn.receiveStream
-        .evalMap {
-          case WSFrame.Text(text, _) => handleIncoming(text)
-          case _                     => Async[F].unit
-        }
+      _ <- Stream
+        .fromQueueUnterminated(outQueue)
+        .evalMap(text => wsConn.send(WSFrame.Text(text)))
         .compile
         .drain
-        .guarantee(cleanupPendingRequests)
         .background
+    yield new McpChannel[F]:
+      def send(message: JsonRpcMessage): F[Unit] =
+        outQueue.offer(message.asJson.noSpaces)
 
-      initRequest = JsonRpcRequest(
-        RequestId.NumberId(1),
-        McpMethod.Initialize,
-        Some(
-          InitializeParams(
-            protocolVersion = McpVersion.Current,
-            capabilities = client.capabilities,
-            clientInfo = client.info
-          ).asJson
-        )
-      )
+      def incoming: Stream[F, JsonRpcMessage] =
+        wsConn.receiveStream
+          .collect { case WSFrame.Text(text, _) => text }
+          .evalMapFilter { text =>
+            decode[JsonRpcMessage](text) match
+              case Right(message) => Async[F].pure(Some(message))
+              case Left(_)        => Async[F].pure(None)
+          }
 
-      doInit = for
-        initResult <- sendRequest(initRequest).flatMap(_.as[InitializeResult].liftTo[F])
-        _          <- sendNotification(JsonRpcNotification(McpMethod.Initialized, None))
-        conn <- McpConnection[F](
-          initResult.serverInfo,
-          initResult.capabilities,
-          sendRequest,
-          sendNotification,
-          tracer
-        )
-        _ <- progressHandlersRef.set(Some(conn.progressHandlers))
-      yield conn
-
-      // Run the initialize handshake with a timeout; clean up on failure so nothing hangs.
-      connection <- CatsResource.eval(
-        Async[F]
-          .timeoutTo(
-            doInit,
-            config.initTimeout,
-            cleanupPendingRequests *> Async[F].raiseError(
-              McpError.InternalError(
-                s"WebSocket initialization timed out after ${config.initTimeout}"
-              )
-            )
-          )
-          .onError(_ => cleanupPendingRequests)
-      )
-    yield connection
+  /** Connect to a WebSocket MCP server. */
+  def connect[F[_]: Async](
+      client: McpClient[F],
+      config: WebSocketTransportConfig[F]
+  )(using Tracer[F]): CatsResource[F, McpConnection[F]] =
+    ConnectionRunner.run(client, apply(config), config.timeouts, summon[Tracer[F]])

@@ -95,6 +95,7 @@ lazy val core = crossProject(JVMPlatform, JSPlatform, NativePlatform)
   .settings(
     libraryDependencies ++= Seq(
       "org.typelevel" %%% "cats-effect"   % CatsEffect,
+      "co.fs2"        %%% "fs2-core"      % Fs2,
       "io.circe"      %%% "circe-core"    % Circe,
       "io.circe"      %%% "circe-generic" % Circe,
       "io.circe"      %%% "circe-parser"  % Circe,

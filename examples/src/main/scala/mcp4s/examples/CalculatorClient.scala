@@ -51,7 +51,7 @@ object CalculatorClient extends IOApp.Simple:
           HttpClientTransport
             .connect[IO](
               client,
-              HttpClientConfig[IO]("http://localhost:3000"),
+              HttpTransportConfig[IO]("http://localhost:3000/mcp"),
               httpClient
             )
             .use: conn =>

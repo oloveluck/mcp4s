@@ -29,7 +29,7 @@ import mcp4s.protocol.*
   * stream for subscription support.
   *
   * {{{
-  * import mcp4s.server.mcp.*
+  * import mcp4s.server.dsl.*
   *
   * val readme = Resource.text[IO]("file:///readme", "README")("Hello world")
   * val config = Resource.text[IO]("file:///config", "Config")("{}")
@@ -50,6 +50,14 @@ trait Resources[F[_]]:
   /** Stream of URIs that have changed. Empty for static resources. */
   def changes: Stream[F, String]
 
+  /** True when no resources are registered. Used to derive server capabilities. */
+  def isEmpty: Boolean = false
+
+  /** True when at least one registered resource supports change subscriptions. Drives the
+    * `resources.subscribe` capability flag.
+    */
+  def supportsSubscribe: Boolean = false
+
 object Resources:
 
   def empty[F[_]: Applicative]: Resources[F] =
@@ -58,6 +66,7 @@ object Resources:
       def listTemplates: F[List[ResourceTemplate]]       = Applicative[F].pure(Nil)
       def read(uri: String): OptionT[F, ResourceContent] = OptionT.none
       def changes: Stream[F, String]                     = Stream.empty
+      override def isEmpty: Boolean                      = true
 
   /** Create resource routes from a raw Resource definition and a handler. */
   def single[F[_]: Concurrent](resource: Resource)(
@@ -67,6 +76,8 @@ object Resources:
 
   def combine[F[_]: Concurrent](x: Resources[F], y: Resources[F]): Resources[F] =
     new Resources[F]:
+      override def isEmpty: Boolean           = x.isEmpty && y.isEmpty
+      override def supportsSubscribe: Boolean = x.supportsSubscribe || y.supportsSubscribe
       def list: F[List[Resource]] =
         for
           xRes <- x.list
@@ -129,7 +140,7 @@ object Resources:
         else OptionT.none[F, ResourceContent]
       def changes: Stream[F, String] = Stream.empty
 
-/** Internal resource factory. Use `Resource` from `import mcp4s.server.mcp.*` instead. */
+/** Internal resource factory. Use `Resource` from `import mcp4s.server.dsl.*` instead. */
 private[server] object McpResource:
 
   /** Create a static text resource */
@@ -183,7 +194,8 @@ private[server] object McpResource:
       def read(reqUri: String): OptionT[F, ResourceContent] =
         if reqUri == uri then OptionT.liftF(readHandler(reqUri))
         else OptionT.none[F, ResourceContent]
-      def changes: Stream[F, String] = changeStream.as(uri)
+      def changes: Stream[F, String]          = changeStream.as(uri)
+      override def supportsSubscribe: Boolean = true
 
   /** Create a subscribable resource that polls for changes.
     *

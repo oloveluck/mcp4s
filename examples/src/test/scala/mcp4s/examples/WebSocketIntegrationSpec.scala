@@ -107,7 +107,7 @@ class WebSocketIntegrationSpec extends CatsEffectSuite:
   def wsConnectedClient(serverPort: Int): Resource[IO, McpConnection[IO]] =
     WebSocketClientTransport.connect[IO](
       testClient,
-      WebSocketClientConfig(url = s"ws://localhost:$serverPort")
+      WebSocketTransportConfig[IO](uri = s"ws://localhost:$serverPort/ws")
     )
 
   // === WebSocket Integration Tests ===
