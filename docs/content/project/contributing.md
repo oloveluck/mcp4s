@@ -38,12 +38,12 @@ The output will be in `docs/target/site/`. Open `index.html` in a browser.
 
 ### Keep Doc Snippets Compiling
 
-Every ```` ```scala ```` block in `docs/content` is extracted into
-`examples/src/test/scala/docsnippets/` and compiled against the real API. After editing
-documentation, regenerate and verify:
+Every ```` ```scala ```` block in `docs/content` is extracted automatically at compile
+time (by `project/DocSnippets.scala`, wired as a source generator for the `examples`
+module) and compiled against the real API — so CI fails if the documentation drifts
+from the published API. After editing documentation, verify with:
 
 ```bash
-python3 scripts/snippet_harness.py
 sbt examples/Test/compile
 ```
 

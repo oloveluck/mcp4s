@@ -158,8 +158,8 @@ lazy val testkit = crossProject(JVMPlatform, JSPlatform, NativePlatform)
   // compile-scope dep so the abstract suites can live in `main` for downstream users.
   .jvmSettings(
     libraryDependencies ++= Seq(
-      "org.typelevel"    %% "weaver-cats"  % Weaver,
-      "org.hdrhistogram"  % "HdrHistogram" % HdrHistogram
+      "org.typelevel"   %% "weaver-cats"  % Weaver,
+      "org.hdrhistogram" % "HdrHistogram" % HdrHistogram
     ),
     testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
     Test / parallelExecution := false
@@ -176,7 +176,22 @@ lazy val examples = project
     name                                   := "mcp4s-examples",
     libraryDependencies += "org.typelevel" %% "otel4s-oteljava" % Otel4s,
     // Integration tests bind ember servers to ports; run them sequentially.
-    Test / parallelExecution := false
+    Test / parallelExecution := false,
+    // Every ```scala fence in docs/content compiles as part of Test/compile, so
+    // `sbt test` verifies the documentation against the real API on every build.
+    Test / sourceGenerators += Def.task {
+      DocSnippets.generate(
+        (ThisBuild / baseDirectory).value / "docs" / "content",
+        (Test / sourceManaged).value / "docsnippets",
+        streams.value.log
+      )
+    }.taskValue,
+    // Doc snippets legitimately leave imports/values unused; silence lints for the
+    // generated sources only, keeping them fatal-warning-safe without weakening the
+    // real tests in this module.
+    Test / scalacOptions += "-Wconf:src=src_managed/.*:silent",
+    Test / compile / watchTriggers +=
+      (ThisBuild / baseDirectory).value.toGlob / "docs" / "content" / ** / "*.md"
   )
 
 // JVM-only performance benchmarks: JMH microbenchmarks for the request hot path
@@ -191,8 +206,7 @@ lazy val benchmarks = project
     // values / use non-unit statements, so relax those lints for this module only.
     scalacOptions ~= (_.filterNot(
       Set("-Wnonunit-statement", "-Wvalue-discard", "-Wunused:all")
-    )),
-    libraryDependencies += "org.hdrhistogram" % "HdrHistogram" % "2.2.2"
+    ))
   )
 
 // Documentation site, generated from docs/content with Laika (JVM-only).
