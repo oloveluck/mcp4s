@@ -91,6 +91,7 @@ val HdrHistogram    = "2.2.2"
 
 lazy val commonSettings = Seq(
   scalacOptions ++= Seq(
+    "-new-syntax",
     "-Wunused:all",
     "-Wvalue-discard",
     "-Wnonunit-statement",
