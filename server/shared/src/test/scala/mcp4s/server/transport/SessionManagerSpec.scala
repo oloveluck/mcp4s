@@ -55,7 +55,7 @@ class SessionManagerSpec extends CatsEffectSuite:
   test("SessionManager returns None for unknown session IDs") {
     for
       manager   <- SessionManager[IO](testServer)
-      retrieved <- manager.get("unknown-session-id")
+      retrieved <- manager.get(SessionId("unknown-session-id"))
       _ = assertEquals(retrieved, None)
     yield ()
   }
@@ -211,7 +211,7 @@ class SessionManagerSpec extends CatsEffectSuite:
   test("remove handles non-existent session gracefully") {
     for
       manager <- SessionManager[IO](testServer)
-      _       <- manager.remove("nonexistent-id") // should not throw
+      _       <- manager.remove(SessionId("nonexistent-id")) // should not throw
     yield ()
   }
 

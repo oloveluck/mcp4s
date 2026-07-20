@@ -11,6 +11,8 @@
 - **Derived capabilities** — server capabilities now reflect what is actually registered: a tools-only server advertises only tools (plus logging/completions), and `resources.subscribe` is `true` only when a subscribable resource is registered. Client capabilities likewise derive from which handlers are present.
 - **Client assembly** — `McpClientBuilder[F](info).withRoots(...).withSampling(...).withElicitation(...)` then `.stdio(config)` / `.http(config, httpClient)`; the JVM adds `.webSocket(...)` and an auto-Ember `.http(uri)` via `import mcp4s.client.syntax.*`. `connectStdio` / `connectHttp` / `connectWebSocket` are **removed**. `McpClient.from` remains.
 - **Transport config unification** — configs take the **full URI including path** (`.../mcp`, `.../ws`); the separate baseUrl/endpoint and url/path fields are gone. All three client configs carry `timeouts: Timeouts(request = 5.minutes, init = 30.seconds)` (`mcp4s.transport.Timeouts`), so stdio now has request/init timeouts too. HTTP and WebSocket carry `auth: Option[McpAuth[F]]` — `McpAuth` (`Bearer` / `TokenProvider`) replaces `HttpAuth` and now also authenticates the WebSocket upgrade request.
+- **`SessionId` opaque type** — `SessionManager.get`/`remove` and `HttpSession.id` use `mcp4s.server.transport.SessionId` (an opaque wrapper over the `Mcp-Session-Id` header value) instead of raw `String`; construct with `SessionId(...)`, unwrap with `.value`.
+- **`Server#withInfo` now preserves context-aware tool dispatch** — it previously routed `callToolWithContext` through the plain `callTool`, so a wrapped server silently lost sampling/elicitation context on tool calls.
 
 ### Added
 

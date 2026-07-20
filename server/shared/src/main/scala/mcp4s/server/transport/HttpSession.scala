@@ -33,7 +33,7 @@ import scala.concurrent.duration.FiniteDuration
   * HTTP-specific parts: session id, expiry tracking, and the SSE out-queue.
   */
 final class HttpSession[F[_]] private (
-    val id: String,
+    val id: SessionId,
     val dispatcher: Dispatcher[F],
     val createdAt: FiniteDuration,
     lastAccessedRef: Ref[F, FiniteDuration],
@@ -101,7 +101,7 @@ object HttpSession:
           given SecureRandom[F] = sr
           UUIDGen[F].randomUUID
         }
-        .map(_.toString)
+        .map(uuid => SessionId(uuid.toString))
       // Use bounded queue with configurable max size for backpressure
       outQueue        <- Queue.bounded[F, JsonRpcMessage](config.maxQueueSize)
       session         <- ServerSession.create[F](outQueue.offer, config.requestTimeout, tracer)

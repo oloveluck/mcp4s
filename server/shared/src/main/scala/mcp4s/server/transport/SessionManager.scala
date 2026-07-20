@@ -40,6 +40,16 @@ final case class SessionConfig(
 object SessionConfig:
   val default: SessionConfig = SessionConfig()
 
+/** Identifier of an HTTP session, carried in the `Mcp-Session-Id` header. */
+opaque type SessionId = String
+
+object SessionId:
+  def apply(value: String): SessionId = value
+
+  extension (id: SessionId)
+    /** The raw header value. */
+    def value: String = id
+
 /** Manages HTTP sessions for the MCP Streamable HTTP transport.
   *
   * Provides thread-safe session creation, lookup, removal, and automatic cleanup of expired
@@ -48,13 +58,13 @@ object SessionConfig:
 trait SessionManager[F[_]]:
 
   /** Get an existing session by ID */
-  def get(sessionId: String): F[Option[HttpSession[F]]]
+  def get(sessionId: SessionId): F[Option[HttpSession[F]]]
 
   /** Create a new session */
   def create: F[HttpSession[F]]
 
   /** Remove a session by ID */
-  def remove(sessionId: String): F[Unit]
+  def remove(sessionId: SessionId): F[Unit]
 
   /** Remove all expired sessions.
     * @return
@@ -81,7 +91,7 @@ object SessionManager:
       config: SessionConfig = SessionConfig.default
   )(using Tracer[F]): F[SessionManager[F]] =
     Ref
-      .of[F, Map[String, HttpSession[F]]](Map.empty)
+      .of[F, Map[SessionId, HttpSession[F]]](Map.empty)
       .map: sessionsRef =>
         new SessionManagerImpl(server, config, sessionsRef)
 
@@ -120,11 +130,11 @@ object SessionManager:
   private class SessionManagerImpl[F[_]: Async](
       server: Server[F],
       config: SessionConfig,
-      sessionsRef: Ref[F, Map[String, HttpSession[F]]]
+      sessionsRef: Ref[F, Map[SessionId, HttpSession[F]]]
   )(using Tracer[F])
       extends SessionManager[F]:
 
-    def get(sessionId: String): F[Option[HttpSession[F]]] =
+    def get(sessionId: SessionId): F[Option[HttpSession[F]]] =
       sessionsRef.get.map(_.get(sessionId)).flatMap {
         case Some(session) =>
           session.touch.as(Some(session))
@@ -152,7 +162,7 @@ object SessionManager:
                   case true  => session.pure[F]
                   case false => session.shutdown *> limitReached
 
-    def remove(sessionId: String): F[Unit] =
+    def remove(sessionId: SessionId): F[Unit] =
       sessionsRef
         .modify { sessions =>
           sessions.get(sessionId) match

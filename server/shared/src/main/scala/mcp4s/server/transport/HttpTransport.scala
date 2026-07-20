@@ -209,7 +209,7 @@ object HttpTransport:
       span: org.typelevel.otel4s.trace.Span[F],
       useSSE: Boolean
   )(using Http4sDsl[F]): F[Response[F]] =
-    val sessionIdOpt = req.headers.get(SessionHeaderName).map(_.head.value)
+    val sessionIdOpt = req.headers.get(SessionHeaderName).map(h => SessionId(h.head.value))
     val isInitialize = message match
       case r: JsonRpcRequest => r.method == McpMethod.Initialize
       case _                 => false
@@ -219,7 +219,7 @@ object HttpTransport:
       case (None, true) =>
         sessionManager.create.flatMap { session =>
           dispatchWithSession(session, message, span, useSSE).map { response =>
-            response.putHeaders(Header.Raw(SessionHeaderName, session.id))
+            response.putHeaders(Header.Raw(SessionHeaderName, session.id.value))
           }
         }
 
@@ -228,7 +228,7 @@ object HttpTransport:
         sessionManager.get(sessionId).flatMap {
           case Some(session) =>
             dispatchWithSession(session, message, span, useSSE).map { response =>
-              response.putHeaders(Header.Raw(SessionHeaderName, session.id))
+              response.putHeaders(Header.Raw(SessionHeaderName, session.id.value))
             }
           case None =>
             // Invalid session ID
