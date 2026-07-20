@@ -111,7 +111,7 @@ object McpError:
     case AlreadyInitialized            => JsonRpcError.invalidRequest(err.message)
     case MethodNotFound(_)             => JsonRpcError.methodNotFound(err.message)
     case MethodNotSupported(_)         => JsonRpcError.methodNotFound(err.message)
-    case RequestCancelled(_)  => JsonRpcError(JsonRpcErrorCode.RequestCancelled, err.message, None)
+    case RequestCancelled(_) => JsonRpcError(JsonRpcErrorCode.RequestCancelled, err.message, None)
     case CapabilityNotSupported(_) => JsonRpcError.invalidRequest(err.message)
     case SamplingNotSupported      => JsonRpcError.invalidRequest(err.message)
     case ElicitationNotSupported   => JsonRpcError.invalidRequest(err.message)

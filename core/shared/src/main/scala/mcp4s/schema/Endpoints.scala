@@ -16,13 +16,7 @@
 
 package mcp4s.schema
 
-import mcp4s.protocol.{
-  JsonSchema,
-  PromptArgument,
-  ToolAnnotations,
-  ToolOutput,
-  ToolResult
-}
+import mcp4s.protocol.{JsonSchema, PromptArgument, ToolAnnotations, ToolOutput, ToolResult}
 
 /** How a tool handler's return value becomes a [[mcp4s.protocol.ToolResult]]. */
 sealed trait ToolOutputEncoder[O]:
@@ -35,21 +29,21 @@ sealed trait ToolOutputEncoder[O]:
 object ToolOutputEncoder:
   /** The handler returns a [[ToolResult]] directly; no `outputSchema` is advertised. */
   case object Raw extends ToolOutputEncoder[ToolResult]:
-    def outputSchema: Option[JsonSchema] = None
+    def outputSchema: Option[JsonSchema]  = None
     def encode(o: ToolResult): ToolResult = o
 
   /** The handler returns a typed value encoded as `structuredContent` via its [[Schema]]. */
   final case class Structured[O](schema: Schema[O]) extends ToolOutputEncoder[O]:
-    private val view                      = ToolOutput.fromSchema(schema)
-    def outputSchema: Option[JsonSchema]  = Some(view.schema)
-    def encode(o: O): ToolResult          = view.encode(o)
+    private val view                     = ToolOutput.fromSchema(schema)
+    def outputSchema: Option[JsonSchema] = Some(view.schema)
+    def encode(o: O): ToolResult         = view.encode(o)
 
 /** A tool definition: name, documentation, and typed input/output schemas — with no handler
   * attached yet.
   *
-  * A `ToolEndpoint[I, O]` is the shared currency between server and client: on the server, attach
-  * a handler with `.handle` / `.handleWith` / `.stream` / `.streamWith` (from
-  * `mcp4s.server.dsl`); on the client, call it in a typed way with `connection.call(endpoint)`.
+  * A `ToolEndpoint[I, O]` is the shared currency between server and client: on the server, attach a
+  * handler with `.handle` / `.handleWith` / `.stream` / `.streamWith` (from `mcp4s.server.dsl`); on
+  * the client, call it in a typed way with `connection.call(endpoint)`.
   *
   * {{{
   * case class SearchIn(query: String, limit: Int = 10) derives Schema
@@ -68,8 +62,8 @@ final case class ToolEndpoint[I, O](
     outputEncoder: ToolOutputEncoder[O],
     annotations: Option[ToolAnnotations]
 ):
-  def withName(n: String): ToolEndpoint[I, O]              = copy(name = n)
-  def withDescription(d: String): ToolEndpoint[I, O]       = copy(description = Some(d))
+  def withName(n: String): ToolEndpoint[I, O]                 = copy(name = n)
+  def withDescription(d: String): ToolEndpoint[I, O]          = copy(description = Some(d))
   def withAnnotations(a: ToolAnnotations): ToolEndpoint[I, O] = copy(annotations = Some(a))
 
   /** The wire representation advertised in `tools/list`. */
@@ -84,8 +78,8 @@ final case class ToolEndpoint[I, O](
 
 object ToolEndpoint:
   extension [I, O](e: ToolEndpoint[I, O])
-    /** Set the typed input. If no description was set, the input type's class-level
-      * `@description` is used.
+    /** Set the typed input. If no description was set, the input type's class-level `@description`
+      * is used.
       */
     inline def input[I2](using s: Schema[I2]): ToolEndpoint[I2, O] =
       ToolEndpoint(
@@ -98,7 +92,13 @@ object ToolEndpoint:
 
     /** Set a typed output, advertised as `outputSchema` and encoded as `structuredContent`. */
     def output[O2](using s: Schema[O2]): ToolEndpoint[I, O2] =
-      ToolEndpoint(e.name, e.description, e.inputSchema, ToolOutputEncoder.Structured(s), e.annotations)
+      ToolEndpoint(
+        e.name,
+        e.description,
+        e.inputSchema,
+        ToolOutputEncoder.Structured(s),
+        e.annotations
+      )
 
 /** Constructors for [[ToolEndpoint]]. */
 object Tool:
@@ -145,8 +145,8 @@ final case class PromptEndpoint[I](
 
 object PromptEndpoint:
   extension [I](e: PromptEndpoint[I])
-    /** Set the typed input. If no description was set, the input type's class-level
-      * `@description` is used.
+    /** Set the typed input. If no description was set, the input type's class-level `@description`
+      * is used.
       */
     inline def input[I2](using s: Schema[I2]): PromptEndpoint[I2] =
       PromptEndpoint(e.name, e.description.orElse(SchemaMacros.classDescription[I2]), s)

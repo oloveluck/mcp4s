@@ -96,11 +96,13 @@ object WebSocketClientTransport:
           .evalMapFilter { text =>
             decode[JsonRpcMessage](text) match
               case Right(message) => Async[F].pure(Some(message))
-              case Left(err) =>
+              case Left(err)      =>
                 // Don't drop undecodable frames silently: a malformed response would
                 // otherwise stall its request until the timeout with no trace.
                 Async[F]
-                  .delay(System.err.println(s"[MCP WebSocket] undecodable frame: ${err.getMessage}"))
+                  .delay(
+                    System.err.println(s"[MCP WebSocket] undecodable frame: ${err.getMessage}")
+                  )
                   .as(None)
           }
 

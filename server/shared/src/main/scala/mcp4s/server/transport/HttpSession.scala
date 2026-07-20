@@ -40,9 +40,9 @@ final class HttpSession[F[_]] private (
     val outQueue: Queue[F, JsonRpcMessage],
     session: ServerSession[F],
     val config: SessionConfig,
-    /** Progress tokens of the streaming requests currently in flight on this session. The
-      * out-queue is shared, so each SSE poller uses this to hand a foreign stream's progress
-      * events back instead of emitting (and possibly losing) them.
+    /** Progress tokens of the streaming requests currently in flight on this session. The out-queue
+      * is shared, so each SSE poller uses this to hand a foreign stream's progress events back
+      * instead of emitting (and possibly losing) them.
       */
     val activeProgressTokens: Ref[F, Set[RequestId]]
 )(using F: Async[F]):

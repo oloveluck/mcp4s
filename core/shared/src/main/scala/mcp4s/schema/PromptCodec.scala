@@ -21,8 +21,8 @@ import mcp4s.protocol.PromptArgument
 /** Interprets a [[Schema]] as MCP prompt arguments.
   *
   * Prompt arguments arrive as `Map[String, String]` on the wire, so each field is parsed from its
-  * string form according to its schema: strings pass through, primitives and enums parse from
-  * their literal form, and anything structured (lists, nested objects) parses as a JSON string.
+  * string form according to its schema: strings pass through, primitives and enums parse from their
+  * literal form, and anything structured (lists, nested objects) parses as a JSON string.
   */
 private[mcp4s] object PromptCodec:
   import Schema.*
@@ -63,8 +63,8 @@ private[mcp4s] object PromptCodec:
             acc.flatMap(values => decodeArgument(field, args.get(field.label)).map(values :+ _))
           }
           .map(struct.make)
-      case Bijection(underlying, to, _) => decode(underlying, args).map(to)
-      case lz: Lazily[A]                => decode(lz.underlying, args)
+      case Bijection(underlying, to, _)     => decode(underlying, args).map(to)
+      case lz: Lazily[A]                    => decode(lz.underlying, args)
       case Primitive(PrimitiveTag.PUnit, _) => Right(().asInstanceOf[A])
       case _ =>
         Left(s"Prompt input schemas must be case classes; got ${schema.getClass.getSimpleName}")

@@ -19,8 +19,7 @@ package mcp4s.client.transport
 import cats.effect.Resource
 import mcp4s.transport.McpChannel
 
-/** A client-side transport: something that can open an [[mcp4s.transport.McpChannel]] to a
-  * server.
+/** A client-side transport: something that can open an [[mcp4s.transport.McpChannel]] to a server.
   *
   * Implementations handle only connection establishment and message framing (process pipes, HTTP
   * requests, WebSocket frames). The shared [[mcp4s.client.ConnectionRunner]] layers the MCP

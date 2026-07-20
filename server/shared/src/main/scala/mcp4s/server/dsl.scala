@@ -113,16 +113,16 @@ object dsl:
         decodeInput(e, json).flatMap(i => f(i).map(e.outputEncoder.encode))
       }
 
-    /** Attach an effectful handler that also receives the [[ToolContext]] (sampling,
-      * elicitation, progress, logging).
+    /** Attach an effectful handler that also receives the [[ToolContext]] (sampling, elicitation,
+      * progress, logging).
       */
     def handleWith[F[_]: Concurrent](f: (I, ToolContext[F]) => F[O]): Tools[F] =
       Tools.singleWithContext(e.toTool) { (json, ctx) =>
         decodeInput(e, json).flatMap(i => f(i, ctx).map(e.outputEncoder.encode))
       }
 
-    /** Attach a streaming handler. On the plain request/response call path the last emitted
-      * value is the tool result.
+    /** Attach a streaming handler. On the plain request/response call path the last emitted value
+      * is the tool result.
       */
     def stream[F[_]: Concurrent](f: I => fs2.Stream[F, O]): Tools[F] =
       Tools.single(e.toTool) { json =>
@@ -143,7 +143,6 @@ object dsl:
   // === Prompt Handler Attachment ===
 
   extension [I](e: PromptEndpoint[I])
-
     /** Attach an effectful handler receiving the decoded prompt input. */
     def handle[F[_]: Concurrent](f: I => F[GetPromptResult]): Prompts[F] =
       val prompt = e.toPrompt

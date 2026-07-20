@@ -48,8 +48,8 @@ final case class HttpTransportConfig[F[_]](
   *
   * Each outbound request is a POST to the MCP endpoint. When the server responds with an SSE
   * stream, every event on it — progress notifications, server-initiated requests such as
-  * sampling/elicitation, and the final response — is surfaced through the channel, so
-  * bidirectional flows work exactly as they do over WebSocket.
+  * sampling/elicitation, and the final response — is surfaced through the channel, so bidirectional
+  * flows work exactly as they do over WebSocket.
   */
 object HttpClientTransport:
 

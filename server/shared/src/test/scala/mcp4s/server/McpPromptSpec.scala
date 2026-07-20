@@ -28,12 +28,12 @@ class McpPromptSpec extends CatsEffectSuite:
   case class GreetArgs(@description("Who to greet") name: String) derives Schema
 
   test("Prompt with typed input derives argument metadata") {
-    val greet = PromptDef("greet").withDescription("Greet someone").input[GreetArgs].handle[IO] {
-      args =>
+    val greet =
+      PromptDef("greet").withDescription("Greet someone").input[GreetArgs].handle[IO] { args =>
         IO.pure(
           GetPromptResult(None, List(PromptMessage(Role.User, TextContent(s"Hi ${args.name}"))))
         )
-    }
+      }
 
     for
       prompts <- greet.list
@@ -75,7 +75,9 @@ class McpPromptSpec extends CatsEffectSuite:
   test("Prompt without input has no arguments") {
     val hello = PromptDef("hello")
       .withDescription("Say hello")
-      .static[IO](GetPromptResult(Some("Hello"), List(PromptMessage(Role.User, TextContent("Hello!")))))
+      .static[IO](
+        GetPromptResult(Some("Hello"), List(PromptMessage(Role.User, TextContent("Hello!"))))
+      )
 
     for
       prompts <- hello.list

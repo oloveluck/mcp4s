@@ -36,10 +36,10 @@ class McpStreamingToolSpec extends CatsEffectSuite:
   test("stream creates tool with streaming handler") {
     case class CountArgs(count: Int) derives Schema
 
-    val streamingTool = Tool("count").withDescription("Count to N").input[CountArgs].stream[IO] {
-      args =>
+    val streamingTool =
+      Tool("count").withDescription("Count to N").input[CountArgs].stream[IO] { args =>
         Stream.range(1, args.count + 1).map(n => ToolResult.text(s"Count: $n"))
-    }
+      }
 
     for
       tools <- streamingTool.list
@@ -120,15 +120,15 @@ class McpStreamingToolSpec extends CatsEffectSuite:
     case class Args1(x: Int) derives Schema
     case class Args2(y: String) derives Schema
 
-    val streamingTool = Tool("stream-tool").withDescription("Streaming tool").input[Args1].stream[IO] {
-      args =>
+    val streamingTool =
+      Tool("stream-tool").withDescription("Streaming tool").input[Args1].stream[IO] { args =>
         Stream.range(1, args.x + 1).map(n => ToolResult.text(s"chunk $n"))
-    }
+      }
 
-    val regularTool = Tool("regular-tool").withDescription("Regular tool").input[Args2].handle[IO] {
-      args =>
+    val regularTool =
+      Tool("regular-tool").withDescription("Regular tool").input[Args2].handle[IO] { args =>
         IO.pure(ToolResult.text(s"result: ${args.y}"))
-    }
+      }
 
     val combined = streamingTool |+| regularTool
 
@@ -179,12 +179,12 @@ class McpStreamingToolSpec extends CatsEffectSuite:
   test("streamWith passes context to handler") {
     case class LogArgs(count: Int) derives Schema
 
-    val tool = Tool("log").withDescription("Log with context").input[LogArgs].streamWith[IO] {
-      (args, ctx) =>
+    val tool =
+      Tool("log").withDescription("Log with context").input[LogArgs].streamWith[IO] { (args, ctx) =>
         Stream.range(1, args.count + 1).evalMap { n =>
           ctx.log(LogLevel.Info, s"Processing $n").as(ToolResult.text(s"Done: $n"))
         }
-    }
+      }
 
     for
       tools <- tool.list
@@ -215,12 +215,12 @@ class McpStreamingToolSpec extends CatsEffectSuite:
   }
 
   test("streamWith supports the no-arg context + streaming variant") {
-    val tool = Tool("ticks").withDescription("Stream ticks with context").streamWith[IO] {
-      (_, ctx) =>
+    val tool =
+      Tool("ticks").withDescription("Stream ticks with context").streamWith[IO] { (_, ctx) =>
         Stream
           .range(1, 3)
           .evalMap(n => ctx.log(LogLevel.Info, s"tick $n").as(ToolResult.text(s"tick $n")))
-    }
+      }
 
     for
       tools <- tool.list

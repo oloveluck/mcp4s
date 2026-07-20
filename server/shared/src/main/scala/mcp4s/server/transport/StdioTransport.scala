@@ -69,9 +69,10 @@ object StdioTransport:
 
       // Responses are emitted in completion order (JSON-RPC correlates by id, not order);
       // the downstream stdout pipe stays a single serial writer.
-      val process: Pipe[F, String, String] = _.parEvalMapUnordered(MaxConcurrentDispatches) {
-        line => parseAndDispatch(dispatcher, line)
-      }.unNone
+      val process: Pipe[F, String, String] =
+        _.parEvalMapUnordered(MaxConcurrentDispatches) { line =>
+          parseAndDispatch(dispatcher, line)
+        }.unNone
 
       input
         .through(process)

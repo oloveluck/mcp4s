@@ -21,9 +21,9 @@ import mcp4s.schema.McpService
 
 /** Server-side implementation of an [[mcp4s.schema.McpService]].
   *
-  * Bind one handler per declared endpoint; assembly verifies at construction time that the
-  * handlers cover the service's endpoint list exactly — a missing, duplicate, or foreign handler
-  * is an immediate `IllegalArgumentException` rather than a runtime `ToolNotFound`.
+  * Bind one handler per declared endpoint; assembly verifies at construction time that the handlers
+  * cover the service's endpoint list exactly — a missing, duplicate, or foreign handler is an
+  * immediate `IllegalArgumentException` rather than a runtime `ToolNotFound`.
   *
   * {{{
   * import mcp4s.server.*
@@ -42,12 +42,12 @@ object ServiceRoutes:
   /** Assemble the service's tool routes from one handler per endpoint.
     *
     * @throws IllegalArgumentException
-    *   if any declared endpoint lacks a handler, any handler implements a tool the service does
-    *   not declare, or the same endpoint is bound twice.
+    *   if any declared endpoint lacks a handler, any handler implements a tool the service does not
+    *   declare, or the same endpoint is bound twice.
     */
   def apply[F[_]: Concurrent](service: McpService)(handlers: Tools[F]*): Tools[F] =
-    val declared   = service.endpoints.map(_.name)
-    val boundNames = handlers.toList.flatMap(_.definitions.map(_.name))
+    val declared    = service.endpoints.map(_.name)
+    val boundNames  = handlers.toList.flatMap(_.definitions.map(_.name))
     val declaredSet = declared.toSet
     val boundSet    = boundNames.toSet
 

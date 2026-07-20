@@ -122,7 +122,10 @@ class TransportSyntaxSpec extends CatsEffectSuite:
           .http(url)
           .use: conn =>
             for
-              result <- conn.callTool("add", Json.obj("a" -> Json.fromInt(4), "b" -> Json.fromInt(4)))
+              result <- conn.callTool(
+                "add",
+                Json.obj("a" -> Json.fromInt(4), "b" -> Json.fromInt(4))
+              )
               // capabilities are derived: tools-only server advertises no resources/prompts
               _ = assertEquals(conn.serverCapabilities.resources, None)
               _ = assertEquals(conn.serverCapabilities.prompts, None)

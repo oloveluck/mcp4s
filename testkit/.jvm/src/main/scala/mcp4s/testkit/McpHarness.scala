@@ -47,13 +47,15 @@ object McpHarness:
     transport match
       case McpTransport.Http =>
         server
-          .http(HttpConfig(port = port"0")).resource
+          .http(HttpConfig(port = port"0"))
+          .resource
           .map: http =>
             val url = s"http://localhost:${http.address.getPort}/mcp"
             McpEndpoint(DeterministicClients.simple[IO].http(url))
       case McpTransport.WebSocket =>
         server
-          .webSocket(WebSocketConfig(port = port"0")).resource
+          .webSocket(WebSocketConfig(port = port"0"))
+          .resource
           .map: ws =>
             val url = s"ws://localhost:${ws.address.getPort}/ws"
             McpEndpoint(DeterministicClients.simple[IO].webSocket(url))

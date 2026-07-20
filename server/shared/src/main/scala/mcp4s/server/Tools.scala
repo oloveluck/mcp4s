@@ -84,9 +84,9 @@ object Tools:
       handler: (Json, ToolContext[F]) => F[ToolResult]
   ): Tools[F] =
     new Tools[F]:
-      def list: F[List[Tool]]              = Applicative[F].pure(List(tool))
-      override def definitions: List[Tool] = List(tool)
-      private[server] override val handlers = Some(Map(tool.name -> handler))
+      def list: F[List[Tool]]               = Applicative[F].pure(List(tool))
+      override def definitions: List[Tool]  = List(tool)
+      override private[server] val handlers = Some(Map(tool.name -> handler))
 
       def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
         if name == tool.name then OptionT.liftF(handler(args, ctx))
@@ -97,8 +97,8 @@ object Tools:
     new Tools[F]:
       def list: F[List[Tool]] = Applicative[F].pure(Nil)
       def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] = OptionT.none
-      override def isEmpty: Boolean         = true
-      private[server] override val handlers = Some(Map.empty)
+      override def isEmpty: Boolean                                                   = true
+      override private[server] val handlers = Some(Map.empty)
 
   /** Combine two Tools instances (first match wins) */
   def combine[F[_]: Concurrent](x: Tools[F], y: Tools[F]): Tools[F] =
@@ -108,7 +108,7 @@ object Tools:
         val xNames = x.definitions.map(_.name).toSet
         x.definitions ++ y.definitions.filterNot(t => xNames.contains(t.name))
       // Left side wins on duplicate names, matching the orElse chain's shadowing.
-      private[server] override val handlers =
+      override private[server] val handlers =
         (x.handlers, y.handlers).mapN((xh, yh) => yh ++ xh)
       def list: F[List[Tool]] =
         for

@@ -167,11 +167,13 @@ object Dispatcher:
       // The encode runs outside the Ref update: Ref.modify may re-evaluate its function
       // under CAS contention, which would re-run the expensive encode. Concurrent misses
       // may encode twice, but the result is identical either way.
-      listCache.get.map(_.get(key)).flatMap:
-        case Some((prev, json)) if prev == source => json.pure[F]
-        case _ =>
-          val json = encode
-          listCache.update(_.updated(key, (source, json))).as(json)
+      listCache.get
+        .map(_.get(key))
+        .flatMap:
+          case Some((prev, json)) if prev == source => json.pure[F]
+          case _ =>
+            val json = encode
+            listCache.update(_.updated(key, (source, json))).as(json)
 
     private def handleToolsCall(reqId: RequestId, params: Json): F[Json] =
       val cursor = params.hcursor

@@ -49,8 +49,8 @@ import mcp4s.client.transport.{
   * }}}
   *
   * Every `connect` method returns a `Resource[F, McpConnection[F]]`; releasing it closes the
-  * connection. `webSocket` and the no-`Client` `http` overload are JVM-only extensions (see the
-  * JVM `mcp4s.client.syntax`).
+  * connection. `webSocket` and the no-`Client` `http` overload are JVM-only extensions (see the JVM
+  * `mcp4s.client.syntax`).
   */
 final class McpClientBuilder[F[_]: Concurrent] private (
     info: ClientInfo,
@@ -67,8 +67,7 @@ final class McpClientBuilder[F[_]: Concurrent] private (
   def withSampling(s: Samplings[F]): McpClientBuilder[F] =
     new McpClientBuilder(info, roots, Some(sampling.fold(s)(_ |+| s)), elicitation)
 
-  /** Add an elicitation handler (tried in order after any already added). Advertises
-    * `elicitation`.
+  /** Add an elicitation handler (tried in order after any already added). Advertises `elicitation`.
     */
   def withElicitation(e: Elicitations[F]): McpClientBuilder[F] =
     new McpClientBuilder(info, roots, sampling, Some(elicitation.fold(e)(_ |+| e)))

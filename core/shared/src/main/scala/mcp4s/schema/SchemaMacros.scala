@@ -36,8 +36,8 @@ object SchemaMacros:
 
   /** Extract constructor default values by field name at compile time.
     *
-    * Only monomorphic classes are supported; for classes with type parameters this returns an
-    * empty map (their defaults cannot be referenced without instantiating the type arguments).
+    * Only monomorphic classes are supported; for classes with type parameters this returns an empty
+    * map (their defaults cannot be referenced without instantiating the type arguments).
     */
   inline def fieldDefaults[A]: Map[String, Any] = ${ fieldDefaultsMacro[A] }
 

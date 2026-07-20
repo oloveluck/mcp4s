@@ -179,10 +179,10 @@ class McpDslSpec extends CatsEffectSuite:
   case class QueryArgs(query: String) derives Schema
 
   test("Tool.handleWith creates context-aware tool (with args)") {
-    val smart = Tool("smart").withDescription("Smart query").input[QueryArgs].handleWith[IO] {
-      (args, ctx) =>
+    val smart =
+      Tool("smart").withDescription("Smart query").input[QueryArgs].handleWith[IO] { (args, ctx) =>
         IO.pure(ok(s"Query: ${args.query}, Request: ${ctx.requestId}"))
-    }
+      }
 
     val json = Json.obj("query" -> "test".asJson)
     for
@@ -246,10 +246,12 @@ class McpDslSpec extends CatsEffectSuite:
   // === Prompt Constructor Tests ===
 
   test("Prompt.messages creates prompt with messages (no args)") {
-    val greeting = Prompt("greet").withDescription("A greeting").messages[IO](
-      user("Hello!"),
-      assistant("Hi there!")
-    )
+    val greeting = Prompt("greet")
+      .withDescription("A greeting")
+      .messages[IO](
+        user("Hello!"),
+        assistant("Hi there!")
+      )
 
     for
       prompts <- greeting.list
@@ -265,9 +267,11 @@ class McpDslSpec extends CatsEffectSuite:
   }
 
   test("Prompt.static creates prompt with result description") {
-    val help = Prompt("help").withDescription("Help prompt").static[IO](
-      messages("Get help with the system")(user("How can I help you?"))
-    )
+    val help = Prompt("help")
+      .withDescription("Help prompt")
+      .static[IO](
+        messages("Get help with the system")(user("How can I help you?"))
+      )
 
     for
       result <- help.get("help", Map.empty).value
@@ -279,10 +283,10 @@ class McpDslSpec extends CatsEffectSuite:
   case class GreetArgs(name: String) derives Schema
 
   test("Prompt.handle creates prompt with typed args") {
-    val greet = Prompt("greet").withDescription("Greet someone").input[GreetArgs].handle[IO] {
-      args =>
+    val greet =
+      Prompt("greet").withDescription("Greet someone").input[GreetArgs].handle[IO] { args =>
         IO.pure(messages(user(s"Hello, ${args.name}!")))
-    }
+      }
 
     for
       prompts <- greet.list

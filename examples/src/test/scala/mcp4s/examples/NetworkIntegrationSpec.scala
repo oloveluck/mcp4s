@@ -97,7 +97,8 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
       client: McpClient[IO],
       port: Int
   ): Resource[IO, McpConnection[IO]] =
-    WebSocketClientTransport.connect[IO](client, WebSocketTransportConfig(s"ws://localhost:$port/ws"))
+    WebSocketClientTransport
+      .connect[IO](client, WebSocketTransportConfig(s"ws://localhost:$port/ws"))
 
   // ============================================================================
   // CATEGORY 1: PROTOCOL COMPLIANCE
@@ -951,32 +952,33 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   def samplingServer: Server[IO] =
     import mcp4s.server.dsl.*
     case class AskArgs(question: String) derives Schema
-    val ask = Tool("ask").withDescription("Ask the LLM via sampling").input[AskArgs].handleWith[IO] {
-      (args, ctx) =>
-        ctx.sampling
-          .createMessage(
-            CreateMessageParams(
-              messages = List(SamplingMessage(Role.User, SamplingTextContent(args.question))),
-              maxTokens = 100
+    val ask =
+      Tool("ask").withDescription("Ask the LLM via sampling").input[AskArgs].handleWith[IO] {
+        (args, ctx) =>
+          ctx.sampling
+            .createMessage(
+              CreateMessageParams(
+                messages = List(SamplingMessage(Role.User, SamplingTextContent(args.question))),
+                maxTokens = 100
+              )
             )
-          )
-          .map { result =>
-            result.content match
-              case SamplingTextContent(text) => ok(text)
-              case _                         => error("unexpected content")
-          }
-    }
+            .map { result =>
+              result.content match
+                case SamplingTextContent(text) => ok(text)
+                case _                         => error("unexpected content")
+            }
+      }
     Server.fromTools[IO](ServerInfo("sampling-server", "1.0.0"), ask)
 
   /** A server whose tool elicits structured input from the client. */
   def elicitingServer: Server[IO] =
     import mcp4s.server.dsl.*
-    val confirm = Tool("confirm").withDescription("Confirm via elicitation").handleWith[IO] {
-      (_, ctx) =>
+    val confirm =
+      Tool("confirm").withDescription("Confirm via elicitation").handleWith[IO] { (_, ctx) =>
         ctx.elicitation
           .elicit(ElicitFormParams("Please confirm", JsonSchema.empty))
           .map(result => ok(s"action=${result.action}"))
-    }
+      }
     Server.fromTools[IO](ServerInfo("eliciting-server", "1.0.0"), confirm)
 
   test("Bidirectional: HTTP client answers a server-initiated sampling request") {

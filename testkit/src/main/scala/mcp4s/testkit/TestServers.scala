@@ -141,28 +141,30 @@ object TestServers:
       minDelay: FiniteDuration,
       maxDelay: FiniteDuration
   ): F[Server[F]] =
-    cats.effect.std.Random.scalaUtilRandom[F].map(random =>
-      new Server[F]:
-        val info: ServerInfo                 = base.info
-        val capabilities: ServerCapabilities = base.capabilities
+    cats.effect.std.Random
+      .scalaUtilRandom[F]
+      .map(random =>
+        new Server[F]:
+          val info: ServerInfo                 = base.info
+          val capabilities: ServerCapabilities = base.capabilities
 
-        private def randomDelay: F[Unit] =
-          val range = (maxDelay - minDelay).toMillis
-          random
-            .betweenLong(minDelay.toMillis, minDelay.toMillis + range.max(1))
-            .flatMap(delayMs => Temporal[F].sleep(delayMs.millis))
+          private def randomDelay: F[Unit] =
+            val range = (maxDelay - minDelay).toMillis
+            random
+              .betweenLong(minDelay.toMillis, minDelay.toMillis + range.max(1))
+              .flatMap(delayMs => Temporal[F].sleep(delayMs.millis))
 
-        def listTools: F[List[Tool]] = randomDelay *> base.listTools
-        def callTool(name: String, arguments: Json): F[ToolResult] =
-          randomDelay *> base.callTool(name, arguments)
-        def listResources: F[List[McpResource]] = randomDelay *> base.listResources
-        def listResourceTemplates: F[List[ResourceTemplate]] =
-          randomDelay *> base.listResourceTemplates
-        def readResource(uri: String): F[ResourceContent] = randomDelay *> base.readResource(uri)
-        def listPrompts: F[List[Prompt]]                  = randomDelay *> base.listPrompts
-        def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult] =
-          randomDelay *> base.getPrompt(name, arguments)
-    )
+          def listTools: F[List[Tool]] = randomDelay *> base.listTools
+          def callTool(name: String, arguments: Json): F[ToolResult] =
+            randomDelay *> base.callTool(name, arguments)
+          def listResources: F[List[McpResource]] = randomDelay *> base.listResources
+          def listResourceTemplates: F[List[ResourceTemplate]] =
+            randomDelay *> base.listResourceTemplates
+          def readResource(uri: String): F[ResourceContent] = randomDelay *> base.readResource(uri)
+          def listPrompts: F[List[Prompt]]                  = randomDelay *> base.listPrompts
+          def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult] =
+            randomDelay *> base.getPrompt(name, arguments)
+      )
 
   /** Create a simple test server with basic tools, resources, and prompts.
     *

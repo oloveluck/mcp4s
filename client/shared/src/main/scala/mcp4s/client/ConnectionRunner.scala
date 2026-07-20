@@ -70,8 +70,14 @@ private[client] object ConnectionRunner:
       connection <- Resource.eval(
         Async[F]
           .timeoutTo(
-            handshake(client, correlator.nextId, sendRequest, sendNotification, progressHandlersRef,
-              tracer),
+            handshake(
+              client,
+              correlator.nextId,
+              sendRequest,
+              sendNotification,
+              progressHandlersRef,
+              tracer
+            ),
             timeouts.init,
             cleanup *> Async[F].raiseError(
               McpError.InternalError(s"MCP initialization timed out after ${timeouts.init}")
@@ -93,7 +99,7 @@ private[client] object ConnectionRunner:
 
       case JsonRpcErrorResponse(id, error) => correlator.fail(id, error)
 
-      case notif @ JsonRpcNotification(method, params) if method == McpMethod.Progress =>
+      case JsonRpcNotification(method, params) if method == McpMethod.Progress =>
         val pp = params.flatMap(_.as[ProgressParams].toOption)
         pp.traverse_ { p =>
           progressHandlersRef.get.flatMap(_.traverse_ { handlers =>

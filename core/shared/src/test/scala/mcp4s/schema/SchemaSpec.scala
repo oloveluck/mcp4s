@@ -47,8 +47,8 @@ class SchemaSpec extends FunSuite:
   ) derives Schema
 
   sealed trait Shape derives Schema
-  case class Circle(radius: Double)                  extends Shape
-  case class Rect(width: Double, height: Double)     extends Shape
+  case class Circle(radius: Double)              extends Shape
+  case class Rect(width: Double, height: Double) extends Shape
 
   case class WithMap(labels: Map[String, Int]) derives Schema
 
@@ -95,7 +95,7 @@ class SchemaSpec extends FunSuite:
   // === Nested products ===
 
   test("nested case class renders full nested schema (no bare object collapse)") {
-    val schema = Schema[Outer].jsonSchema
+    val schema  = Schema[Outer].jsonSchema
     val filters = schema.properties.get("filters")
     assertEquals(filters.`type`, Some("object"))
     val nestedProps = filters.properties.get
@@ -162,7 +162,7 @@ class SchemaSpec extends FunSuite:
   // === Unions ===
 
   test("sealed trait with payloads renders oneOf with discriminator") {
-    val prop = Schema[Shape].property
+    val prop  = Schema[Shape].property
     val oneOf = prop.oneOf.get
     assertEquals(oneOf.size, 2)
     val circle = oneOf.head
@@ -181,7 +181,7 @@ class SchemaSpec extends FunSuite:
   }
 
   test("unknown union discriminator fails with a helpful message") {
-    val bad = Json.obj("type" -> "Triangle".asJson)
+    val bad    = Json.obj("type" -> "Triangle".asJson)
     val result = Schema[Shape].decoder.decodeJson(bad)
     assert(result.isLeft)
     assert(result.left.exists(_.getMessage.contains("Circle")))
@@ -194,8 +194,8 @@ class SchemaSpec extends FunSuite:
     assertEquals(prop.`type`, Some("object"))
     assertEquals(prop.additionalProperties.get.`type`, Some("integer"))
 
-    val value   = WithMap(Map("a" -> 1, "b" -> 2))
-    val json    = Schema[WithMap].encoder(value)
+    val value = WithMap(Map("a" -> 1, "b" -> 2))
+    val json  = Schema[WithMap].encoder(value)
     assertEquals(Schema[WithMap].decoder.decodeJson(json), Right(value))
   }
 

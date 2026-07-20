@@ -281,11 +281,11 @@ object HttpTransport:
     * restores a delivered element on cancellation), and all notifications are enqueued before the
     * handler returns, so the final drain after interruption captures any stragglers.
     *
-    * The out-queue is shared by every in-flight request on the session, so a progress
-    * notification belonging to a *different* concurrent request may surface here. Emitting it on
-    * this stream would lose it if this stream is closed early (e.g. the owning call was
-    * cancelled), so progress events whose token belongs to another active stream are re-offered
-    * for that stream's poller to pick up.
+    * The out-queue is shared by every in-flight request on the session, so a progress notification
+    * belonging to a *different* concurrent request may surface here. Emitting it on this stream
+    * would lose it if this stream is closed early (e.g. the owning call was cancelled), so progress
+    * events whose token belongs to another active stream are re-offered for that stream's poller to
+    * pick up.
     */
   private def handleStreamingRequest[F[_]: Async](
       session: HttpSession[F],

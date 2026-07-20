@@ -23,11 +23,10 @@ import scala.deriving.Mirror
 
 /** The single source of truth for how a Scala type maps onto the MCP wire format.
   *
-  * A `Schema[A]` is a reified description of `A` from which every protocol artifact is derived:
-  * the JSON Schema advertised to clients ([[jsonSchema]]), the circe codecs used to move values on
-  * the wire ([[encoder]], [[decoder]]), and prompt-argument metadata (see
-  * [[PromptCodec]]). Because all of these are interpreters over the same value, they can never
-  * disagree with each other.
+  * A `Schema[A]` is a reified description of `A` from which every protocol artifact is derived: the
+  * JSON Schema advertised to clients ([[jsonSchema]]), the circe codecs used to move values on the
+  * wire ([[encoder]], [[decoder]]), and prompt-argument metadata (see [[PromptCodec]]). Because all
+  * of these are interpreters over the same value, they can never disagree with each other.
   *
   * Case classes, Scala 3 enums, and sealed hierarchies derive automatically:
   * {{{
@@ -115,8 +114,8 @@ object Schema:
   /** One named value of an [[Enumeration]]. */
   final case class EnumValue[A](label: String, value: A)
 
-  /** Closed set of singleton values (Scala 3 enum / sealed all-object hierarchy); renders as a
-    * JSON string enum.
+  /** Closed set of singleton values (Scala 3 enum / sealed all-object hierarchy); renders as a JSON
+    * string enum.
     */
   final case class Enumeration[A](
       name: String,
@@ -156,11 +155,11 @@ object Schema:
 
   /** Tags for primitive schemas, carrying their JSON type name and codecs. */
   enum PrimitiveTag[A](val jsonType: String, val encoder: Encoder[A], val decoder: Decoder[A]):
-    case PString  extends PrimitiveTag[String]("string", Encoder.encodeString, Decoder.decodeString)
-    case PInt     extends PrimitiveTag[Int]("integer", Encoder.encodeInt, Decoder.decodeInt)
-    case PLong    extends PrimitiveTag[Long]("integer", Encoder.encodeLong, Decoder.decodeLong)
-    case PDouble  extends PrimitiveTag[Double]("number", Encoder.encodeDouble, Decoder.decodeDouble)
-    case PFloat   extends PrimitiveTag[Float]("number", Encoder.encodeFloat, Decoder.decodeFloat)
+    case PString extends PrimitiveTag[String]("string", Encoder.encodeString, Decoder.decodeString)
+    case PInt    extends PrimitiveTag[Int]("integer", Encoder.encodeInt, Decoder.decodeInt)
+    case PLong   extends PrimitiveTag[Long]("integer", Encoder.encodeLong, Decoder.decodeLong)
+    case PDouble extends PrimitiveTag[Double]("number", Encoder.encodeDouble, Decoder.decodeDouble)
+    case PFloat  extends PrimitiveTag[Float]("number", Encoder.encodeFloat, Decoder.decodeFloat)
     case PBoolean
         extends PrimitiveTag[Boolean]("boolean", Encoder.encodeBoolean, Decoder.decodeBoolean)
     case PJson extends PrimitiveTag[Json]("object", Encoder.encodeJson, Decoder.decodeJson)
@@ -252,17 +251,19 @@ object Schema:
       val alts = labels.zip(altSchemas).map((l, s) => Alt[A, Any](l, s.asInstanceOf[Schema[Any]]))
       Union[A](name, alts.toVector, a => m.ordinal(a), description = desc)
 
-  /** Resolve the schema for one field/alternative type: structural rules for collections and
-    * Option (so their element types recurse), then an explicit given, then automatic derivation
-    * for nested products/sums.
+  /** Resolve the schema for one field/alternative type: structural rules for collections and Option
+    * (so their element types recurse), then an explicit given, then automatic derivation for nested
+    * products/sums.
     */
   private inline def schemaOf[T]: Schema[?] =
     inline erasedValue[T] match
-      case _: Option[t]      => Optional(schemaOf[t].asInstanceOf[Schema[t]])
-      case _: List[t]        => Collection[List, t](schemaOf[t].asInstanceOf[Schema[t]], identity, identity)
-      case _: Vector[t]      => Collection[Vector, t](schemaOf[t].asInstanceOf[Schema[t]], _.toVector, _.toList)
-      case _: Set[t]         => Collection[Set, t](schemaOf[t].asInstanceOf[Schema[t]], _.toSet, _.toList)
-      case _: Seq[t]         => Collection[Seq, t](schemaOf[t].asInstanceOf[Schema[t]], _.toSeq, _.toList)
+      case _: Option[t] => Optional(schemaOf[t].asInstanceOf[Schema[t]])
+      case _: List[t] =>
+        Collection[List, t](schemaOf[t].asInstanceOf[Schema[t]], identity, identity)
+      case _: Vector[t] =>
+        Collection[Vector, t](schemaOf[t].asInstanceOf[Schema[t]], _.toVector, _.toList)
+      case _: Set[t] => Collection[Set, t](schemaOf[t].asInstanceOf[Schema[t]], _.toSet, _.toList)
+      case _: Seq[t] => Collection[Seq, t](schemaOf[t].asInstanceOf[Schema[t]], _.toSeq, _.toList)
       case _: Map[String, v] => StringMap(schemaOf[v].asInstanceOf[Schema[v]])
       case _ =>
         summonFrom {

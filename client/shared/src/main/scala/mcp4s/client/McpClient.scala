@@ -133,8 +133,8 @@ object McpClient:
     ): cats.effect.Resource[F, McpConnection[F]] =
       transport.StdioClientTransport.connect[F](client, config)
 
-    /** Connect over Streamable HTTP using a caller-provided http4s `Client[F]`. On the JVM, see
-      * the no-`Client` overload (`import mcp4s.client.syntax.*`) that builds an Ember client.
+    /** Connect over Streamable HTTP using a caller-provided http4s `Client[F]`. On the JVM, see the
+      * no-`Client` overload (`import mcp4s.client.syntax.*`) that builds an Ember client.
       */
     def http(config: transport.HttpTransportConfig[F], httpClient: org.http4s.client.Client[F])(
         using cats.effect.Async[F]

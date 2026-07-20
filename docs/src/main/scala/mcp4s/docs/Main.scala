@@ -8,6 +8,7 @@ import laika.config.SyntaxHighlighting
 import laika.format.{HTML, Markdown}
 import laika.helium.Helium
 import laika.helium.config.*
+import laika.io.model.{FilePath, InputTree}
 import laika.io.syntax.*
 import laika.theme.config.Color
 
@@ -67,24 +68,31 @@ object Main extends IOApp:
     .build
 
   def run(args: List[String]): IO[ExitCode] =
-    val inputDir = System.getProperty("user.dir") + "/docs/content"
+    val rootDir  = System.getProperty("user.dir")
+    val inputDir = rootDir + "/docs/content"
     val outputDir =
       if args.nonEmpty then args.head
-      else System.getProperty("user.dir") + "/docs/target/site"
+      else rootDir + "/docs/target/site"
+
+    // The changelog is maintained once, at the repo root; mount it into the site tree
+    // where docs/content/project/directory.conf expects it.
+    val inputs = InputTree[IO]
+      .addDirectory(inputDir)
+      .addFile(FilePath.parse(rootDir + "/CHANGELOG.md"), Root / "project" / "changelog.md")
 
     Transformer
       .from(Markdown)
       .to(HTML)
       .using(Markdown.GitHubFlavor, SyntaxHighlighting)
       // Pass HTML comments (e.g. the <!-- doc-snippet: ... --> markers used by
-      // scripts/snippet_harness.py) through verbatim instead of escaping them into visible text.
+      // project/DocSnippets.scala) through verbatim instead of escaping them into visible text.
       .withRawContent
       .parallel[IO]
       .withTheme(theme)
       .build
       .use: transformer =>
         transformer
-          .fromDirectory(inputDir)
+          .fromInput(inputs)
           .toDirectory(outputDir)
           .transform
       .as(ExitCode.Success)

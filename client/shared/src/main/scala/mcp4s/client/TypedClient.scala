@@ -42,8 +42,7 @@ object TypedClient:
       *
       * An `isError` result raises [[mcp4s.protocol.McpError.ToolExecutionError]]. For endpoints
       * with a declared `.output[O]`, the result decodes from `structuredContent` (falling back to
-      * the first text content parsed as JSON); endpoints without one return the raw
-      * [[ToolResult]].
+      * the first text content parsed as JSON); endpoints without one return the raw [[ToolResult]].
       */
     def call[I, O](endpoint: ToolEndpoint[I, O])(input: I)(using F: MonadThrow[F]): F[O] =
       given io.circe.Encoder[I] = endpoint.inputSchema.encoder
@@ -60,9 +59,7 @@ object TypedClient:
       }
 
     /** Get a prompt endpoint with typed input. */
-    def getPrompt[I](endpoint: PromptEndpoint[I])(input: I)(using
-        F: MonadThrow[F]
-    ): F[mcp4s.protocol.GetPromptResult] =
+    def getPrompt[I](endpoint: PromptEndpoint[I])(input: I): F[mcp4s.protocol.GetPromptResult] =
       given io.circe.Encoder[I] = endpoint.inputSchema.encoder
       conn.getPrompt[I](endpoint.name, input)
 

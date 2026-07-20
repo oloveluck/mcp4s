@@ -57,8 +57,8 @@ object ConformanceServer extends IOApp.Simple:
   ) derives Schema
 
   val simpleTools: Tools[IO] =
-    Tool("test_simple_text").withDescription("Tests simple text content response").handle[IO] {
-      _ => IO.pure(ok("This is a simple text response for testing."))
+    Tool("test_simple_text").withDescription("Tests simple text content response").handle[IO] { _ =>
+      IO.pure(ok("This is a simple text response for testing."))
     } |+|
       Tool("test_image_content")
         .withDescription("Tests image content response")

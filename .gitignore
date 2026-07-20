@@ -18,3 +18,7 @@ target/
 # Benchmark comparison runs — keep only the committed baseline
 benchmarks/results/*.json
 !benchmarks/results/baseline.json
+
+# Stale Mill tooling output (repo migrated to sbt; some editors still spawn a Mill BSP server)
+out/
+.os-lib-watch-sentinel-*

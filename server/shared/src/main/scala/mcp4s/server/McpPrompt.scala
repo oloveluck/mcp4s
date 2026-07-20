@@ -60,7 +60,7 @@ object Prompts:
       def get(name: String, arguments: Map[String, String]): OptionT[F, GetPromptResult] =
         OptionT.none
       override def isEmpty: Boolean         = true
-      private[server] override val handlers = Some(Map.empty)
+      override private[server] val handlers = Some(Map.empty)
 
   /** Create prompt routes from a raw Prompt definition and a map-based handler. */
   def single[F[_]: Concurrent](prompt: Prompt)(
@@ -72,7 +72,7 @@ object Prompts:
     new Prompts[F]:
       override def isEmpty: Boolean = x.isEmpty && y.isEmpty
       // Left side wins on duplicate names, matching the orElse chain's shadowing.
-      private[server] override val handlers =
+      override private[server] val handlers =
         (x.handlers, y.handlers).mapN((xh, yh) => yh ++ xh)
       def list: F[List[Prompt]] =
         for
@@ -105,7 +105,7 @@ private[server] object McpPrompt:
     val prompt = Prompt(name, Some(description), arguments)
     new Prompts[F]:
       def list: F[List[Prompt]]             = Applicative[F].pure(List(prompt))
-      private[server] override val handlers = Some(Map(name -> handler))
+      override private[server] val handlers = Some(Map(name -> handler))
       def get(promptName: String, args: Map[String, String]): OptionT[F, GetPromptResult] =
         if promptName == name then OptionT.liftF(handler(args))
         else OptionT.none[F, GetPromptResult]

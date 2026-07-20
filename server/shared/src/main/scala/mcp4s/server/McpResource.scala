@@ -74,7 +74,7 @@ object Resources:
       def read(uri: String): OptionT[F, ResourceContent] = OptionT.none
       def changes: Stream[F, String]                     = Stream.empty
       override def isEmpty: Boolean                      = true
-      private[server] override val exactReads            = Some(Map.empty)
+      override private[server] val exactReads            = Some(Map.empty)
 
   /** Create resource routes from a raw Resource definition and a handler. */
   def single[F[_]: Concurrent](resource: Resource)(
@@ -87,7 +87,7 @@ object Resources:
       override def isEmpty: Boolean           = x.isEmpty && y.isEmpty
       override def supportsSubscribe: Boolean = x.supportsSubscribe || y.supportsSubscribe
       // Left side wins on duplicate URIs, matching the orElse chain's shadowing.
-      private[server] override val exactReads =
+      override private[server] val exactReads =
         (x.exactReads, y.exactReads).mapN((xr, yr) => yr ++ xr)
       def list: F[List[Resource]] =
         for
@@ -181,7 +181,7 @@ private[server] object McpResource:
     new Resources[F]:
       def list: F[List[Resource]]                  = Applicative[F].pure(List(resource))
       def listTemplates: F[List[ResourceTemplate]] = Applicative[F].pure(Nil)
-      private[server] override val exactReads      = Some(Map(resource.uri -> handler))
+      override private[server] val exactReads      = Some(Map(resource.uri -> handler))
       def read(uri: String): OptionT[F, ResourceContent] =
         if uri == resource.uri then OptionT.liftF(handler(uri))
         else OptionT.none[F, ResourceContent]
@@ -211,7 +211,7 @@ private[server] object McpResource:
       private val resource        = Resource(uri, name, mimeType = Some("text/plain"))
       def list: F[List[Resource]] = Applicative[F].pure(List(resource))
       def listTemplates: F[List[ResourceTemplate]] = Applicative[F].pure(Nil)
-      private[server] override val exactReads      = Some(Map(uri -> readHandler))
+      override private[server] val exactReads      = Some(Map(uri -> readHandler))
       def read(reqUri: String): OptionT[F, ResourceContent] =
         if reqUri == uri then OptionT.liftF(readHandler(reqUri))
         else OptionT.none[F, ResourceContent]

@@ -18,16 +18,16 @@ package mcp4s.schema
 
 import mcp4s.protocol.ServerInfo
 
-/** A named group of endpoint definitions shared between server and client — the mcp4s analogue of
-  * a smithy4s service.
+/** A named group of endpoint definitions shared between server and client — the mcp4s analogue of a
+  * smithy4s service.
   *
   * Declare each endpoint as a `val` and list them in [[endpoints]]. The same object then drives
   * both sides:
   *   - server: implement every endpoint with `MyService.routes(...)` (from
-  *     `mcp4s.server.ServiceRoutes`), which fails fast if any endpoint in [[endpoints]] is
-  *     missing a handler or a handler doesn't belong to the service;
-  *   - client: call endpoints in a typed way with `connection.call(MyService.add)(AddArgs(1, 2))`
-  *     — no stringly-typed tool names, no hand-rolled JSON.
+  *     `mcp4s.server.ServiceRoutes`), which fails fast if any endpoint in [[endpoints]] is missing
+  *     a handler or a handler doesn't belong to the service;
+  *   - client: call endpoints in a typed way with `connection.call(MyService.add)(AddArgs(1, 2))` —
+  *     no stringly-typed tool names, no hand-rolled JSON.
   *
   * {{{
   * object Calculator extends McpService("calculator", "1.0.0"):
@@ -39,8 +39,8 @@ import mcp4s.protocol.ServerInfo
   */
 abstract class McpService(val name: String, val version: String):
 
-  /** Every tool endpoint this service exposes. `routes` verifies handlers cover exactly this
-    * list, so an endpoint missing here is caught the moment the server is assembled.
+  /** Every tool endpoint this service exposes. `routes` verifies handlers cover exactly this list,
+    * so an endpoint missing here is caught the moment the server is assembled.
     */
   def endpoints: List[ToolEndpoint[?, ?]]
 

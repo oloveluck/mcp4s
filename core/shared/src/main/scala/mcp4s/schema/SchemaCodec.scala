@@ -99,9 +99,12 @@ private[mcp4s] object SchemaCodec:
 
       case Enumeration(name, values, _) =>
         Decoder.decodeString.emap { label =>
-          values.find(_.label == label).map(_.value).toRight(
-            s"'$label' is not a valid $name; expected one of: ${values.map(_.label).mkString(", ")}"
-          )
+          values
+            .find(_.label == label)
+            .map(_.value)
+            .toRight(
+              s"'$label' is not a valid $name; expected one of: ${values.map(_.label).mkString(", ")}"
+            )
         }
 
       case Union(name, alts, _, discriminator, _) =>
