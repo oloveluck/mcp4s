@@ -509,9 +509,7 @@ class DispatcherSpec extends CatsEffectSuite:
     yield
       assertEquals(notifications.length, 3)
       // All notifications should use the client-provided progressToken, not the request ID
-      notifications.foreach { case (token, _, _) =>
-        assertEquals(token, RequestId.StringId("my-token"))
-      }
+      notifications.foreach((token, _, _) => assertEquals(token, RequestId.StringId("my-token")))
       assertEquals(notifications.map(_._2), List(0.0, 50.0, 100.0))
   }
 
@@ -541,9 +539,7 @@ class DispatcherSpec extends CatsEffectSuite:
     yield
       assertEquals(notifications.length, 3)
       // Without _meta.progressToken, should fall back to the JSON-RPC request ID
-      notifications.foreach { case (token, _, _) =>
-        assertEquals(token, RequestId.NumberId(1))
-      }
+      notifications.foreach((token, _, _) => assertEquals(token, RequestId.NumberId(1)))
   }
 
   test("tools/call supports numeric progressToken") {
@@ -572,7 +568,5 @@ class DispatcherSpec extends CatsEffectSuite:
       notifications <- captured.get
     yield
       assertEquals(notifications.length, 3)
-      notifications.foreach { case (token, _, _) =>
-        assertEquals(token, RequestId.NumberId(42))
-      }
+      notifications.foreach((token, _, _) => assertEquals(token, RequestId.NumberId(42)))
   }

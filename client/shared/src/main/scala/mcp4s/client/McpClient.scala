@@ -34,7 +34,7 @@ import mcp4s.protocol.*
   *   {{{
   * import mcp4s.client.mcp.*
   *
-  * val sampling = Sampling[IO](params => message("Hello", "model").pure[IO])
+  * val sampling = Sampling[IO](params => IO.pure(message("Hello", "model")))
   * val roots = Roots[IO]("file:///workspace", "Workspace")
   *
   * val client = McpClient.from[IO](
@@ -87,7 +87,7 @@ object McpClient:
     * import mcp4s.client.mcp.*
     * import cats.syntax.semigroup.*
     *
-    * val sampling = Sampling[IO](params => message("Hello", "model").pure[IO])
+    * val sampling = Sampling[IO](params => IO.pure(message("Hello", "model")))
     * val roots = Roots[IO]("file:///workspace", "Workspace") |+|
     *             Roots[IO]("file:///home", "Home")
     *

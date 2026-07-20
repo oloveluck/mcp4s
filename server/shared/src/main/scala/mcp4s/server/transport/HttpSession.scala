@@ -97,7 +97,8 @@ object HttpSession:
     for
       id <- SecureRandom
         .javaSecuritySecureRandom[F]
-        .flatMap { implicit sr =>
+        .flatMap { sr =>
+          given SecureRandom[F] = sr
           UUIDGen[F].randomUUID
         }
         .map(_.toString)

@@ -232,15 +232,6 @@ class McpClientDslSpec extends CatsEffectSuite:
       assertEquals(result.map(_.uri), List("file:///workspace", "file:///home"))
   }
 
-  // === Pure Extension Tests ===
-
-  test("pure extension lifts value into IO") {
-    val result: IO[CreateMessageResult] = message("Hello", "model").pure[IO]
-
-    for r <- result
-    yield assertEquals(r.model, "model")
-  }
-
   // === McpClient.from Tests ===
 
   test("McpClient.from works with composed handlers") {

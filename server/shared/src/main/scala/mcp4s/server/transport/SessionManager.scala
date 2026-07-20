@@ -165,9 +165,9 @@ object SessionManager:
       for
         // Get all sessions and check which are expired
         sessions   <- sessionsRef.get
-        expiredIds <- sessions.toList.traverseFilter { case (id, session) =>
+        expiredIds <- sessions.toList.traverseFilter((id, session) =>
           session.isExpired.map(if _ then Some(id) else None)
-        }
+        )
         // Remove and shutdown expired sessions
         _ <- expiredIds.traverse_(remove)
       yield expiredIds.size
