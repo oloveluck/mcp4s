@@ -13,9 +13,9 @@ This guide gets you running with both. For deeper walkthroughs, see [Your First 
 <!-- doc-snippet: skip -->
 ```scala
 libraryDependencies ++= Seq(
-  "io.github.oloveluck" %%% "mcp4s-core" % "0.2.0",
-  "io.github.oloveluck" %%% "mcp4s-server" % "0.2.0",
-  "io.github.oloveluck" %%% "mcp4s-client" % "0.2.0"
+  "io.github.oloveluck" %%% "mcp4s-core" % "0.3.0",
+  "io.github.oloveluck" %%% "mcp4s-server" % "0.3.0",
+  "io.github.oloveluck" %%% "mcp4s-client" % "0.3.0"
 )
 ```
 

@@ -1,4 +1,4 @@
-ThisBuild / tlBaseVersion    := "0.2"
+ThisBuild / tlBaseVersion    := "0.3"
 ThisBuild / organization     := "io.github.oloveluck"
 ThisBuild / organizationName := "MCP4S Contributors"
 ThisBuild / startYear        := Some(2025)

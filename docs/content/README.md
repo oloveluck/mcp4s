@@ -43,9 +43,9 @@ val server = McpServer[IO](ServerInfo("calculator", "1.0.0")).withTools(tools)
 <!-- doc-snippet: skip -->
 ```scala
 libraryDependencies ++= Seq(
-  "io.github.oloveluck" %%% "mcp4s-core" % "0.2.0",
-  "io.github.oloveluck" %%% "mcp4s-server" % "0.2.0",
-  "io.github.oloveluck" %%% "mcp4s-client" % "0.2.0"
+  "io.github.oloveluck" %%% "mcp4s-core" % "0.3.0",
+  "io.github.oloveluck" %%% "mcp4s-server" % "0.3.0",
+  "io.github.oloveluck" %%% "mcp4s-client" % "0.3.0"
 )
 ```
 

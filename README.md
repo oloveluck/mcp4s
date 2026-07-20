@@ -14,9 +14,9 @@ Add to your `build.sbt`:
 
 ```scala
 libraryDependencies ++= Seq(
-  "io.github.oloveluck" %%% "mcp4s-core" % "0.2.0",
-  "io.github.oloveluck" %%% "mcp4s-server" % "0.2.0", // for servers
-  "io.github.oloveluck" %%% "mcp4s-client" % "0.2.0"  // for clients
+  "io.github.oloveluck" %%% "mcp4s-core" % "0.3.0",
+  "io.github.oloveluck" %%% "mcp4s-server" % "0.3.0", // for servers
+  "io.github.oloveluck" %%% "mcp4s-client" % "0.3.0"  // for clients
 )
 ```
 

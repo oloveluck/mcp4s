@@ -19,7 +19,7 @@ object Main extends IOApp:
       title = Some("mcp4s"),
       description = Some("MCP (Model Context Protocol) for Scala"),
       language = Some("en"),
-      version = Some("0.2.0")
+      version = Some("0.3.0")
     )
     .all.themeColors(
       primary = Color.hex("d4d4d8"),
