@@ -51,6 +51,24 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   )
 )
 
+// scala-steward binaries now require JRE 17+, but sbt-typelevel 0.8.6 hardcodes
+// JDK 11 into its validate-steward job (UnsupportedClassVersionError in CI).
+// Disable the built-in job and add the same job pinned to temurin 17.
+ThisBuild / tlCiStewardValidateConfig := None
+ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
+  id = "validate-steward",
+  name = "Validate Steward Config",
+  javas = List(JavaSpec.temurin("17")),
+  scalas = List.empty,
+  steps = WorkflowStep.Checkout ::
+    WorkflowStep.SetupJava(List(JavaSpec.temurin("17")), enableCaching = false) :::
+    WorkflowStep.Use(
+      UseRef.Public("coursier", "setup-action", "v1"),
+      Map("apps" -> "scala-steward")
+    ) ::
+    WorkflowStep.Run(List("scala-steward validate-repo-config .scala-steward.conf")) :: Nil
+)
+
 // Pre-1.0 library — no binary-compatibility checks yet.
 ThisBuild / tlMimaPreviousVersions := Set.empty
 
