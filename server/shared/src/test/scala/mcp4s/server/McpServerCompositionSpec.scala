@@ -22,6 +22,7 @@ import io.circe.*
 import io.circe.syntax.*
 import mcp4s.protocol.*
 import munit.CatsEffectSuite
+import mcp4s.server.TestSyntax.*
 
 class ServerCompositionSpec extends CatsEffectSuite:
 
@@ -197,10 +198,7 @@ class ServerCompositionSpec extends CatsEffectSuite:
 
   test("combine raises ToolNotFound when neither server has tool") {
     val combined = serverWithAdd |+| serverWithSubtract
-    for result <- combined.callTool("multiply", Json.obj()).attempt
-    yield
-      assert(result.isLeft)
-      assert(result.left.exists(_.isInstanceOf[McpError.ToolNotFound]))
+    interceptIO[McpError.ToolNotFound](combined.callTool("multiply", Json.obj())).void
   }
 
   // === Resource Composition ===
@@ -276,7 +274,7 @@ class ServerCompositionSpec extends CatsEffectSuite:
   test("combine delegates to right server when left doesn't have prompt") {
     val combined = serverWithGreetingPrompt |+| serverWithFarewellPrompt
     for result <- combined.getPrompt("farewell", Map("name" -> "Alice"))
-    yield assert(result.messages.head.content.asInstanceOf[TextContent].text.contains("Goodbye"))
+    yield assert(textOf(result.messages.head.content).contains("Goodbye"))
   }
 
   // === Capabilities Merging ===

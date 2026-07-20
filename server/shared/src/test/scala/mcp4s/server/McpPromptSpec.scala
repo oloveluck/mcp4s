@@ -20,6 +20,7 @@ import cats.effect.IO
 import cats.syntax.semigroup.*
 import mcp4s.protocol.*
 import munit.CatsEffectSuite
+import mcp4s.server.TestSyntax.*
 
 class McpPromptSpec extends CatsEffectSuite:
 
@@ -58,7 +59,7 @@ class McpPromptSpec extends CatsEffectSuite:
     for
       result <- greet.get("greet", Map("name" -> "Alice")).value
       _   = assert(result.isDefined)
-      msg = result.get.messages.head.content.asInstanceOf[TextContent].text
+      msg = textOf(result.get.messages.head.content)
       _   = assertEquals(msg, "Hi Alice")
     yield ()
   }
@@ -119,9 +120,9 @@ class McpPromptSpec extends CatsEffectSuite:
       prompts <- all.list
       _ = assertEquals(prompts.map(_.name).toSet, Set("greet", "farewell"))
       g <- all.get("greet", Map.empty).value
-      _ = assertEquals(g.get.messages.head.content.asInstanceOf[TextContent].text, "Hi")
+      _ = assertEquals(textOf(g.get.messages.head.content), "Hi")
       f <- all.get("farewell", Map.empty).value
-      _ = assertEquals(f.get.messages.head.content.asInstanceOf[TextContent].text, "Bye")
+      _ = assertEquals(textOf(f.get.messages.head.content), "Bye")
     yield ()
   }
 

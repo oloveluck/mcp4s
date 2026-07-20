@@ -22,6 +22,7 @@ import io.circe.*
 import io.circe.syntax.*
 import mcp4s.protocol.*
 import munit.CatsEffectSuite
+import mcp4s.server.TestSyntax.*
 
 class McpDslSpec extends CatsEffectSuite:
 
@@ -47,8 +48,8 @@ class McpDslSpec extends CatsEffectSuite:
   test("content creates result from multiple content items") {
     val result = content(textContent("Hello"), textContent("World"))
     assertEquals(result.content.size, 2)
-    assertEquals(result.content(0).asInstanceOf[TextContent].text, "Hello")
-    assertEquals(result.content(1).asInstanceOf[TextContent].text, "World")
+    assertEquals(textOf(result.content(0)), "Hello")
+    assertEquals(textOf(result.content(1)), "World")
   }
 
   test("text creates resource content") {
@@ -102,7 +103,7 @@ class McpDslSpec extends CatsEffectSuite:
   test("user creates user message with text") {
     val msg = user("Hello!")
     assertEquals(msg.role, Role.User)
-    assertEquals(msg.content.asInstanceOf[TextContent].text, "Hello!")
+    assertEquals(textOf(msg.content), "Hello!")
   }
 
   test("user with content creates user message with custom content") {
@@ -114,7 +115,7 @@ class McpDslSpec extends CatsEffectSuite:
   test("assistant creates assistant message with text") {
     val msg = assistant("Hi there!")
     assertEquals(msg.role, Role.Assistant)
-    assertEquals(msg.content.asInstanceOf[TextContent].text, "Hi there!")
+    assertEquals(textOf(msg.content), "Hi there!")
   }
 
   // === Tool Constructor Tests ===
@@ -262,7 +263,7 @@ class McpDslSpec extends CatsEffectSuite:
       _ = assert(result.isDefined)
       _ = assertEquals(result.get.description, None)
       _ = assertEquals(result.get.messages.size, 2)
-      _ = assertEquals(result.get.messages(0).content.asInstanceOf[TextContent].text, "Hello!")
+      _ = assertEquals(textOf(result.get.messages(0).content), "Hello!")
     yield ()
   }
 
@@ -293,7 +294,7 @@ class McpDslSpec extends CatsEffectSuite:
       _ = assert(prompts.head.arguments.exists(_.name == "name"))
       result <- greet.get("greet", Map("name" -> "Alice")).value
       _ = assertEquals(
-        result.get.messages.head.content.asInstanceOf[TextContent].text,
+        textOf(result.get.messages.head.content),
         "Hello, Alice!"
       )
     yield ()
@@ -353,11 +354,11 @@ class McpDslSpec extends CatsEffectSuite:
       r1 <- combined.get("p1", Map.empty).value
       r2 <- combined.get("p2", Map.empty).value
       _ = assertEquals(
-        r1.get.messages.head.content.asInstanceOf[TextContent].text,
+        textOf(r1.get.messages.head.content),
         "Prompt 1 content"
       )
       _ = assertEquals(
-        r2.get.messages.head.content.asInstanceOf[TextContent].text,
+        textOf(r2.get.messages.head.content),
         "Prompt 2 content"
       )
     yield ()
@@ -418,7 +419,7 @@ class McpDslSpec extends CatsEffectSuite:
       promptList <- server.listPrompts
       _ = assertEquals(promptList.map(_.name).toSet, Set("greet", "help"))
       greetResult <- server.getPrompt("greet", Map.empty)
-      _ = assertEquals(greetResult.messages.head.content.asInstanceOf[TextContent].text, "Hello!")
+      _ = assertEquals(textOf(greetResult.messages.head.content), "Hello!")
       helpResult <- server.getPrompt("help", Map.empty)
       _ = assertEquals(helpResult.description, Some("Get help"))
     yield ()

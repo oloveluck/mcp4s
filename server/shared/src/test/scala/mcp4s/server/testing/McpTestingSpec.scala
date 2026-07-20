@@ -24,6 +24,7 @@ import mcp4s.protocol.*
 import mcp4s.server.*
 import mcp4s.server.testing.ToolsTest.*
 import munit.CatsEffectSuite
+import mcp4s.server.TestSyntax.*
 
 class McpTestingSpec extends CatsEffectSuite:
 
@@ -58,11 +59,7 @@ class McpTestingSpec extends CatsEffectSuite:
   }
 
   test("testCall raises ToolNotFound for unknown tool") {
-    for
-      result <- calcTools.testCall("unknown", Json.obj()).attempt
-      _ = assert(result.isLeft)
-      _ = assert(result.left.exists(_.isInstanceOf[McpError.ToolNotFound]))
-    yield ()
+    interceptIO[McpError.ToolNotFound](calcTools.testCall("unknown", Json.obj())).void
   }
 
   test("hasTool returns true for existing tool") {
@@ -103,11 +100,7 @@ class McpTestingSpec extends CatsEffectSuite:
   }
 
   test("assertTool raises AssertionError for non-existent tool") {
-    for
-      result <- calcTools.assertTool("multiply").attempt
-      _ = assert(result.isLeft)
-      _ = assert(result.left.exists(_.isInstanceOf[AssertionError]))
-    yield ()
+    interceptIO[AssertionError](calcTools.assertTool("multiply")).void
   }
 
   // === args Helper Tests ===
@@ -215,6 +208,6 @@ class McpTestingSpec extends CatsEffectSuite:
       for
         result <- client.getPromptMap("greet", Map.empty)
         _ = assertEquals(result.messages.length, 1)
-        _ = assertEquals(result.messages.head.content.asInstanceOf[TextContent].text, "Hi")
+        _ = assertEquals(textOf(result.messages.head.content), "Hi")
       yield ()
   }

@@ -21,6 +21,7 @@ import io.circe.*
 import io.circe.syntax.*
 import mcp4s.protocol.*
 import munit.CatsEffectSuite
+import mcp4s.server.TestSyntax.*
 
 class McpDslDerivedSpec extends CatsEffectSuite:
 
@@ -173,7 +174,7 @@ class McpDslDerivedSpec extends CatsEffectSuite:
       _ = assertEquals(prompts.head.description, Some("A greeting prompt"))
       result <- greet.get("greet", Map("name" -> "Alice")).value
       _ = assertEquals(
-        result.get.messages.head.content.asInstanceOf[TextContent].text,
+        textOf(result.get.messages.head.content),
         "Hello, Alice!"
       )
     yield ()

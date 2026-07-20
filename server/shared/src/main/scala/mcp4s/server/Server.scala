@@ -145,7 +145,7 @@ object Server:
     /** Create a new server with different info. */
     def withInfo(newInfo: ServerInfo): Server[F] =
       new Server[F]:
-        export server.{info as _, callToolWithContext as _, *}
+        export server.{callToolWithContext as _, info as _, *}
         val info: ServerInfo = newInfo
         // Not exportable (concrete in the trait, and export forwarders are final);
         // delegate explicitly so a context-aware underlying server keeps its context.

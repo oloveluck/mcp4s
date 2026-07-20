@@ -22,6 +22,7 @@ import io.circe.*
 import io.circe.syntax.*
 import mcp4s.protocol.*
 import munit.CatsEffectSuite
+import mcp4s.server.TestSyntax.*
 
 class McpToolSpec extends CatsEffectSuite:
 
@@ -156,7 +157,7 @@ class McpToolSpec extends CatsEffectSuite:
       content <- server.readResource("test://readme")
       _ = assertEquals(content.text, Some("Hello world"))
       prompt <- server.getPrompt("greet", Map.empty)
-      _ = assertEquals(prompt.messages.head.content.asInstanceOf[TextContent].text, "Hi")
+      _ = assertEquals(textOf(prompt.messages.head.content), "Hi")
     yield ()
   }
 
@@ -189,11 +190,7 @@ class McpToolSpec extends CatsEffectSuite:
       info = ServerInfo("test", "1.0.0"),
       tools = Tools.empty[IO]
     )
-    for
-      result <- server.callTool("nonexistent", Json.obj()).attempt
-      _ = assert(result.isLeft)
-      _ = assert(result.left.exists(_.isInstanceOf[McpError.ToolNotFound]))
-    yield ()
+    interceptIO[McpError.ToolNotFound](server.callTool("nonexistent", Json.obj())).void
   }
 
   test("Server.from raises ResourceNotFound for unknown resource") {
@@ -203,11 +200,7 @@ class McpToolSpec extends CatsEffectSuite:
       resources = Resources.empty[IO],
       prompts = Prompts.empty[IO]
     )
-    for
-      result <- server.readResource("test://unknown").attempt
-      _ = assert(result.isLeft)
-      _ = assert(result.left.exists(_.isInstanceOf[McpError.ResourceNotFound]))
-    yield ()
+    interceptIO[McpError.ResourceNotFound](server.readResource("test://unknown")).void
   }
 
   test("Server.from raises PromptNotFound for unknown prompt") {
@@ -217,11 +210,7 @@ class McpToolSpec extends CatsEffectSuite:
       resources = Resources.empty[IO],
       prompts = Prompts.empty[IO]
     )
-    for
-      result <- server.getPrompt("unknown", Map.empty).attempt
-      _ = assert(result.isLeft)
-      _ = assert(result.left.exists(_.isInstanceOf[McpError.PromptNotFound]))
-    yield ()
+    interceptIO[McpError.PromptNotFound](server.getPrompt("unknown", Map.empty)).void
   }
 
   // === Pure Helper Method Tests ===
@@ -262,9 +251,9 @@ class McpToolSpec extends CatsEffectSuite:
     assertEquals(result.description, None)
     assertEquals(result.messages.size, 2)
     assertEquals(result.messages(0).role, Role.User)
-    assertEquals(result.messages(0).content.asInstanceOf[TextContent].text, "Hello")
+    assertEquals(textOf(result.messages(0).content), "Hello")
     assertEquals(result.messages(1).role, Role.Assistant)
-    assertEquals(result.messages(1).content.asInstanceOf[TextContent].text, "Hi there")
+    assertEquals(textOf(result.messages(1).content), "Hi there")
   }
 
   test("PromptResult with description") {
@@ -406,7 +395,7 @@ class McpToolSpec extends CatsEffectSuite:
       result <- (left |+| right).get("dup", Map.empty).value
       _ = assert(result.isDefined)
       _ = assertEquals(
-        result.get.messages.head.content.asInstanceOf[TextContent].text,
+        textOf(result.get.messages.head.content),
         "from left"
       )
     yield ()
