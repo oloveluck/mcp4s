@@ -97,4 +97,4 @@ object MyServerPerfSpec extends McpPerformanceSuite:
 Each call is bounded by `callTimeout`, so a stalled connection is counted as a failure rather
 than hanging the run — making this a resilience probe as well as a throughput meter. For
 lower-level, allocation-aware microbenchmarks of the server core, see the JMH benchmarks in
-`BENCHMARKS.md`.
+`benchmarks/README.md`.

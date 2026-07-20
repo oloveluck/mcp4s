@@ -324,10 +324,10 @@ class McpToolSpec extends CatsEffectSuite:
       IO.pure(ok(TestNum.str(args.a + args.b)))
     }
 
-    val contextAware = Tool("smart").withDescription("Smart").input[QueryArgs].handleWith[IO] {
-      (args, _) =>
+    val contextAware =
+      Tool("smart").withDescription("Smart").input[QueryArgs].handleWith[IO] { (args, _) =>
         IO.pure(ToolResult.text(s"Query: ${args.query}"))
-    }
+      }
 
     // Should compile: regular and context tools compose together
     val combined = regular |+| contextAware
@@ -355,5 +355,59 @@ class McpToolSpec extends CatsEffectSuite:
       result <- pingTool.call("ping", Json.obj(), minimalCtx).value
       _ = assert(result.isDefined)
       _ = assert(result.get.textContent.startsWith("pong"))
+    yield ()
+  }
+
+  // === Handler-table dispatch Tests ===
+
+  test("statically composed tools dispatch via the handler table, left winning on duplicates") {
+    val left  = Tool("dup").withDescription("Left").handle[IO](_ => IO.pure(ok("left")))
+    val right = Tool("dup").withDescription("Right").handle[IO](_ => IO.pure(ok("right")))
+    val other = Tool("other").withDescription("Other").handle[IO](_ => IO.pure(ok("other")))
+
+    val combined = left |+| right |+| other
+    assert(combined.handlers.isDefined, "static composition should build a handler table")
+
+    for
+      dup      <- combined.call("dup", Json.obj(), minimalCtx).value
+      distinct <- combined.call("other", Json.obj(), minimalCtx).value
+      missing  <- combined.call("nope", Json.obj(), minimalCtx).value
+      tools    <- combined.list
+      _ = assertEquals(dup.map(_.textContent), Some("left"))
+      _ = assertEquals(distinct.map(_.textContent), Some("other"))
+      _ = assertEquals(missing, None)
+      _ = assertEquals(tools.map(_.name), List("dup", "other"))
+    yield ()
+  }
+
+  test("a dynamic Tools instance disables the handler table but keeps first-match-wins") {
+    // A hand-rolled implementation (handlers = None), like tools resolved per call.
+    def dynamic(underlying: Tools[IO]): Tools[IO] = new Tools[IO]:
+      def list                                                 = underlying.list
+      def call(name: String, args: Json, ctx: ToolContext[IO]) = underlying.call(name, args, ctx)
+
+    val left  = Tool("dup").withDescription("Left").handle[IO](_ => IO.pure(ok("left")))
+    val right = Tool("dup").withDescription("Right").handle[IO](_ => IO.pure(ok("right")))
+
+    val mixed = dynamic(left) |+| right
+    assert(mixed.handlers.isEmpty, "a dynamic member should force the orElse scan")
+
+    for
+      result <- mixed.call("dup", Json.obj(), minimalCtx).value
+      _ = assertEquals(result.map(_.textContent), Some("left"))
+    yield ()
+  }
+
+  test("combined prompts prefer the left handler on duplicate names") {
+    val left  = Prompt("dup").withDescription("Left").messages[IO](user("from left"))
+    val right = Prompt("dup").withDescription("Right").messages[IO](user("from right"))
+
+    for
+      result <- (left |+| right).get("dup", Map.empty).value
+      _ = assert(result.isDefined)
+      _ = assertEquals(
+        result.get.messages.head.content.asInstanceOf[TextContent].text,
+        "from left"
+      )
     yield ()
   }

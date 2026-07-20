@@ -33,9 +33,11 @@ import mcp4s.server.{Dispatcher, Server, Tools}
 
 /** How tool dispatch scales with the number of registered tools.
   *
-  * Tools compose via a left-biased `OptionT.orElse` chain, so resolving a tool is a linear scan.
-  * This calls the *last* tool of `toolCount` (worst case) to expose that cost — watch how
-  * allocations/op and latency grow from N=1 to N=100.
+  * Statically-composed tools resolve through a name-keyed handler map built at composition time, so
+  * dispatch should stay flat as N grows (only dynamic `Tools` implementations fall back to the
+  * left-biased `OptionT.orElse` scan). This calls the *last* tool of `toolCount` — the scan's worst
+  * case — to guard that property: allocations/op growing from N=1 to N=100 means the map path has
+  * regressed to the scan.
   */
 @State(Scope.Benchmark)
 @BenchmarkMode(Array(Mode.Throughput, Mode.SampleTime))

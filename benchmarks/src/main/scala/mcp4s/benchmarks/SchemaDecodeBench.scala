@@ -83,7 +83,7 @@ object SchemaDecodeBench:
       filters: Filter
   )
 
-  val schema: Schema[SearchArgs]        = Schema.derived
+  val schema: Schema[SearchArgs]         = Schema.derived
   val schemaDecoder: Decoder[SearchArgs] = schema.decoder
   val schemaEncoder: Encoder[SearchArgs] = schema.encoder
 

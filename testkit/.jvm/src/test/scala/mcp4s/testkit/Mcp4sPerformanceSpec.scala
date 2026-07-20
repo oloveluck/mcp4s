@@ -38,6 +38,6 @@ object Mcp4sPerformanceSpec extends McpPerformanceSuite:
   )
 
   // HTTP for a deterministic default; the WebSocket client (http4s JdkWSClient) is actually the
-  // faster transport under load (see BENCHMARKS.md) — set `transport = McpTransport.WebSocket`
+  // faster transport under load (see benchmarks/README.md) — set `transport = McpTransport.WebSocket`
   // to profile it.
   override def transport: McpTransport = McpTransport.Http
