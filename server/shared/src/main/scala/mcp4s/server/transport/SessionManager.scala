@@ -133,16 +133,24 @@ object SessionManager:
       }
 
     def create: F[HttpSession[F]] =
+      val limitReached: F[HttpSession[F]] = Async[F].raiseError(
+        McpError.InternalError(s"Maximum session limit (${config.maxSessions}) reached")
+      )
+      // Cheap pre-check, then re-check atomically at insert time: two concurrent
+      // creates must not both pass the cap (check-then-act race).
       sessionsRef.get.flatMap: sessions =>
-        if sessions.size >= config.maxSessions then
-          Async[F].raiseError(
-            McpError.InternalError(s"Maximum session limit (${config.maxSessions}) reached")
-          )
+        if sessions.size >= config.maxSessions then limitReached
         else
           HttpSession
             .create[F](server, config)
             .flatMap: session =>
-              sessionsRef.update(_ + (session.id -> session)).as(session)
+              sessionsRef
+                .modify: current =>
+                  if current.size >= config.maxSessions then (current, false)
+                  else (current + (session.id -> session), true)
+                .flatMap:
+                  case true  => session.pure[F]
+                  case false => session.shutdown *> limitReached
 
     def remove(sessionId: String): F[Unit] =
       sessionsRef

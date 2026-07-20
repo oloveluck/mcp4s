@@ -100,7 +100,7 @@ object ElicitationHandlers:
 
   /** Handler for elicitation requests - simulates user filling a form or completing OAuth */
   def simulatedHandler: ElicitParams => IO[ElicitResult] = {
-    case ElicitFormParams(message, schema, _) =>
+    case ElicitFormParams(message, schema) =>
       IO.println(s"[Elicitation] Form request: $message") *>
         IO.println(
           s"[Elicitation] Schema properties: ${schema.properties.map(_.keys.mkString(", ")).getOrElse("none")}"
@@ -117,7 +117,7 @@ object ElicitationHandlers:
           IO.pure(ElicitResult(ElicitAction.Accept, Some(values)))
         }
 
-    case ElicitUrlParams(message, elicitationId, url, _) =>
+    case ElicitUrlParams(message, elicitationId, url) =>
       IO.println(s"[Elicitation] URL request: $message") *>
         IO.println(s"[Elicitation] OAuth URL: $url (ID: $elicitationId)") *> {
           // Simulate user completing OAuth and returning a token
@@ -245,7 +245,7 @@ object DemoClientDsl extends IOApp.Simple:
   // Composable elicitation handler using DSL - returns Elicitations[IO]
   val elicitation = clientMcp.Elicitation.withComplete[IO](
     handler = {
-      case ElicitFormParams(_, schema, _) =>
+      case ElicitFormParams(_, schema) =>
         val values = schema.properties.getOrElse(Map.empty).map { (key, prop) =>
           key -> (prop.`type`.get match
             case "string"  => Json.fromString(s"value_for_$key")
@@ -256,7 +256,7 @@ object DemoClientDsl extends IOApp.Simple:
         }
         IO.pure(accept(values))
 
-      case ElicitUrlParams(_, _, _, _) =>
+      case ElicitUrlParams(_, _, _) =>
         IO.pure(accept(Map("access_token" -> Json.fromString("mock_oauth_token"))))
     },
     onComplete = params =>

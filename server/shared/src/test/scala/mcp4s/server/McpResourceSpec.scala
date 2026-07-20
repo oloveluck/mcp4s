@@ -99,3 +99,29 @@ class McpResourceSpec extends CatsEffectSuite:
       _ = assertEquals(changes, Right(Nil))
     yield ()
   }
+
+  test("template with '?' in the pattern matches it literally") {
+    val tmpl = Resources.template[IO]("api://search?q={query}", "Search") { uri =>
+      IO.pure(ResourceContent.text(uri, "ok"))
+    }
+    for
+      hit <- tmpl.read("api://search?q=hello").value
+      _ = assert(hit.isDefined, "literal '?' in the pattern should match a literal '?' in the URI")
+      // With '?' treated as a regex quantifier, "api://searcq=..." would match ('h' optional).
+      miss <- tmpl.read("api://searcq=hello").value
+      _ = assertEquals(miss, None)
+    yield ()
+  }
+
+  test("template with '+' and parentheses in the pattern matches them literally") {
+    val tmpl = Resources.template[IO]("files://a+(b)/{id}", "Weird") { uri =>
+      IO.pure(ResourceContent.text(uri, "ok"))
+    }
+    for
+      hit <- tmpl.read("files://a+(b)/42").value
+      _ = assert(hit.isDefined)
+      // With '+' treated as a regex quantifier, "files://aab/42" would match.
+      miss <- tmpl.read("files://aab/42").value
+      _ = assertEquals(miss, None)
+    yield ()
+  }

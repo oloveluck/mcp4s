@@ -87,12 +87,23 @@ final private[transport] class ServerSession[F[_]](
       JsonRpcNotification(McpMethod.Progress, Some(ProgressParams(token, prog, total).asJson))
     )
 
-  /** Send a logging notification. */
+  /** Send a logging notification. When both a message and structured data are given, the message
+    * is folded into the data payload rather than dropped.
+    */
   def sendLoggingNotification(level: LogLevel, message: String, data: Option[Json]): F[Unit] =
+    val payload = data match
+      case None => Json.fromString(message)
+      case Some(d) if message.isEmpty => d
+      case Some(d) =>
+        d.asObject match
+          case Some(obj) if !obj.contains("message") =>
+            Json.fromJsonObject(("message" -> Json.fromString(message)) +: obj)
+          case Some(_) => d
+          case None => Json.obj("message" -> Json.fromString(message), "data" -> d)
     sendNotification(
       JsonRpcNotification(
         McpMethod.LoggingMessage,
-        Some(LogMessage(level, None, data.getOrElse(Json.fromString(message))).asJson)
+        Some(LogMessage(level, None, payload).asJson)
       )
     )
 

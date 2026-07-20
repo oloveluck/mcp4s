@@ -72,13 +72,17 @@ class McpConnectionSpec extends CatsEffectSuite:
       handler: JsonRpcRequest => IO[Json],
       notificationHandler: JsonRpcNotification => IO[Unit]
   ): IO[McpConnection[IO]] =
-    McpConnection[IO](
-      testServerInfo,
-      testServerCapabilities,
-      handler,
-      notificationHandler,
-      Tracer.noop[IO]
-    )
+    for
+      idGen <- cats.effect.Ref.of[IO, Long](0L)
+      conn <- McpConnection[IO](
+        testServerInfo,
+        testServerCapabilities,
+        idGen.updateAndGet(_ + 1).map(RequestId.NumberId(_)),
+        handler,
+        notificationHandler,
+        Tracer.noop[IO]
+      )
+    yield conn
 
   def mockResponse(method: String, response: Json): JsonRpcRequest => IO[Json] =
     req =>

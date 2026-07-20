@@ -70,7 +70,8 @@ private[client] object ConnectionRunner:
       connection <- Resource.eval(
         Async[F]
           .timeoutTo(
-            handshake(client, sendRequest, sendNotification, progressHandlersRef, tracer),
+            handshake(client, correlator.nextId, sendRequest, sendNotification, progressHandlersRef,
+              tracer),
             timeouts.init,
             cleanup *> Async[F].raiseError(
               McpError.InternalError(s"MCP initialization timed out after ${timeouts.init}")
@@ -111,29 +112,32 @@ private[client] object ConnectionRunner:
 
   private def handshake[F[_]: Async](
       client: McpClient[F],
+      nextId: F[RequestId],
       sendRequest: JsonRpcRequest => F[io.circe.Json],
       sendNotification: JsonRpcNotification => F[Unit],
       progressHandlersRef: Ref[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]],
       tracer: Tracer[F]
   ): F[McpConnection[F]] =
-    val initRequest = JsonRpcRequest(
-      RequestId.NumberId(1),
-      McpMethod.Initialize,
-      Some(
-        InitializeParams(
-          protocolVersion = McpVersion.Current,
-          capabilities = client.capabilities,
-          clientInfo = client.info
-        ).asJson
-      )
-    )
     for
+      initId <- nextId
+      initRequest = JsonRpcRequest(
+        initId,
+        McpMethod.Initialize,
+        Some(
+          InitializeParams(
+            protocolVersion = McpVersion.Current,
+            capabilities = client.capabilities,
+            clientInfo = client.info
+          ).asJson
+        )
+      )
       initJson   <- sendRequest(initRequest)
       initResult <- initJson.as[InitializeResult].liftTo[F]
       _          <- sendNotification(JsonRpcNotification(McpMethod.Initialized, None))
       connection <- McpConnection[F](
         initResult.serverInfo,
         initResult.capabilities,
+        nextId,
         sendRequest,
         sendNotification,
         tracer

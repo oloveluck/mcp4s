@@ -48,10 +48,12 @@ object ServiceRoutes:
   def apply[F[_]: Concurrent](service: McpService)(handlers: Tools[F]*): Tools[F] =
     val declared   = service.endpoints.map(_.name)
     val boundNames = handlers.toList.flatMap(_.definitions.map(_.name))
+    val declaredSet = declared.toSet
+    val boundSet    = boundNames.toSet
 
     val duplicates = boundNames.groupBy(identity).collect { case (n, occ) if occ.size > 1 => n }
-    val missing    = declared.filterNot(boundNames.contains)
-    val extra      = boundNames.filterNot(declared.contains)
+    val missing    = declared.filterNot(boundSet.contains)
+    val extra      = boundNames.filterNot(declaredSet.contains)
 
     if duplicates.nonEmpty then
       throw new IllegalArgumentException(

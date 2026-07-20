@@ -20,6 +20,8 @@ import io.circe.Json
 import io.circe.syntax.*
 import mcp4s.protocol.{Codecs, JsonSchema, JsonSchemaProperty}
 
+import scala.collection.immutable.VectorMap
+
 /** Renders a [[Schema]] to the MCP wire-format JSON Schema AST. */
 private[mcp4s] object JsonSchemaRenderer:
   import Schema.*
@@ -37,9 +39,20 @@ private[mcp4s] object JsonSchemaRenderer:
       case Bijection(underlying, _, _) => render(underlying)
       case lz: Lazily[a]               => render(lz.underlying)
       case other                       =>
-        // Non-object schemas at the top level keep just their type; MCP tool schemas
-        // are always objects in practice (see ToolOutput's `result` wrapping).
-        JsonSchema(renderProperty(other).`type`.getOrElse("object"))
+        // Non-object top-level schemas (bare enums, unions, collections) keep their
+        // full shape. MCP tool schemas are objects in practice (see ToolOutput's
+        // `result` wrapping), but prompts and future callers may pass anything.
+        val p = renderProperty(other)
+        JsonSchema(
+          p.`type`.getOrElse("object"),
+          properties = p.properties,
+          required = p.required,
+          description = p.description,
+          `enum` = p.`enum`,
+          oneOf = p.oneOf,
+          items = p.items,
+          additionalProperties = p.additionalProperties
+        )
 
   /** Property-level rendering, for embedding in an enclosing object schema. */
   def renderProperty[A](schema: Schema[A]): JsonSchemaProperty =
@@ -93,14 +106,18 @@ private[mcp4s] object JsonSchemaRenderer:
       // Recursive reference: cut off with an untyped object (no $defs support yet).
       case Lazily(_) => JsonSchemaProperty(Some("object"))
 
+  // VectorMap keeps field declaration order, so generated schemas are deterministic
+  // (a plain HashMap reorders properties once a struct has >4 fields).
   private def fieldProperties[A](fields: Vector[Field[A, ?]]): Map[String, JsonSchemaProperty] =
-    fields.map { field =>
-      val base = renderProperty(field.schema)
-      val withDefault = field.default match
-        case Some(d) => base.copy(default = Some(encodeDefault(field, d)))
-        case None    => base
-      field.label -> withDefault
-    }.toMap
+    fields
+      .map { field =>
+        val base = renderProperty(field.schema)
+        val withDefault = field.default match
+          case Some(d) => base.copy(default = Some(encodeDefault(field, d)))
+          case None    => base
+        field.label -> withDefault
+      }
+      .to(VectorMap)
 
   private def requiredLabels[A](fields: Vector[Field[A, ?]]): List[String] =
     fields.collect {

@@ -63,29 +63,22 @@ object SchemaMacros:
     val tpe    = TypeRepr.of[A]
     val fields = tpe.typeSymbol.primaryConstructor.paramSymss.flatten
     val descriptions = fields.flatMap { field =>
-      field.annotations
-        .collectFirst {
-          case term if term.tpe.typeSymbol.fullName == DescriptionAnnotation =>
-            term match
-              case Apply(_, List(Literal(StringConstant(desc)))) =>
-                field.name -> desc
-              case _ => null
-        }
-        .filter(_ != null)
+      field.annotations.collectFirst {
+        case term @ Apply(_, List(Literal(StringConstant(desc))))
+            if term.tpe.typeSymbol.fullName == DescriptionAnnotation =>
+          field.name -> desc
+      }
     }
     Expr(descriptions.toMap)
 
   private def classDescriptionMacro[A: Type](using Quotes): Expr[Option[String]] =
     import quotes.reflect.*
     val tpe = TypeRepr.of[A]
-    val desc = tpe.typeSymbol.annotations
-      .collectFirst {
-        case term if term.tpe.typeSymbol.fullName == DescriptionAnnotation =>
-          term match
-            case Apply(_, List(Literal(StringConstant(desc)))) => desc
-            case _                                             => null
-      }
-      .filter(_ != null)
+    val desc = tpe.typeSymbol.annotations.collectFirst {
+      case term @ Apply(_, List(Literal(StringConstant(desc))))
+          if term.tpe.typeSymbol.fullName == DescriptionAnnotation =>
+        desc
+    }
     desc match
       case Some(d) => '{ Some(${ Expr(d) }) }
       case None    => '{ None }

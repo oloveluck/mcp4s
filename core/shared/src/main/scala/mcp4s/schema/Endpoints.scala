@@ -136,11 +136,11 @@ final case class PromptEndpoint[I](
   def withName(n: String): PromptEndpoint[I]        = copy(name = n)
   def withDescription(d: String): PromptEndpoint[I] = copy(description = Some(d))
 
-  /** Prompt-argument metadata derived from the input schema. */
-  def arguments: List[PromptArgument] = PromptCodec.arguments(inputSchema)
+  /** Prompt-argument metadata derived from the input schema (computed once). */
+  lazy val arguments: List[PromptArgument] = PromptCodec.arguments(inputSchema)
 
   /** The wire representation advertised in `prompts/list`. */
-  def toPrompt: mcp4s.protocol.Prompt =
+  lazy val toPrompt: mcp4s.protocol.Prompt =
     mcp4s.protocol.Prompt(name, description, arguments)
 
 object PromptEndpoint:

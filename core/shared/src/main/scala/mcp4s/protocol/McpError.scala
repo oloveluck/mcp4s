@@ -56,6 +56,12 @@ enum McpError(val message: String) extends Exception(message):
   /** Generic internal error */
   case InternalError(detail: String) extends McpError(detail)
 
+  /** Peer rejected the request with JSON-RPC `-32602` (invalid params) */
+  case InvalidParams(detail: String) extends McpError(detail)
+
+  /** Peer rejected the request with JSON-RPC `-32600` (invalid request) */
+  case InvalidRequest(detail: String) extends McpError(detail)
+
   /** JSON-RPC method not found */
   case MethodNotFound(method: String) extends McpError(s"Method not found: $method")
 
@@ -80,13 +86,19 @@ enum McpError(val message: String) extends Exception(message):
       extends McpError(s"Tool '$name' returned an error: $detail")
 
 object McpError:
-  /** Convert a JSON-RPC error to a typed McpError */
-  def fromJsonRpcError(error: JsonRpcError): McpError = error.code match
-    case JsonRpcErrorCode.MethodNotFound => MethodNotFound(error.message)
-    case JsonRpcErrorCode.InvalidParams  => InternalError(error.message)
-    case JsonRpcErrorCode.InvalidRequest => InternalError(error.message)
-    case -32800                          => InternalError(error.message) // Cancelled
-    case _                               => InternalError(error.message)
+  /** Convert a JSON-RPC error to a typed McpError, preserving any `data` payload in the detail. */
+  def fromJsonRpcError(error: JsonRpcError): McpError =
+    fromJsonRpcError(error, RequestId.NullId)
+
+  /** Like [[fromJsonRpcError]], attributing a cancellation error to `requestId`. */
+  def fromJsonRpcError(error: JsonRpcError, requestId: RequestId): McpError =
+    val detail = error.data.fold(error.message)(d => s"${error.message} (data: ${d.noSpaces})")
+    error.code match
+      case JsonRpcErrorCode.MethodNotFound   => MethodNotFound(error.message)
+      case JsonRpcErrorCode.InvalidParams    => InvalidParams(detail)
+      case JsonRpcErrorCode.InvalidRequest   => InvalidRequest(detail)
+      case JsonRpcErrorCode.RequestCancelled => RequestCancelled(requestId)
+      case _                                 => InternalError(detail)
 
   def toJsonRpcError(err: McpError): JsonRpcError = err match
     case ToolNotFound(_)               => JsonRpcError.methodNotFound(err.message)
@@ -99,9 +111,11 @@ object McpError:
     case AlreadyInitialized            => JsonRpcError.invalidRequest(err.message)
     case MethodNotFound(_)             => JsonRpcError.methodNotFound(err.message)
     case MethodNotSupported(_)         => JsonRpcError.methodNotFound(err.message)
-    case RequestCancelled(_)           => JsonRpcError(-32800, err.message, None)
-    case CapabilityNotSupported(_)     => JsonRpcError.invalidRequest(err.message)
-    case SamplingNotSupported          => JsonRpcError.invalidRequest(err.message)
-    case ElicitationNotSupported       => JsonRpcError.invalidRequest(err.message)
-    case ToolExecutionError(_, _)      => JsonRpcError.internalError(err.message)
-    case InternalError(_)              => JsonRpcError.internalError(err.message)
+    case RequestCancelled(_)  => JsonRpcError(JsonRpcErrorCode.RequestCancelled, err.message, None)
+    case CapabilityNotSupported(_) => JsonRpcError.invalidRequest(err.message)
+    case SamplingNotSupported      => JsonRpcError.invalidRequest(err.message)
+    case ElicitationNotSupported   => JsonRpcError.invalidRequest(err.message)
+    case ToolExecutionError(_, _)  => JsonRpcError.internalError(err.message)
+    case InternalError(_)          => JsonRpcError.internalError(err.message)
+    case InvalidParams(_)          => JsonRpcError.invalidParams(err.message)
+    case InvalidRequest(_)         => JsonRpcError.invalidRequest(err.message)

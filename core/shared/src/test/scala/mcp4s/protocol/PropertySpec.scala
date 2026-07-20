@@ -561,27 +561,8 @@ class PropertySpec extends ScalaCheckSuite:
 
   given Arbitrary[ServerInfo] = Arbitrary(genServerInfo)
 
-  val genClientInfo: Gen[ClientInfo] = for {
-    name        <- Gen.alphaStr.filter(_.nonEmpty)
-    version     <- Gen.oneOf("1.0.0", "2.0.0", "0.1.0")
-    title       <- Gen.option(Gen.alphaNumStr)
-    description <- Gen.option(Gen.alphaNumStr)
-    websiteUrl  <- Gen.option(Gen.const("https://example.com"))
-    icons       <- Gen.option(Gen.listOfN(2, genIcon))
-  } yield ClientInfo(name, version, title, description, websiteUrl, icons)
-
-  given Arbitrary[ClientInfo] = Arbitrary(genClientInfo)
-
-  val genImplementation: Gen[Implementation] = for {
-    name        <- Gen.alphaStr.filter(_.nonEmpty)
-    version     <- Gen.oneOf("1.0.0", "2.0.0", "0.1.0")
-    title       <- Gen.option(Gen.alphaNumStr)
-    description <- Gen.option(Gen.alphaNumStr)
-    websiteUrl  <- Gen.option(Gen.const("https://example.com"))
-    icons       <- Gen.option(Gen.listOfN(2, genIcon))
-  } yield Implementation(name, version, title, description, websiteUrl, icons)
-
-  given Arbitrary[Implementation] = Arbitrary(genImplementation)
+  // ClientInfo is an alias of ServerInfo; the ServerInfo Arbitrary covers both.
+  val genClientInfo: Gen[ClientInfo] = genServerInfo
 
   val genInitializeParams: Gen[InitializeParams] = for {
     protocolVersion <- Gen.oneOf("2024-11-05", "2025-11-25")
@@ -1360,14 +1341,6 @@ class PropertySpec extends ScalaCheckSuite:
       val json    = ci.asJson
       val decoded = json.as[ClientInfo]
       decoded == Right(ci)
-    }
-  }
-
-  property("Implementation serialization roundtrip") {
-    forAll { (impl: Implementation) =>
-      val json    = impl.asJson
-      val decoded = json.as[Implementation]
-      decoded == Right(impl)
     }
   }
 

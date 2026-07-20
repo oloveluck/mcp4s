@@ -17,7 +17,6 @@
 package mcp4s.server
 
 import cats.effect.{Async, Concurrent, LiftIO, Resource}
-import cats.syntax.all.*
 import fs2.io.net.Network
 import org.http4s.HttpRoutes
 import org.http4s.server.Server as Http4sServer

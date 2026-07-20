@@ -28,11 +28,13 @@ import io.circe.Json
 sealed trait ElicitParams
 
 /** Form-based elicitation parameters Spec ref: schema.ts ElicitRequestFormParams
+  *
+  * The wire-level `mode` discriminator ("form"/"url") is implied by the variant and handled by the
+  * codecs; it is not part of the model.
   */
 final case class ElicitFormParams(
     message: String,
-    requestedSchema: JsonSchema,
-    mode: Option[String] = Some("form")
+    requestedSchema: JsonSchema
 ) extends ElicitParams
 
 /** URL-based elicitation parameters Spec ref: schema.ts ElicitRequestURLParams
@@ -40,18 +42,13 @@ final case class ElicitFormParams(
 final case class ElicitUrlParams(
     message: String,
     elicitationId: String,
-    url: String,
-    mode: String = "url"
+    url: String
 ) extends ElicitParams
 
 /** User action in response to elicitation Spec ref: schema.ts ElicitResult action field
   */
-sealed trait ElicitAction
-
-object ElicitAction:
-  case object Accept  extends ElicitAction
-  case object Decline extends ElicitAction
-  case object Cancel  extends ElicitAction
+enum ElicitAction:
+  case Accept, Decline, Cancel
 
 /** Result of elicitation/create Spec ref: schema.ts ElicitResult
   */

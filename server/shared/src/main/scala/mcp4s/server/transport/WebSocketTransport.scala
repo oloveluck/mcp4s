@@ -17,8 +17,7 @@
 package mcp4s.server.transport
 
 import cats.effect.{Async, Ref, Resource as CatsResource}
-import cats.effect.std.Queue
-import cats.effect.syntax.all.*
+import cats.effect.std.{Queue, Supervisor}
 import cats.syntax.all.*
 import com.comcast.ip4s.{host, port, Host, Port}
 import fs2.{Pipe, Stream}
@@ -34,7 +33,6 @@ import org.http4s.server.{Router, Server as Http4sServer}
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.RequestCorrelator
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 import mcp4s.server.*
@@ -126,22 +124,30 @@ object WebSocketTransport:
       Queue.bounded[F, WebSocketFrame](config.maxQueueSize).flatMap { outQueue =>
         // Give session access to the outQueue for sending requests
         session.setOutQueue(outQueue) *> {
-          // Process incoming frames and dispatch to handler, with cleanup on disconnect
-          val receive: Pipe[F, WebSocketFrame, Unit] = _.evalMap {
-            case WebSocketFrame.Text(text, _) =>
-              tracer.span("ws.message.receive").surround {
-                session.handleMessage(text, outQueue)
+          // Process incoming frames and dispatch to handler, with cleanup on disconnect.
+          // Dispatch fibers run under a connection-scoped Supervisor so a tool call
+          // still running when the socket closes is cancelled rather than leaked.
+          val receive: Pipe[F, WebSocketFrame, Unit] = in =>
+            Stream
+              .resource(Supervisor[F])
+              .flatMap { supervisor =>
+                in.evalMap {
+                  case WebSocketFrame.Text(text, _) =>
+                    tracer.span("ws.message.receive").surround {
+                      session.handleMessage(text, outQueue, supervisor)
+                    }
+
+                  case WebSocketFrame.Close(_) =>
+                    Async[F].unit
+
+                  case WebSocketFrame.Ping(data) =>
+                    outQueue.offer(WebSocketFrame.Pong(data))
+
+                  case _ =>
+                    Async[F].unit
+                }
               }
-
-            case WebSocketFrame.Close(_) =>
-              Async[F].unit
-
-            case WebSocketFrame.Ping(data) =>
-              outQueue.offer(WebSocketFrame.Pong(data))
-
-            case _ =>
-              Async[F].unit
-          }.onFinalize(session.cleanup)
+              .onFinalize(session.cleanup)
 
           // Stream of outgoing frames from the queue
           val send: Stream[F, WebSocketFrame] = Stream.fromQueueUnterminated(outQueue)
@@ -177,7 +183,11 @@ private class WebSocketSession[F[_]: Async](
     outQueueRef.set(Some(queue))
 
   /** Handle an incoming WebSocket message */
-  def handleMessage(text: String, outQueue: Queue[F, WebSocketFrame]): F[Unit] =
+  def handleMessage(
+      text: String,
+      outQueue: Queue[F, WebSocketFrame],
+      supervisor: Supervisor[F]
+  ): F[Unit] =
     decode[JsonRpcMessage](text) match
       case Right(message) =>
         message match
@@ -197,15 +207,17 @@ private class WebSocketSession[F[_]: Async](
             dispatcherRef.get.flatMap {
               case Some(dispatcher) =>
                 session.maybeExtractClientCaps(req) *>
-                  dispatcher
-                    .dispatch(req)
-                    .flatMap {
-                      case Some(response) =>
-                        outQueue.offer(WebSocketFrame.Text(response.asJson.noSpaces))
-                      case None =>
-                        Async[F].unit
-                    }
-                    .start
+                  supervisor
+                    .supervise(
+                      dispatcher
+                        .dispatch(req)
+                        .flatMap {
+                          case Some(response) =>
+                            outQueue.offer(WebSocketFrame.Text(response.asJson.noSpaces))
+                          case None =>
+                            Async[F].unit
+                        }
+                    )
                     .void
               case None =>
                 // Dispatcher not yet initialized - this shouldn't happen

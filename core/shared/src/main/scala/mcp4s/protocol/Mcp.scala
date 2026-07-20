@@ -76,7 +76,9 @@ final case class Annotations(
     lastModified: Option[String] = None    // ISO 8601 datetime
 )
 
-/** Server information Spec ref: schema.ts Implementation interface
+/** Implementation information for either side of a connection (spec ref: schema.ts
+  * `Implementation`). The same shape describes both peers; `ServerInfo` and `ClientInfo` name the
+  * two roles at call sites.
   */
 final case class ServerInfo(
     name: String,
@@ -92,31 +94,9 @@ object ServerInfo:
   def minimal(name: String, version: String): ServerInfo =
     ServerInfo(name, version)
 
-/** Client information Spec ref: schema.ts Implementation interface
-  */
-final case class ClientInfo(
-    name: String,
-    version: String,
-    title: Option[String] = None,
-    description: Option[String] = None,
-    websiteUrl: Option[String] = None,
-    icons: Option[List[Icon]] = None
-)
-
-object ClientInfo:
-  /** Create client info with just name and version */
-  def minimal(name: String, version: String): ClientInfo =
-    ClientInfo(name, version)
-
-/** Implementation info for capabilities (alias for backward compatibility) */
-final case class Implementation(
-    name: String,
-    version: String,
-    title: Option[String] = None,
-    description: Option[String] = None,
-    websiteUrl: Option[String] = None,
-    icons: Option[List[Icon]] = None
-)
+/** Client information: the same wire shape as [[ServerInfo]], named for the client role. */
+type ClientInfo = ServerInfo
+val ClientInfo: ServerInfo.type = ServerInfo
 
 // === Capabilities ===
 // Spec ref: schema.ts ServerCapabilities, ClientCapabilities
@@ -229,7 +209,12 @@ final case class JsonSchema(
     `type`: String,
     properties: Option[Map[String, JsonSchemaProperty]] = None,
     required: Option[List[String]] = None,
-    `$schema`: Option[String] = None
+    `$schema`: Option[String] = None,
+    description: Option[String] = None,
+    `enum`: Option[List[String]] = None,
+    oneOf: Option[List[Json]] = None,
+    items: Option[JsonSchemaProperty] = None,
+    additionalProperties: Option[JsonSchemaProperty] = None
 )
 
 final case class JsonSchemaProperty(
@@ -783,7 +768,13 @@ final case class LogMessage(
 
 // === Pagination ===
 
-final case class Cursor(value: String) extends AnyVal
+/** Type-safe pagination cursor */
+opaque type Cursor = String
+
+object Cursor:
+  def apply(value: String): Cursor = value
+
+  extension (cursor: Cursor) def value: String = cursor
 
 // === Notifications ===
 

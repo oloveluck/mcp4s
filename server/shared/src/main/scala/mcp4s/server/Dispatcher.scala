@@ -38,9 +38,6 @@ trait Dispatcher[F[_]]:
 
 object Dispatcher:
 
-  /** JSON-RPC error code for cancelled requests */
-  private val CancelledErrorCode: Int = -32800
-
   /** Create a new dispatcher for the given server.
     *
     * @param server
@@ -48,12 +45,12 @@ object Dispatcher:
     * @param tracer
     *   Optional OpenTelemetry tracer for distributed tracing (defaults to noop)
     */
-  def apply[F[_]: Concurrent](server: Server[F])(using Tracer[F]): F[Dispatcher[F]] =
+  def apply[F[_]: Concurrent](server: Server[F])(using tracer: Tracer[F]): F[Dispatcher[F]] =
     for
       stateRef     <- Ref.of[F, State](State.Uninitialized)
       inFlightRef  <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
       listCacheRef <- Ref.of[F, Map[String, (AnyRef, Json)]](Map.empty)
-    yield new DispatcherImpl(server, stateRef, inFlightRef, listCacheRef, None, summon[Tracer[F]])
+    yield new DispatcherImpl(server, stateRef, inFlightRef, listCacheRef, None, tracer)
 
   /** Create a dispatcher with a ToolContext factory for context-aware tools.
     *
@@ -67,7 +64,7 @@ object Dispatcher:
   def withContext[F[_]: Concurrent](
       server: Server[F],
       contextFactory: (RequestId, Option[RequestId]) => ToolContext[F]
-  )(using Tracer[F]): F[Dispatcher[F]] =
+  )(using tracer: Tracer[F]): F[Dispatcher[F]] =
     for
       stateRef     <- Ref.of[F, State](State.Uninitialized)
       inFlightRef  <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
@@ -78,7 +75,7 @@ object Dispatcher:
       inFlightRef,
       listCacheRef,
       Some(contextFactory),
-      summon[Tracer[F]]
+      tracer
     )
 
   private enum State:
@@ -126,7 +123,7 @@ object Dispatcher:
         case Left(_) =>
           JsonRpcErrorResponse(
             req.id,
-            JsonRpcError(CancelledErrorCode, "Request cancelled", None)
+            JsonRpcError(JsonRpcErrorCode.RequestCancelled, "Request cancelled", None)
           )
         case Right(json) =>
           JsonRpcResponse(req.id, json)
@@ -167,12 +164,14 @@ object Dispatcher:
       * (matched by value equality).
       */
     private def cachedListJson(key: String, source: AnyRef)(encode: => Json): F[Json] =
-      listCache.modify: cache =>
-        cache.get(key) match
-          case Some((prev, json)) if prev == source => (cache, json)
-          case _ =>
-            val json = encode
-            (cache.updated(key, (source, json)), json)
+      // The encode runs outside the Ref update: Ref.modify may re-evaluate its function
+      // under CAS contention, which would re-run the expensive encode. Concurrent misses
+      // may encode twice, but the result is identical either way.
+      listCache.get.map(_.get(key)).flatMap:
+        case Some((prev, json)) if prev == source => json.pure[F]
+        case _ =>
+          val json = encode
+          listCache.update(_.updated(key, (source, json))).as(json)
 
     private def handleToolsCall(reqId: RequestId, params: Json): F[Json] =
       val cursor = params.hcursor
@@ -214,7 +213,7 @@ object Dispatcher:
           handleInitialize(params)
 
         case McpMethod.Ping =>
-          Concurrent[F].pure(Json.obj())
+          Json.obj().pure[F]
 
         case McpMethod.ToolsList =>
           requireInitialized *> server.listTools.flatMap: tools =>
@@ -259,10 +258,10 @@ object Dispatcher:
           requireInitialized *> params.hcursor.get[String]("uri").liftTo[F].as(Json.obj())
 
         case McpMethod.CompletionComplete =>
-          requireInitialized *> Concurrent[F].pure(emptyCompletion)
+          requireInitialized *> emptyCompletion.pure[F]
 
         case other =>
-          Concurrent[F].raiseError(McpError.MethodNotFound(other))
+          McpError.MethodNotFound(other).raiseError[F, Json]
 
     private def handleInitialize(params: Json): F[Json] =
       params
@@ -284,13 +283,13 @@ object Dispatcher:
               // notifications/initialized is informational.
               (State.Initialized, result.asJson.pure[F])
             case _ =>
-              (State.Initialized, Concurrent[F].raiseError[Json](McpError.AlreadyInitialized))
+              (State.Initialized, McpError.AlreadyInitialized.raiseError[F, Json])
           }.flatten
 
     private def requireInitialized: F[Unit] =
       stateRef.get.flatMap:
         case State.Initialized => Concurrent[F].unit
         case State.Uninitialized =>
-          Concurrent[F].raiseError(McpError.NotInitialized)
+          McpError.NotInitialized.raiseError[F, Unit]
         case State.ShuttingDown =>
-          Concurrent[F].raiseError(McpError.InternalError("Server is shutting down"))
+          McpError.InternalError("Server is shutting down").raiseError[F, Unit]

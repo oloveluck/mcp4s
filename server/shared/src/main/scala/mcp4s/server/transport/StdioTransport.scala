@@ -40,6 +40,12 @@ object StdioTransport:
   /** Default buffer size for reading from stdin */
   private val DefaultBufferSize: Int = 4096
 
+  /** Maximum number of requests dispatched concurrently. Dispatch must not be serial: a
+    * `notifications/cancelled` line can only interrupt a long-running tool call if it is read and
+    * dispatched while that call is still running.
+    */
+  private val MaxConcurrentDispatches: Int = 256
+
   /** Run the MCP server using stdio transport.
     *
     * Reads newline-delimited JSON-RPC messages from stdin and writes responses to stdout. Runs
@@ -61,8 +67,10 @@ object StdioTransport:
           .through(text.lines)
           .filter(_.nonEmpty)
 
-      val process: Pipe[F, String, String] = _.evalMap { line =>
-        parseAndDispatch(dispatcher, line)
+      // Responses are emitted in completion order (JSON-RPC correlates by id, not order);
+      // the downstream stdout pipe stays a single serial writer.
+      val process: Pipe[F, String, String] = _.parEvalMapUnordered(MaxConcurrentDispatches) {
+        line => parseAndDispatch(dispatcher, line)
       }.unNone
 
       input

@@ -208,23 +208,27 @@ trait McpConnection[F[_]]:
 
 object McpConnection:
 
+  /** @param nextId
+    *   allocator for fresh request ids — the connection's single id source (shared with the
+    *   handshake via [[mcp4s.RequestCorrelator.nextId]] so ids are never reused)
+    */
   def apply[F[_]: Concurrent](
       serverInfo: ServerInfo,
       serverCapabilities: ServerCapabilities,
+      nextId: F[RequestId],
       sendRequest: JsonRpcRequest => F[Json],
       sendNotification: JsonRpcNotification => F[Unit],
       tracer: Tracer[F]
   ): F[McpConnection[F]] =
     for
-      requestIdGen     <- Ref.of[F, Long](0L)
       inFlightRequests <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
       progressHandlers <- Ref.of[F, Map[RequestId, ProgressParams => F[Unit]]](Map.empty)
     yield new Impl[F](
       serverInfo,
       serverCapabilities,
+      nextId,
       sendRequest,
       sendNotification,
-      requestIdGen,
       inFlightRequests,
       tracer,
       progressHandlers
@@ -233,16 +237,13 @@ object McpConnection:
   private class Impl[F[_]: Concurrent](
       val serverInfo: ServerInfo,
       val serverCapabilities: ServerCapabilities,
+      nextId: F[RequestId],
       sendRequest: JsonRpcRequest => F[Json],
       sendNotification: JsonRpcNotification => F[Unit],
-      requestIdGen: Ref[F, Long],
       inFlightRequests: Ref[F, Map[RequestId, Deferred[F, Unit]]],
       tracer: Tracer[F],
       val progressHandlers: Ref[F, Map[RequestId, ProgressParams => F[Unit]]]
   ) extends McpConnection[F]:
-
-    private def nextId: F[RequestId] =
-      requestIdGen.getAndUpdate(_ + 1).map(n => RequestId.NumberId(n + 1))
 
     private def cancelAndNotify(reqId: RequestId): F[Unit] =
       for
@@ -271,11 +272,9 @@ object McpConnection:
             cancelToken <- Deferred[F, Unit]
             _           <- inFlightRequests.update(_ + (reqId -> cancelToken))
             // Inject _meta.progressToken when progress callback is provided
-            finalParams = onProgress match
-              case Some(_) =>
-                params.deepMerge(Json.obj("_meta" -> Json.obj("progressToken" -> reqId.asJson)))
-              case None => params
-            _ <- onProgress.traverse_(_ => progressHandlers.update(_ + (reqId -> onProgress.get)))
+            finalParams = onProgress.fold(params): _ =>
+              params.deepMerge(Json.obj("_meta" -> Json.obj("progressToken" -> reqId.asJson)))
+            _ <- onProgress.traverse_(cb => progressHandlers.update(_ + (reqId -> cb)))
             req = JsonRpcRequest(reqId, method, Some(finalParams))
             result <- Concurrent[F]
               .race(

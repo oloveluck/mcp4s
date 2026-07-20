@@ -66,17 +66,3 @@ object ResourceListChangedNotification:
   given Encoder[ResourceListChangedNotification] = Encoder.instance(_ => Json.obj())
   given Decoder[ResourceListChangedNotification] =
     Decoder.instance(_ => Right(ResourceListChangedNotification()))
-
-/** MCP method names for resource subscription operations */
-object SubscriptionMethods:
-  /** Method to subscribe to resource updates */
-  val Subscribe: String = "resources/subscribe"
-
-  /** Method to unsubscribe from resource updates */
-  val Unsubscribe: String = "resources/unsubscribe"
-
-  /** Notification method for resource updates */
-  val ResourceUpdated: String = "notifications/resources/updated"
-
-  /** Notification method for resource list changes */
-  val ResourceListChanged: String = "notifications/resources/list_changed"

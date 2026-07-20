@@ -51,11 +51,12 @@ object TypedClient:
         if result.isError.getOrElse(false) then
           F.raiseError(McpError.ToolExecutionError(endpoint.name, result.textContent))
         else
+          // GADT refinement: Raw witnesses O =:= ToolResult, Structured(schema) binds Schema[O].
           endpoint.outputEncoder match
             case ToolOutputEncoder.Raw =>
-              F.pure(result.asInstanceOf[O])
-            case structured: ToolOutputEncoder.Structured[O] @unchecked =>
-              decodeStructured(endpoint.name, structured, result)
+              F.pure(result)
+            case ToolOutputEncoder.Structured(schema) =>
+              decodeStructured(endpoint.name, schema, result)
       }
 
     /** Get a prompt endpoint with typed input. */
@@ -67,7 +68,7 @@ object TypedClient:
 
   private def decodeStructured[F[_], O](
       name: String,
-      structured: ToolOutputEncoder.Structured[O],
+      schema: mcp4s.schema.Schema[O],
       result: ToolResult
   )(using F: MonadThrow[F]): F[O] =
     structuredJson(result) match
@@ -75,11 +76,11 @@ object TypedClient:
         // Primitive outputs are wrapped as {"result": <value>} on the wire; unwrap when the
         // schema itself is not the object that was advertised.
         val candidate = json.hcursor.downField("result").focus match
-          case Some(inner) if !isStruct(structured) => inner
-          case _                                    => json
-        structured.schema.decoder
+          case Some(inner) if !isStruct(schema) => inner
+          case _                                => json
+        schema.decoder
           .decodeJson(candidate)
-          .orElse(structured.schema.decoder.decodeJson(json))
+          .orElse(schema.decoder.decodeJson(json))
           .leftMap(err =>
             McpError.InternalError(s"Failed to decode result of tool '$name': ${err.getMessage}")
           )
@@ -91,8 +92,8 @@ object TypedClient:
           )
         )
 
-  private def isStruct[O](structured: ToolOutputEncoder.Structured[O]): Boolean =
-    structured.schema match
+  private def isStruct[O](schema: mcp4s.schema.Schema[O]): Boolean =
+    schema match
       case _: mcp4s.schema.Schema.Struct[?] => true
       case _                                => false
 
