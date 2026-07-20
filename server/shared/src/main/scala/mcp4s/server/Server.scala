@@ -145,17 +145,16 @@ object Server:
     /** Create a new server with different info. */
     def withInfo(newInfo: ServerInfo): Server[F] =
       new Server[F]:
-        val info: ServerInfo                                       = newInfo
-        val capabilities: ServerCapabilities                       = server.capabilities
-        def listTools: F[List[Tool]]                               = server.listTools
-        def callTool(name: String, arguments: Json): F[ToolResult] =
-          server.callTool(name, arguments)
-        def listResources: F[List[Resource]]                 = server.listResources
-        def listResourceTemplates: F[List[ResourceTemplate]] = server.listResourceTemplates
-        def readResource(uri: String): F[ResourceContent]    = server.readResource(uri)
-        def listPrompts: F[List[Prompt]]                     = server.listPrompts
-        def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult] =
-          server.getPrompt(name, arguments)
+        export server.{info as _, callToolWithContext as _, *}
+        val info: ServerInfo = newInfo
+        // Not exportable (concrete in the trait, and export forwarders are final);
+        // delegate explicitly so a context-aware underlying server keeps its context.
+        override def callToolWithContext(
+            name: String,
+            arguments: Json,
+            context: ToolContext[F]
+        ): F[ToolResult] =
+          server.callToolWithContext(name, arguments, context)
 
 /** Composed MCP server that delegates to two underlying servers.
   *
