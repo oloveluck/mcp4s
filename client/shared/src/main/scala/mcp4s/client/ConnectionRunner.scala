@@ -46,9 +46,9 @@ private[client] object ConnectionRunner:
       tracer: Tracer[F]
   ): Resource[F, McpConnection[F]] =
     for
-      channel    <- transport.open
-      correlator <- Resource.eval(RequestCorrelator[F])
-      dispatcher <- Resource.eval(ClientDispatcher[F](client))
+      channel             <- transport.open
+      correlator          <- Resource.eval(RequestCorrelator[F])
+      dispatcher          <- Resource.eval(ClientDispatcher[F](client))
       progressHandlersRef <- Resource.eval(
         Ref.of[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]](None)
       )

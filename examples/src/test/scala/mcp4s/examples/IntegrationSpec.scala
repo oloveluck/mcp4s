@@ -264,7 +264,7 @@ class IntegrationSpec extends CatsEffectSuite:
       connectedClient(port).use: conn =>
         for
           progressUpdates <- Ref.of[IO, List[ProgressParams]](Nil)
-          result <- conn.callTool(
+          result          <- conn.callTool(
             "slow_add",
             Json.obj("a" -> Json.fromDouble(5.0).get, "b" -> Json.fromDouble(3.0).get),
             p => progressUpdates.update(_ :+ p)

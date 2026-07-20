@@ -20,7 +20,7 @@ import cats.effect.{Async, Ref, Temporal}
 import cats.syntax.all.*
 import io.circe.Json
 import mcp4s.protocol.*
-import mcp4s.protocol.{Resource => McpResource}
+import mcp4s.protocol.Resource as McpResource
 import mcp4s.server.*
 import scodec.bits.ByteVector
 
@@ -154,10 +154,10 @@ object TestServers:
               .betweenLong(minDelay.toMillis, minDelay.toMillis + range.max(1))
               .flatMap(delayMs => Temporal[F].sleep(delayMs.millis))
 
-          def listTools: F[List[Tool]] = randomDelay *> base.listTools
+          def listTools: F[List[Tool]]                               = randomDelay *> base.listTools
           def callTool(name: String, arguments: Json): F[ToolResult] =
             randomDelay *> base.callTool(name, arguments)
-          def listResources: F[List[McpResource]] = randomDelay *> base.listResources
+          def listResources: F[List[McpResource]]              = randomDelay *> base.listResources
           def listResourceTemplates: F[List[ResourceTemplate]] =
             randomDelay *> base.listResourceTemplates
           def readResource(uri: String): F[ResourceContent] = randomDelay *> base.readResource(uri)
@@ -239,7 +239,7 @@ object TestServers:
     )
 
     new Server[F]:
-      val info: ServerInfo = ServerInfo("test-server", "1.0.0")
+      val info: ServerInfo                 = ServerInfo("test-server", "1.0.0")
       val capabilities: ServerCapabilities = ServerCapabilities(
         tools = Some(ToolsCapability()),
         resources = Some(ResourcesCapability()),
@@ -323,7 +323,7 @@ object TestServers:
     * progress-callback compliance check end-to-end.
     */
   def withProgress[F[_]: Async: Temporal]: Server[F] =
-    val base = simple[F]
+    val base      = simple[F]
     val countTool = Tool(
       name = "count",
       description = Some("Counts to 3, emitting a progress notification each step"),

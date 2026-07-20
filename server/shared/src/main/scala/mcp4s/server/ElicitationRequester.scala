@@ -57,6 +57,6 @@ object ElicitationRequester:
     */
   def unsupported[F[_]](using F: ApplicativeError[F, Throwable]): ElicitationRequester[F] =
     new ElicitationRequester[F]:
-      def supportsElicitation: Boolean = false
+      def supportsElicitation: Boolean                  = false
       def elicit(params: ElicitParams): F[ElicitResult] =
         F.raiseError(McpError.ElicitationNotSupported)

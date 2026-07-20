@@ -51,9 +51,8 @@ class ResourceTemplateBench:
 
   @Setup
   def setup(): Unit =
-    val resources = dsl.Resource.template[IO]("bench://item/{id}", "Item", "Benchmark item") {
-      uri =>
-        IO.pure(ResourceContent.text(uri, "ok"))
+    val resources = dsl.Resource.template[IO]("bench://item/{id}", "Item", "Benchmark item") { uri =>
+      IO.pure(ResourceContent.text(uri, "ok"))
     }
     val server =
       Server.from[IO](

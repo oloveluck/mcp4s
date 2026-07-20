@@ -51,7 +51,7 @@ object DocSnippets {
       val stripped = lines(i).trim
       Directive.findPrefixMatchOf(stripped) match {
         case Some(m) => directive = Some(m.group(1))
-        case None =>
+        case None    =>
           if (stripped == "```scala") {
             var j = i + 1
             while (j < lines.length && lines(j).trim != "```") j += 1
@@ -91,7 +91,7 @@ object DocSnippets {
     */
   def generate(docsDir: File, outDir: File, log: Logger): Seq[File] = {
     IO.createDirectory(outDir)
-    val mdFiles = (docsDir ** "*.md").get.sortBy(_.getAbsolutePath)
+    val mdFiles   = (docsDir ** "*.md").get.sortBy(_.getAbsolutePath)
     val generated = mdFiles.flatMap { md =>
       val rel = IO.relativize(docsDir, md).getOrElse(md.getName).replace('\\', '/')
       val pkg = rel.stripSuffix(".md").replaceAll("[^A-Za-z0-9]", "_")

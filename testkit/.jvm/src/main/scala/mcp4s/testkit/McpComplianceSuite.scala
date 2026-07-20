@@ -67,7 +67,6 @@ abstract class McpComplianceSuite extends IOSuite:
       .map(_.toMap)
 
   transports.foreach { t =>
-
     test(s"[$t] server advertises identity and capabilities") { res =>
       val conn = res(t)
       IO(expect(conn.serverInfo.name.nonEmpty))
@@ -101,7 +100,7 @@ abstract class McpComplianceSuite extends IOSuite:
     test(s"[$t] tools/call with valid arguments succeeds") { res =>
       val conn = res(t)
       profile.sampleTool match
-        case None => ignore("profile.sampleTool not provided")
+        case None    => ignore("profile.sampleTool not provided")
         case Some(p) =>
           conn
             .callTool(p.name, p.arguments)
@@ -117,7 +116,7 @@ abstract class McpComplianceSuite extends IOSuite:
     test(s"[$t] concurrent tools/call all succeed") { res =>
       val conn = res(t)
       profile.sampleTool match
-        case None => ignore("profile.sampleTool not provided")
+        case None    => ignore("profile.sampleTool not provided")
         case Some(p) =>
           (1 to 10).toList
             .parTraverse(_ => conn.callTool(p.name, p.arguments))
@@ -127,7 +126,7 @@ abstract class McpComplianceSuite extends IOSuite:
     test(s"[$t] progress notifications are delivered to the callback") { res =>
       val conn = res(t)
       profile.progressTool match
-        case None => ignore("profile.progressTool not provided")
+        case None    => ignore("profile.progressTool not provided")
         case Some(p) =>
           for
             seen <- IO.ref(0)
@@ -147,7 +146,7 @@ abstract class McpComplianceSuite extends IOSuite:
     test(s"[$t] resources/read returns content for a known resource") { res =>
       val conn = res(t)
       profile.sampleResource match
-        case None => ignore("profile.sampleResource not provided")
+        case None    => ignore("profile.sampleResource not provided")
         case Some(p) =>
           conn.readResource(p.uri).map(c => expect(c.uri == p.uri) and expect(p.expect(c)))
     }
@@ -175,7 +174,7 @@ abstract class McpComplianceSuite extends IOSuite:
     test(s"[$t] prompts/get returns a result for a known prompt") { res =>
       val conn = res(t)
       profile.samplePrompt match
-        case None => ignore("profile.samplePrompt not provided")
+        case None    => ignore("profile.samplePrompt not provided")
         case Some(p) =>
           conn
             .getPrompt(p.name, p.arguments)
@@ -210,7 +209,7 @@ abstract class McpComplianceSuite extends IOSuite:
     test(s"[$t] connection remains usable after a cancelled call") { res =>
       val conn = res(t)
       profile.cancellationTool match
-        case None => ignore("profile.cancellationTool not provided")
+        case None    => ignore("profile.cancellationTool not provided")
         case Some(p) =>
           for
             fiber <- conn.callTool(p.name, p.arguments).start

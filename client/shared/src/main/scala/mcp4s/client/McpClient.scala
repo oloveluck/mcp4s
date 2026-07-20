@@ -163,7 +163,7 @@ final private[client] class ComposedMcpClient[F[_]: Concurrent](
       case Some(handler) =>
         handler.handle(params).value.flatMap {
           case Some(result) => Concurrent[F].pure(result)
-          case None =>
+          case None         =>
             Concurrent[F].raiseError(McpError.MethodNotSupported("sampling/createMessage"))
         }
       case None => Concurrent[F].raiseError(McpError.MethodNotSupported("sampling/createMessage"))

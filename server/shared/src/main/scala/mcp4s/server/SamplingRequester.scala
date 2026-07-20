@@ -55,6 +55,6 @@ object SamplingRequester:
     */
   def unsupported[F[_]](using F: ApplicativeError[F, Throwable]): SamplingRequester[F] =
     new SamplingRequester[F]:
-      def supportsSampling: Boolean = false
+      def supportsSampling: Boolean                                          = false
       def createMessage(params: CreateMessageParams): F[CreateMessageResult] =
         F.raiseError(McpError.SamplingNotSupported)

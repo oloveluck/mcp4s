@@ -143,7 +143,7 @@ object HttpTransport:
       config: HttpConfig[F] = HttpConfig.default[F]
   )(using Tracer[F]): CatsResource[F, Http4sServer] =
     for
-      mcpRoutes <- routes(server, config)
+      mcpRoutes  <- routes(server, config)
       httpServer <- EmberServerBuilder
         .default[F]
         .withHost(config.host)
@@ -368,8 +368,7 @@ object HttpTransport:
               } ++ (result match
                 case Right(Some(response)) => Stream.emit(toSSE(response))
                 case Right(None)           => Stream.empty
-                case Left(error)           => Stream.raiseError[F](error)
-              )
+                case Left(error)           => Stream.raiseError[F](error))
             }
 
           live ++ finale

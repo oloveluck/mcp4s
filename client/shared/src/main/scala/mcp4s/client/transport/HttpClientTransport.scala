@@ -114,7 +114,7 @@ object HttpClientTransport:
     private def headers: F[Headers] =
       for
         traceHeaders <- tracer.propagate(Headers.empty)
-        authed <- McpAuth.applyTo(
+        authed       <- McpAuth.applyTo(
           config.auth,
           traceHeaders.put(
             Header.Raw(CIString("Accept"), "application/json, text/event-stream")
@@ -154,7 +154,7 @@ object HttpClientTransport:
             resp.asJson.flatMap { json =>
               json.as[JsonRpcMessage] match
                 case Right(message) => inbox.offer(message)
-                case Left(err) =>
+                case Left(err)      =>
                   Async[F].raiseError[Unit](
                     McpError.InternalError(s"Failed to parse response: ${err.getMessage}")
                   )
@@ -164,11 +164,11 @@ object HttpClientTransport:
               .through(ServerSentEvent.decoder[F])
               .evalMapFilter { event =>
                 event.data match
-                  case None => Async[F].pure(Option.empty[JsonRpcMessage])
+                  case None       => Async[F].pure(Option.empty[JsonRpcMessage])
                   case Some(data) =>
                     io.circe.parser.parse(data).flatMap(_.as[JsonRpcMessage]) match
                       case Right(message) => Async[F].pure(Some(message))
-                      case Left(err) =>
+                      case Left(err)      =>
                         Async[F].raiseError[Option[JsonRpcMessage]](
                           McpError.InternalError(s"Failed to parse SSE event: $err")
                         )

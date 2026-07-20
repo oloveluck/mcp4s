@@ -25,7 +25,7 @@ import mcp4s.schema.Schema
 import mcp4s.server.*
 import mcp4s.server.transport.*
 import mcp4s.client.*
-import mcp4s.client.{mcp => clientMcp}
+import mcp4s.client.mcp as clientMcp
 import mcp4s.client.mcp.{accept, message}
 import org.typelevel.otel4s.trace.Tracer
 
@@ -111,23 +111,21 @@ object ElicitationHandlers:
               case "string"  => Json.fromString(s"value_for_$key")
               case "number"  => Json.fromDoubleOrNull(42.0)
               case "boolean" => Json.fromBoolean(true)
-              case _         => Json.fromString(s"mock_$key")
-            )
+              case _         => Json.fromString(s"mock_$key"))
           }
           IO.pure(ElicitResult(ElicitAction.Accept, Some(values)))
         }
 
     case ElicitUrlParams(message, elicitationId, url) =>
       IO.println(s"[Elicitation] URL request: $message") *>
-        IO.println(s"[Elicitation] OAuth URL: $url (ID: $elicitationId)") *> {
-          // Simulate user completing OAuth and returning a token
-          IO.pure(
-            ElicitResult(
-              ElicitAction.Accept,
-              Some(Map("access_token" -> Json.fromString("mock_oauth_token_12345")))
-            )
+        IO.println(s"[Elicitation] OAuth URL: $url (ID: $elicitationId)") *>
+        // Simulate user completing OAuth and returning a token
+        IO.pure(
+          ElicitResult(
+            ElicitAction.Accept,
+            Some(Map("access_token" -> Json.fromString("mock_oauth_token_12345")))
           )
-        }
+        )
   }
 
   /** Handler for elicitation complete notifications */
@@ -168,8 +166,8 @@ object DemoServer extends IOApp.Simple:
       // Context-aware tool — name override needed (SmartCalcArgs derives "smart_calc", not "smart-calc")
       Tool.from[SmartCalcArgs].withName("smart-calc").handleWith[IO] { (args, ctx) =>
         for
-          _ <- IO.println(s"[Server] smart-calc called with: ${args.query}")
-          _ <- IO.println(s"[Server] Requesting LLM completion from client...")
+          _      <- IO.println(s"[Server] smart-calc called with: ${args.query}")
+          _      <- IO.println(s"[Server] Requesting LLM completion from client...")
           result <- ctx.sampling.createMessage(
             CreateMessageParams(
               messages = List(SamplingMessage(Role.User, SamplingTextContent(args.query))),
@@ -251,8 +249,7 @@ object DemoClientDsl extends IOApp.Simple:
             case "string"  => Json.fromString(s"value_for_$key")
             case "number"  => Json.fromDoubleOrNull(42.0)
             case "boolean" => Json.fromBoolean(true)
-            case _         => Json.fromString(s"mock_$key")
-          )
+            case _         => Json.fromString(s"mock_$key"))
         }
         IO.pure(accept(values))
 
@@ -339,7 +336,7 @@ object DemoHandlersTest extends IOApp.Simple:
 
   private def testSamplingHandler(): IO[Unit] =
     val handler = SamplingHandlers.mockLLMHandler
-    val params = CreateMessageParams(
+    val params  = CreateMessageParams(
       messages = List(SamplingMessage(Role.User, SamplingTextContent("calculate 2 + 2"))),
       maxTokens = 100
     )
@@ -354,7 +351,7 @@ object DemoHandlersTest extends IOApp.Simple:
     yield ()
 
   private def testElicitationHandler(): IO[Unit] =
-    val handler = ElicitationHandlers.simulatedHandler
+    val handler    = ElicitationHandlers.simulatedHandler
     val formParams = ElicitFormParams(
       message = "Please enter your API key",
       requestedSchema = JsonSchema.obj(

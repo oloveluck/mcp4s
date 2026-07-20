@@ -92,7 +92,7 @@ object ToolOutput:
   given ToolOutput[Boolean] = fromSchema(Schema.boolean)
 
   given ToolOutput[Json] with
-    def schema: JsonSchema = JsonSchema("object")
+    def schema: JsonSchema          = JsonSchema("object")
     def encode(a: Json): ToolResult =
       ToolResult(
         List(TextContent(a.noSpaces)),

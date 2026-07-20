@@ -102,9 +102,9 @@ object ToolContext:
   ): ToolContext[F] =
     val token = progressToken.getOrElse(reqId)
     new ToolContext[F]:
-      def sampling: SamplingRequester[F]       = sampler
-      def elicitation: ElicitationRequester[F] = eliciter
-      def requestId: RequestId                 = reqId
+      def sampling: SamplingRequester[F]                         = sampler
+      def elicitation: ElicitationRequester[F]                   = eliciter
+      def requestId: RequestId                                   = reqId
       def progress(prog: Double, total: Option[Double]): F[Unit] =
         progressFn(token, prog, total)
       def log(level: LogLevel, message: String, data: Option[Json]): F[Unit] =

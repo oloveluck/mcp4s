@@ -5,7 +5,7 @@ ThisBuild / startYear        := Some(2025)
 ThisBuild / licenses         := Seq(License.Apache2)
 ThisBuild / developers       := List(tlGitHubDev("oloveluck", "MCP4S Contributors"))
 ThisBuild / homepage         := Some(url("https://github.com/mcp4s/mcp4s"))
-ThisBuild / scmInfo := Some(
+ThisBuild / scmInfo          := Some(
   ScmInfo(url("https://github.com/mcp4s/mcp4s"), "scm:git:git@github.com:mcp4s/mcp4s.git")
 )
 
@@ -308,13 +308,13 @@ conformance := {
   def flag(name: String): Option[String] = {
     val i = parsed.indexOf(name); if (i >= 0 && i + 1 < parsed.size) Some(parsed(i + 1)) else None
   }
-  val url       = flag("--url").getOrElse("http://localhost:3000/mcp")
-  val healthUrl = url.replaceAll("/mcp/?$", "") + "/health"
+  val url          = flag("--url").getOrElse("http://localhost:3000/mcp")
+  val healthUrl    = url.replaceAll("/mcp/?$", "") + "/health"
   val scenarioArgs = flag("--scenario")
     .map(s => Seq("--scenario", s))
     .getOrElse(Seq("--suite", flag("--suite").getOrElse("active")))
-  val verboseArgs = if (parsed.contains("--verbose")) Seq("--verbose") else Seq.empty
-  val baseline    = base / "conformance-baseline.yml"
+  val verboseArgs  = if (parsed.contains("--verbose")) Seq("--verbose") else Seq.empty
+  val baseline     = base / "conformance-baseline.yml"
   val baselineArgs =
     if (baseline.exists()) Seq("--expected-failures", baseline.getAbsolutePath) else Seq.empty
   val cmd = Seq("npx", "tsx", "src/index.ts", "server", "--url", url) ++

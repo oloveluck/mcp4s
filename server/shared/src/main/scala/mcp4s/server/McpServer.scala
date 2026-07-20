@@ -97,26 +97,37 @@ object McpServer:
 
   final class StdioBinding[F[_]] private[server] (server: Server[F]):
     /** Run until stdin closes. */
-    def run(using Async[F], LiftIO[F])(using
+    def run(using
+        Async[F],
+        LiftIO[F]
+    )(using
         tracer: Tracer[F] = Tracer.noop[F]
     ): F[Unit] =
       StdioTransport.run[F](server)
 
   final class HttpBinding[F[_]] private[server] (server: Server[F], config: HttpConfig[F]):
     /** The bound HTTP server as a managed resource. */
-    def resource(using Async[F], Network[F])(using
+    def resource(using
+        Async[F],
+        Network[F]
+    )(using
         tracer: Tracer[F] = Tracer.noop[F]
     ): Resource[F, Http4sServer] =
       HttpTransport.serve[F](server, config)
 
     /** Raw routes for embedding in an existing http4s application (add your own middleware). */
-    def routes(using Async[F])(using
+    def routes(using
+        Async[F]
+    )(using
         tracer: Tracer[F] = Tracer.noop[F]
     ): Resource[F, HttpRoutes[F]] =
       HttpTransport.routes[F](server, config)
 
     /** Run the server forever. */
-    def run(using Async[F], Network[F])(using
+    def run(using
+        Async[F],
+        Network[F]
+    )(using
         tracer: Tracer[F] = Tracer.noop[F]
     ): F[Nothing] =
       resource.useForever
@@ -126,13 +137,19 @@ object McpServer:
       config: WebSocketConfig
   ):
     /** The bound WebSocket server as a managed resource. */
-    def resource(using Async[F], Network[F])(using
+    def resource(using
+        Async[F],
+        Network[F]
+    )(using
         tracer: Tracer[F] = Tracer.noop[F]
     ): Resource[F, Http4sServer] =
       WebSocketTransport.serve[F](server, config)
 
     /** Run the server forever. */
-    def run(using Async[F], Network[F])(using
+    def run(using
+        Async[F],
+        Network[F]
+    )(using
         tracer: Tracer[F] = Tracer.noop[F]
     ): F[Nothing] =
       resource.useForever

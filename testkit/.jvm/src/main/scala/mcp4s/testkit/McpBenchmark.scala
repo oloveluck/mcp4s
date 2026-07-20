@@ -121,13 +121,13 @@ object McpBenchmark:
           (1 to n).toList
             .traverse_ { _ =>
               for
-                t0 <- IO.monotonic
+                t0  <- IO.monotonic
                 res <- conn
                   .callTool(probe.name, probe.arguments)
                   .timeout(profile.callTimeout)
                   .attempt
                 t1 <- IO.monotonic
-                _ <- res match
+                _  <- res match
                   case Right(r) if !r.isError.getOrElse(false) =>
                     IO.delay(hist.recordValue((t1 - t0).toMicros.max(1L)))
                   case _ => failures.update(_ + 1)

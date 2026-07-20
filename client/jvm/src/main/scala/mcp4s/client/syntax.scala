@@ -38,7 +38,9 @@ object syntax:
   extension [F[_]](client: McpClient[F])
 
     /** Connect over WebSocket (JVM-only). Manages the http4s `JdkWSClient` internally. */
-    def webSocket(config: WebSocketTransportConfig[F])(using Async[F])(using
+    def webSocket(config: WebSocketTransportConfig[F])(using
+        Async[F]
+    )(using
         tracer: Tracer[F] = Tracer.noop[F]
     ): Resource[F, McpConnection[F]] =
       WebSocketClientTransport.connect[F](client, config)

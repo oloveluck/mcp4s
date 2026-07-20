@@ -103,7 +103,7 @@ object Tools:
   /** Combine two Tools instances (first match wins) */
   def combine[F[_]: Concurrent](x: Tools[F], y: Tools[F]): Tools[F] =
     new Tools[F]:
-      override def isEmpty: Boolean = x.isEmpty && y.isEmpty
+      override def isEmpty: Boolean        = x.isEmpty && y.isEmpty
       override val definitions: List[Tool] =
         val xNames = x.definitions.map(_.name).toSet
         x.definitions ++ y.definitions.filterNot(t => xNames.contains(t.name))

@@ -92,7 +92,7 @@ class TransportSyntaxSpec extends CatsEffectSuite:
           .webSocket(url)
           .use: conn =>
             for
-              tools <- conn.listAllTools
+              tools  <- conn.listAllTools
               result <- conn.callTool(
                 "add",
                 Json.obj("a" -> Json.fromInt(6), "b" -> Json.fromInt(1))

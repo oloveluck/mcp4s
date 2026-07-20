@@ -66,7 +66,7 @@ private[mcp4s] object PromptCodec:
       case Bijection(underlying, to, _)     => decode(underlying, args).map(to)
       case lz: Lazily[A]                    => decode(lz.underlying, args)
       case Primitive(PrimitiveTag.PUnit, _) => Right(().asInstanceOf[A])
-      case _ =>
+      case _                                =>
         Left(s"Prompt input schemas must be case classes; got ${schema.getClass.getSimpleName}")
 
   private def decodeArgument[S, B](
@@ -75,10 +75,10 @@ private[mcp4s] object PromptCodec:
   ): Either[String, B] =
     raw match
       case Some(value) => parseString(field.schema, value)
-      case None =>
+      case None        =>
         field.default match
           case Some(default) => Right(default)
-          case None =>
+          case None          =>
             field.schema match
               case _: Optional[?] => Right(None.asInstanceOf[B])
               case _              => Left(s"Missing required argument: ${field.label}")
@@ -88,7 +88,7 @@ private[mcp4s] object PromptCodec:
     schema match
       case Primitive(PrimitiveTag.PString, _) => Right(value.asInstanceOf[B])
       case Primitive(tag, _)                  => parseJson(schema, value, tag.jsonType)
-      case Optional(underlying, _) =>
+      case Optional(underlying, _)            =>
         parseString(underlying, value).map(v => Some(v).asInstanceOf[B])
       case Enumeration(name, values, _) =>
         values

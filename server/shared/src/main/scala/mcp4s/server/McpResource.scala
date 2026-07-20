@@ -179,9 +179,9 @@ private[server] object McpResource:
       handler: String => F[ResourceContent]
   ): Resources[F] =
     new Resources[F]:
-      def list: F[List[Resource]]                  = Applicative[F].pure(List(resource))
-      def listTemplates: F[List[ResourceTemplate]] = Applicative[F].pure(Nil)
-      override private[server] val exactReads      = Some(Map(resource.uri -> handler))
+      def list: F[List[Resource]]                        = Applicative[F].pure(List(resource))
+      def listTemplates: F[List[ResourceTemplate]]       = Applicative[F].pure(Nil)
+      override private[server] val exactReads            = Some(Map(resource.uri -> handler))
       def read(uri: String): OptionT[F, ResourceContent] =
         if uri == resource.uri then OptionT.liftF(handler(uri))
         else OptionT.none[F, ResourceContent]
@@ -210,8 +210,8 @@ private[server] object McpResource:
     new Resources[F]:
       private val resource        = Resource(uri, name, mimeType = Some("text/plain"))
       def list: F[List[Resource]] = Applicative[F].pure(List(resource))
-      def listTemplates: F[List[ResourceTemplate]] = Applicative[F].pure(Nil)
-      override private[server] val exactReads      = Some(Map(uri -> readHandler))
+      def listTemplates: F[List[ResourceTemplate]]          = Applicative[F].pure(Nil)
+      override private[server] val exactReads               = Some(Map(uri -> readHandler))
       def read(reqUri: String): OptionT[F, ResourceContent] =
         if reqUri == uri then OptionT.liftF(readHandler(reqUri))
         else OptionT.none[F, ResourceContent]

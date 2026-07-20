@@ -42,8 +42,7 @@ object Mcp4sComplianceSpec extends McpComplianceSuite:
         Map("name" -> "Ada"),
         _.messages.exists(_.content match
           case TextContent(t, _, _) => t.contains("Ada")
-          case _                    => false
-        )
+          case _                    => false)
       )
     )
   )

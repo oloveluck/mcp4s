@@ -145,9 +145,9 @@ object Server:
     /** Create a new server with different info. */
     def withInfo(newInfo: ServerInfo): Server[F] =
       new Server[F]:
-        val info: ServerInfo                 = newInfo
-        val capabilities: ServerCapabilities = server.capabilities
-        def listTools: F[List[Tool]]         = server.listTools
+        val info: ServerInfo                                       = newInfo
+        val capabilities: ServerCapabilities                       = server.capabilities
+        def listTools: F[List[Tool]]                               = server.listTools
         def callTool(name: String, arguments: Json): F[ToolResult] =
           server.callTool(name, arguments)
         def listResources: F[List[Resource]]                 = server.listResources

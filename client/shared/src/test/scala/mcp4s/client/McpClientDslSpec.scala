@@ -106,7 +106,7 @@ class McpClientDslSpec extends CatsEffectSuite:
 
   test("Sampling.empty returns None") {
     val sampling = Sampling.empty[IO]
-    val params = CreateMessageParams(
+    val params   = CreateMessageParams(
       messages = List(SamplingMessage(Role.User, SamplingTextContent("Hello"))),
       maxTokens = 100
     )
@@ -132,7 +132,7 @@ class McpClientDslSpec extends CatsEffectSuite:
 
   test("Elicitation.withComplete includes complete handler") {
     var completeCalled = false
-    val elicitation = Elicitation.withComplete[IO](
+    val elicitation    = Elicitation.withComplete[IO](
       handler = _ => IO.pure(accept),
       onComplete = _ => IO { completeCalled = true }
     )
@@ -146,7 +146,7 @@ class McpClientDslSpec extends CatsEffectSuite:
 
   test("Elicitation.empty returns None") {
     val elicitation = Elicitation.empty[IO]
-    val params = ElicitFormParams(
+    val params      = ElicitFormParams(
       message = "Test",
       requestedSchema = JsonSchema.empty
     )

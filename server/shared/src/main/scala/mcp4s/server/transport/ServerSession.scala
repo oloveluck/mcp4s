@@ -72,7 +72,7 @@ final private[transport] class ServerSession[F[_]](
   def sendRequest[A: Decoder](method: String, params: Json): F[A] =
     for
       reqId <- correlator.nextId
-      json <- correlator.request(reqId, requestTimeout):
+      json  <- correlator.request(reqId, requestTimeout):
         sendMessage(JsonRpcRequest(reqId, method, Some(params)))
       decoded <- json.as[A].liftTo[F]
     yield decoded
@@ -94,7 +94,7 @@ final private[transport] class ServerSession[F[_]](
     val payload = data match
       case None                       => Json.fromString(message)
       case Some(d) if message.isEmpty => d
-      case Some(d) =>
+      case Some(d)                    =>
         d.asObject match
           case Some(obj) if !obj.contains("message") =>
             Json.fromJsonObject(("message" -> Json.fromString(message)) +: obj)

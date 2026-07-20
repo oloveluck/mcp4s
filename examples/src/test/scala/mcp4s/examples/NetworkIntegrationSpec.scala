@@ -83,11 +83,10 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
       .flatMap: httpClient =>
         val retryPolicy = Http4sRetryPolicy[IO](
           backoff = Http4sRetryPolicy.exponentialBackoff(maxWait = 1.second, maxRetry = 5),
-          retriable = { (_, result) =>
+          retriable = (_, result) =>
             result match
               case Left(_: java.io.IOException) => true
               case _                            => false
-          }
         )
         val resilientClient = Retry(retryPolicy)(httpClient)
         HttpClientTransport
@@ -923,11 +922,10 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
               // Use a custom retriable that retries on connection-level exceptions (MCP uses POST)
               val retryPolicy = Http4sRetryPolicy[IO](
                 backoff = Http4sRetryPolicy.exponentialBackoff(maxWait = 1.second, maxRetry = 5),
-                retriable = { (_, result) =>
+                retriable = (_, result) =>
                   result match
                     case Left(_: java.io.IOException) => true
                     case _                            => false
-                }
               )
               val resilientClient = Retry(retryPolicy)(rawHttpClient)
 

@@ -151,7 +151,7 @@ object dsl:
         def get(name: String, args: Map[String, String]): OptionT[F, GetPromptResult] =
           if name == e.name then
             PromptCodec.decode(e.inputSchema, args) match
-              case Right(i) => OptionT.liftF(f(i))
+              case Right(i)  => OptionT.liftF(f(i))
               case Left(err) =>
                 OptionT.liftF(
                   Concurrent[F].raiseError(McpError.InvalidPromptArguments(e.name, err))

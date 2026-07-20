@@ -111,7 +111,7 @@ private[mcp4s] object JsonSchemaRenderer:
   private def fieldProperties[A](fields: Vector[Field[A, ?]]): Map[String, JsonSchemaProperty] =
     fields
       .map { field =>
-        val base = renderProperty(field.schema)
+        val base        = renderProperty(field.schema)
         val withDefault = field.default match
           case Some(d) => base.copy(default = Some(encodeDefault(field, d)))
           case None    => base
@@ -143,7 +143,7 @@ private[mcp4s] object JsonSchemaRenderer:
     */
   private def altJson[A, B](alt: Alt[A, B], discriminator: String): Json =
     import Codecs.given
-    val rendered = renderProperty(alt.schema)
+    val rendered          = renderProperty(alt.schema)
     val withDiscriminator = rendered.copy(
       properties = Some(
         rendered.properties.getOrElse(Map.empty) +

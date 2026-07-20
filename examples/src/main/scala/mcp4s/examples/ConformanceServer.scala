@@ -187,9 +187,9 @@ object ConformanceServer extends IOApp.Simple:
                 message = "Please confirm your details",
                 requestedSchema = JsonSchema.obj(
                   Map(
-                    "name"  -> JsonSchema.stringWithDefault("Your name", "John Doe"),
-                    "age"   -> JsonSchema.integerWithDefault("Your age", 30),
-                    "score" -> JsonSchema.numberWithDefault("Your score", 95.5),
+                    "name"   -> JsonSchema.stringWithDefault("Your name", "John Doe"),
+                    "age"    -> JsonSchema.integerWithDefault("Your age", 30),
+                    "score"  -> JsonSchema.numberWithDefault("Your score", 95.5),
                     "status" -> JsonSchema.stringEnumWithDefault(
                       List("active", "inactive", "pending"),
                       "active",

@@ -105,7 +105,7 @@ object SessionManager:
     for
       manager    <- CatsResource.eval(apply[F](server, config))
       supervisor <- Supervisor[F]
-      _ <- CatsResource.make(
+      _          <- CatsResource.make(
         supervisor.supervise(cleanupLoop(manager, cleanupInterval))
       )(_.cancel)
     yield manager
@@ -164,7 +164,7 @@ object SessionManager:
     def pruneExpired: F[Int] =
       for
         // Get all sessions and check which are expired
-        sessions <- sessionsRef.get
+        sessions   <- sessionsRef.get
         expiredIds <- sessions.toList.traverseFilter { case (id, session) =>
           session.isExpired.map(if _ then Some(id) else None)
         }

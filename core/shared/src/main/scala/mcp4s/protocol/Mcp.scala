@@ -260,7 +260,7 @@ object JsonSchema:
       properties: Map[String, JsonSchemaProperty],
       required: List[String] = Nil
   ): JsonSchema =
-    JsonSchema("object", Some(properties), if (required.isEmpty) None else Some(required))
+    JsonSchema("object", Some(properties), if required.isEmpty then None else Some(required))
 
   /** Create an object schema from varargs of property tuples */
   def obj(properties: (String, JsonSchemaProperty)*): JsonSchema =

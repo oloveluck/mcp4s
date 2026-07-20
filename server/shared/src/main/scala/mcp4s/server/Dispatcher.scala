@@ -113,7 +113,7 @@ object Dispatcher:
       (for
         cancelToken <- Deferred[F, Unit]
         _           <- inFlightRequests.update(_ + (req.id -> cancelToken))
-        result <- Concurrent[F]
+        result      <- Concurrent[F]
           .race(
             cancelToken.get,
             handleMethod(req.id, req.method, req.params.getOrElse(Json.obj()))
@@ -171,7 +171,7 @@ object Dispatcher:
         .map(_.get(key))
         .flatMap:
           case Some((prev, json)) if prev == source => json.pure[F]
-          case _ =>
+          case _                                    =>
             val json = encode
             listCache.update(_.updated(key, (source, json))).as(json)
 
@@ -290,7 +290,7 @@ object Dispatcher:
 
     private def requireInitialized: F[Unit] =
       stateRef.get.flatMap:
-        case State.Initialized => Concurrent[F].unit
+        case State.Initialized   => Concurrent[F].unit
         case State.Uninitialized =>
           McpError.NotInitialized.raiseError[F, Unit]
         case State.ShuttingDown =>

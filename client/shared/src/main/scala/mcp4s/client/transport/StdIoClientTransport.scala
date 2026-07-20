@@ -95,7 +95,7 @@ object StdioClientTransport:
               .evalMapFilter { line =>
                 parse(line).flatMap(_.as[JsonRpcMessage]) match
                   case Right(message) => Async[F].pure(Some(message))
-                  case Left(err) =>
+                  case Left(err)      =>
                     Async[F]
                       .delay(System.err.println(s"[MCP Client] Failed to parse message: $err"))
                       .as(None)

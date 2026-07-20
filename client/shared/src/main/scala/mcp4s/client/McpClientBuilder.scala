@@ -79,7 +79,10 @@ final class McpClientBuilder[F[_]: Concurrent] private (
     McpClient.from(info, roots, sampling, elicitation)
 
   /** Connect by spawning a subprocess and speaking JSON-RPC over its stdin/stdout. */
-  def stdio(config: StdioTransportConfig)(using Async[F], Processes[F])(using
+  def stdio(config: StdioTransportConfig)(using
+      Async[F],
+      Processes[F]
+  )(using
       tracer: Tracer[F] = Tracer.noop[F]
   ): Resource[F, McpConnection[F]] =
     StdioClientTransport.connect[F](toClient, config)
@@ -96,7 +99,9 @@ final class McpClientBuilder[F[_]: Concurrent] private (
     * Bring your own backend (e.g. `EmberClientBuilder`) so this works on every platform. On the
     * JVM, see the no-`Client` overload that builds an Ember client for you.
     */
-  def http(config: HttpTransportConfig[F], httpClient: Client[F])(using Async[F])(using
+  def http(config: HttpTransportConfig[F], httpClient: Client[F])(using
+      Async[F]
+  )(using
       tracer: Tracer[F] = Tracer.noop[F]
   ): Resource[F, McpConnection[F]] =
     HttpClientTransport.connect[F](toClient, config, httpClient)

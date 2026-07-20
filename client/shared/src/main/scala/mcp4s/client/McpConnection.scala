@@ -249,7 +249,7 @@ object McpConnection:
       for
         tokenOpt <- inFlightRequests.get.map(_.get(reqId))
         _        <- tokenOpt.traverse_(_.complete(()).void.handleErrorWith(_ => Concurrent[F].unit))
-        _ <- sendNotification(
+        _        <- sendNotification(
           JsonRpcNotification(
             McpMethod.Cancelled,
             Some(CancelledParams(reqId, Some("Fiber cancelled")).asJson)
@@ -451,7 +451,7 @@ object McpConnection:
       for
         tokenOpt <- inFlightRequests.get.map(_.get(requestId))
         _        <- tokenOpt.traverse_(_.complete(()).void.handleErrorWith(_ => Concurrent[F].unit))
-        _ <- sendNotification(
+        _        <- sendNotification(
           JsonRpcNotification(
             McpMethod.Cancelled,
             Some(CancelledParams(requestId, reason).asJson)

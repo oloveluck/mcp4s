@@ -52,7 +52,7 @@ class DispatcherSpec extends CatsEffectSuite:
   )
 
   def testServer: Server[IO] = new Server[IO]:
-    val info: ServerInfo = ServerInfo("test-server", "1.0.0")
+    val info: ServerInfo                 = ServerInfo("test-server", "1.0.0")
     val capabilities: ServerCapabilities = ServerCapabilities(
       tools = Some(ToolsCapability()),
       resources = Some(ResourcesCapability()),
@@ -116,7 +116,7 @@ class DispatcherSpec extends CatsEffectSuite:
   val validInitParams: Json = Json.obj(
     "protocolVersion" -> Json.fromString("2025-11-25"),
     "capabilities"    -> Json.obj(),
-    "clientInfo" -> Json.obj(
+    "clientInfo"      -> Json.obj(
       "name"    -> Json.fromString("test-client"),
       "version" -> Json.fromString("1.0")
     )
@@ -139,13 +139,13 @@ class DispatcherSpec extends CatsEffectSuite:
   test("handleInitialize accepts any protocol version for backwards compatibility") {
     for
       dispatcher <- createDispatcher
-      response <- sendRequest(
+      response   <- sendRequest(
         dispatcher,
         McpMethod.Initialize,
         Json.obj(
           "protocolVersion" -> Json.fromString("2025-11-25"),
           "capabilities"    -> Json.obj(),
-          "clientInfo" -> Json
+          "clientInfo"      -> Json
             .obj("name" -> Json.fromString("test"), "version" -> Json.fromString("1.0"))
         )
       )
@@ -210,7 +210,7 @@ class DispatcherSpec extends CatsEffectSuite:
       dispatcher <- createDispatcher
       _          <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
       _          <- sendNotification(dispatcher, McpMethod.Initialized)
-      response <- sendRequest(
+      response   <- sendRequest(
         dispatcher,
         McpMethod.ToolsCall,
         Json.obj(
@@ -231,7 +231,7 @@ class DispatcherSpec extends CatsEffectSuite:
       dispatcher <- createDispatcher
       _          <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
       _          <- sendNotification(dispatcher, McpMethod.Initialized)
-      response <- sendRequest(
+      response   <- sendRequest(
         dispatcher,
         McpMethod.ToolsCall,
         Json.obj(
@@ -276,7 +276,7 @@ class DispatcherSpec extends CatsEffectSuite:
       dispatcher <- createDispatcher
       _          <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
       _          <- sendNotification(dispatcher, McpMethod.Initialized)
-      response <- sendRequest(
+      response   <- sendRequest(
         dispatcher,
         McpMethod.ResourcesRead,
         Json.obj(
@@ -296,7 +296,7 @@ class DispatcherSpec extends CatsEffectSuite:
       dispatcher <- createDispatcher
       _          <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
       _          <- sendNotification(dispatcher, McpMethod.Initialized)
-      response <- sendRequest(
+      response   <- sendRequest(
         dispatcher,
         McpMethod.ResourcesRead,
         Json.obj(
@@ -343,7 +343,7 @@ class DispatcherSpec extends CatsEffectSuite:
       dispatcher <- createDispatcher
       _          <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
       _          <- sendNotification(dispatcher, McpMethod.Initialized)
-      response <- sendRequest(
+      response   <- sendRequest(
         dispatcher,
         McpMethod.PromptsGet,
         Json.obj(
@@ -364,7 +364,7 @@ class DispatcherSpec extends CatsEffectSuite:
       dispatcher <- createDispatcher
       _          <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
       _          <- sendNotification(dispatcher, McpMethod.Initialized)
-      response <- sendRequest(
+      response   <- sendRequest(
         dispatcher,
         McpMethod.PromptsGet,
         Json.obj(
@@ -394,13 +394,13 @@ class DispatcherSpec extends CatsEffectSuite:
   test("Unknown method returns MethodNotFound error") {
     for
       dispatcher <- createDispatcher
-      _ <- sendRequest(
+      _          <- sendRequest(
         dispatcher,
         McpMethod.Initialize,
         Json.obj(
           "protocolVersion" -> Json.fromString("2025-11-25"),
           "capabilities"    -> Json.obj(),
-          "clientInfo" -> Json.obj(
+          "clientInfo"      -> Json.obj(
             "name"    -> Json.fromString("test"),
             "version" -> Json.fromString("1.0")
           )
@@ -429,7 +429,7 @@ class DispatcherSpec extends CatsEffectSuite:
 
       def listResources: IO[List[Resource]]                 = IO.pure(Nil)
       def listResourceTemplates: IO[List[ResourceTemplate]] = IO.pure(Nil)
-      def readResource(uri: String): IO[ResourceContent] =
+      def readResource(uri: String): IO[ResourceContent]    =
         IO.raiseError(new RuntimeException("Crash"))
       def listPrompts: IO[List[Prompt]] = IO.pure(Nil)
       def getPrompt(name: String, arguments: Map[String, String]): IO[GetPromptResult] =
@@ -476,9 +476,9 @@ class DispatcherSpec extends CatsEffectSuite:
 
     def listResources: IO[List[Resource]]                 = IO.pure(Nil)
     def listResourceTemplates: IO[List[ResourceTemplate]] = IO.pure(Nil)
-    def readResource(uri: String): IO[ResourceContent] =
+    def readResource(uri: String): IO[ResourceContent]    =
       IO.raiseError(McpError.ResourceNotFound(uri))
-    def listPrompts: IO[List[Prompt]] = IO.pure(Nil)
+    def listPrompts: IO[List[Prompt]]                                                = IO.pure(Nil)
     def getPrompt(name: String, arguments: Map[String, String]): IO[GetPromptResult] =
       IO.raiseError(McpError.PromptNotFound(name))
 
@@ -497,7 +497,7 @@ class DispatcherSpec extends CatsEffectSuite:
       dispatcher <- Dispatcher.withContext[IO](progressServer, contextFactory)
       _          <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
       _          <- sendNotification(dispatcher, McpMethod.Initialized)
-      _ <- sendRequest(
+      _          <- sendRequest(
         dispatcher,
         McpMethod.ToolsCall,
         Json.obj(
@@ -530,7 +530,7 @@ class DispatcherSpec extends CatsEffectSuite:
       dispatcher <- Dispatcher.withContext[IO](progressServer, contextFactory)
       _          <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
       _          <- sendNotification(dispatcher, McpMethod.Initialized)
-      _ <- sendRequest(
+      _          <- sendRequest(
         dispatcher,
         McpMethod.ToolsCall,
         Json.obj(
@@ -561,7 +561,7 @@ class DispatcherSpec extends CatsEffectSuite:
       dispatcher <- Dispatcher.withContext[IO](progressServer, contextFactory)
       _          <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
       _          <- sendNotification(dispatcher, McpMethod.Initialized)
-      _ <- sendRequest(
+      _          <- sendRequest(
         dispatcher,
         McpMethod.ToolsCall,
         Json.obj(

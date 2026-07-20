@@ -141,7 +141,7 @@ object Codecs:
       case (false, true, false, false) => cursor.as[JsonRpcNotification]
       case (true, false, true, false)  => cursor.as[JsonRpcResponse]
       case (true, false, false, true)  => cursor.as[JsonRpcErrorResponse]
-      case _ =>
+      case _                           =>
         Left(DecodingFailure("Invalid JSON-RPC message structure", cursor.history))
 
   // === Common Types ===
@@ -295,7 +295,7 @@ object Codecs:
   given Encoder[ResourceContentRef] = Encoder.instance: rc =>
     Json
       .obj(
-        "type" -> Json.fromString("resource"),
+        "type"     -> Json.fromString("resource"),
         "resource" -> Json
           .obj(
             "uri"      -> Json.fromString(rc.uri),
@@ -584,8 +584,8 @@ object Codecs:
   given Decoder[ModelPreferences] = deriveDecoder
 
   given Encoder[ToolChoice] = Encoder.instance:
-    case ToolChoice.Auto => Json.obj("type" -> Json.fromString("auto"))
-    case ToolChoice.None => Json.obj("type" -> Json.fromString("none"))
+    case ToolChoice.Auto           => Json.obj("type" -> Json.fromString("auto"))
+    case ToolChoice.None           => Json.obj("type" -> Json.fromString("none"))
     case ToolChoice.Specific(name) =>
       Json.obj("type" -> Json.fromString("tool"), "name" -> Json.fromString(name))
 

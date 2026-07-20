@@ -82,7 +82,7 @@ object ToolsTest:
     def assertTool(name: String): F[Tool] =
       getTool(name).flatMap {
         case Some(tool) => Concurrent[F].pure(tool)
-        case None =>
+        case None       =>
           Concurrent[F].raiseError(
             new AssertionError(s"Expected tool '$name' to exist")
           )

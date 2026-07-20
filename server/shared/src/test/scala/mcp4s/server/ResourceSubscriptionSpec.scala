@@ -222,7 +222,7 @@ class ResourceSubscriptionSpec extends CatsEffectSuite:
       combined = res1 |+| res2
 
       // Collect changes in background
-      changesRef <- cats.effect.Ref.of[IO, List[String]](Nil)
+      changesRef   <- cats.effect.Ref.of[IO, List[String]](Nil)
       collectFiber <- combined.changes
         .evalMap(uri => changesRef.update(_ :+ uri))
         .compile

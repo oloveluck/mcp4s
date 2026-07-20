@@ -215,7 +215,7 @@ object Schema:
     val schemas      = summonFieldSchemas[m.MirroredElemTypes]
     val descriptions = SchemaMacros.fieldDescriptions[A]
     val defaults     = SchemaMacros.fieldDefaults[A]
-    val fields = labels
+    val fields       = labels
       .zip(schemas)
       .zipWithIndex
       .map { case ((label, fieldSchema), idx) =>
@@ -258,18 +258,18 @@ object Schema:
   private inline def schemaOf[T]: Schema[?] =
     inline erasedValue[T] match
       case _: Option[t] => Optional(schemaOf[t].asInstanceOf[Schema[t]])
-      case _: List[t] =>
+      case _: List[t]   =>
         Collection[List, t](schemaOf[t].asInstanceOf[Schema[t]], identity, identity)
       case _: Vector[t] =>
         Collection[Vector, t](schemaOf[t].asInstanceOf[Schema[t]], _.toVector, _.toList)
       case _: Set[t] => Collection[Set, t](schemaOf[t].asInstanceOf[Schema[t]], _.toSet, _.toList)
       case _: Seq[t] => Collection[Seq, t](schemaOf[t].asInstanceOf[Schema[t]], _.toSeq, _.toList)
       case _: Map[String, v] => StringMap(schemaOf[v].asInstanceOf[Schema[v]])
-      case _ =>
+      case _                 =>
         summonFrom {
           case s: Schema[T]    => s
           case m: Mirror.Of[T] => derived[T](using m)
-          case _ =>
+          case _               =>
             error(
               "Cannot derive Schema: no given Schema instance and no Mirror for a field type. " +
                 "Add `derives Schema` or provide a `given Schema[...]` for the field's type."
@@ -284,7 +284,7 @@ object Schema:
   private inline def allSingletons[T <: Tuple]: Boolean =
     inline erasedValue[T] match
       case _: EmptyTuple => true
-      case _: (t *: ts) =>
+      case _: (t *: ts)  =>
         summonFrom {
           case _: ValueOf[`t`] => allSingletons[ts]
           case _               => false
