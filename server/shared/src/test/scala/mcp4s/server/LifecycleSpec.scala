@@ -25,15 +25,17 @@ import munit.CatsEffectSuite
 
 class LifecycleSpec extends CatsEffectSuite:
 
+  import mcp4s.server.dsl.*
+
   private val minimalCtx =
     ToolContext.minimal[IO](SamplingRequester.unsupported[IO], RequestId.NullId)
 
-  case class CalcArgs(a: Double, b: Double) derives ToolInput
+  case class CalcArgs(a: Double, b: Double) derives Schema
 
   // === McpLifecycleTool Tests ===
 
   test("McpLifecycleTool.apply creates tool with managed resource") {
-    case class CounterArgs(increment: Int) derives ToolInput
+    case class CounterArgs(increment: Int) derives Schema
 
     for
       // Track whether resource was acquired/released
@@ -47,9 +49,8 @@ class LifecycleSpec extends CatsEffectSuite:
       )(_ => releasedRef.set(true))
 
       // Create lifecycle tool
-      toolResource = McpLifecycleTool[IO, CounterArgs, Ref[IO, Int]](
-        "increment",
-        "Increment counter",
+      toolResource = McpLifecycleTool(
+        Tool("increment").withDescription("Increment counter").input[CounterArgs],
         managedResource
       ): (args, counter) =>
         counter.update(_ + args.increment) *>
@@ -81,11 +82,10 @@ class LifecycleSpec extends CatsEffectSuite:
         acquiredRef.set(true).as(counterRef)
       )(_ => IO.unit)
 
-      toolResource = McpLifecycleTool.noArgs[IO, Ref[IO, Int]](
-        "getValue",
-        "Get current value",
+      toolResource = McpLifecycleTool(
+        Tool("getValue").withDescription("Get current value"),
         managedResource
-      ): counter =>
+      ): (_, counter) =>
         counter.get.map(v => ToolResult.text(s"Value: $v"))
 
       _ <- toolResource.use: tools =>
@@ -99,8 +99,8 @@ class LifecycleSpec extends CatsEffectSuite:
   }
 
   test("McpLifecycleTool.combine combines multiple lifecycle tools") {
-    case class IncrementArgs(value: Int) derives ToolInput
-    case class MultiplyArgs(value: Int) derives ToolInput
+    case class IncrementArgs(value: Int) derives Schema
+    case class MultiplyArgs(value: Int) derives Schema
 
     for
       counterRef    <- Ref.of[IO, Int](0)
@@ -109,17 +109,15 @@ class LifecycleSpec extends CatsEffectSuite:
       counterResource    = CatsResource.pure[IO, Ref[IO, Int]](counterRef)
       multiplierResource = CatsResource.pure[IO, Ref[IO, Int]](multiplierRef)
 
-      tool1 = McpLifecycleTool[IO, IncrementArgs, Ref[IO, Int]](
-        "increment",
-        "Increment",
+      tool1 = McpLifecycleTool(
+        Tool("increment").withDescription("Increment").input[IncrementArgs],
         counterResource
       ): (args, counter) =>
         counter.update(_ + args.value) *>
           counter.get.map(v => ToolResult.text(s"$v"))
 
-      tool2 = McpLifecycleTool[IO, MultiplyArgs, Ref[IO, Int]](
-        "multiply",
-        "Multiply",
+      tool2 = McpLifecycleTool(
+        Tool("multiply").withDescription("Multiply").input[MultiplyArgs],
         multiplierResource
       ): (args, mult) =>
         mult.get.map(m => ToolResult.text(s"${args.value * m}"))
@@ -139,22 +137,21 @@ class LifecycleSpec extends CatsEffectSuite:
   }
 
   test("McpLifecycleTool.combineWith combines lifecycle and static tools") {
-    case class IncrementArgs(value: Int) derives ToolInput
+    case class IncrementArgs(value: Int) derives Schema
 
     for
       counterRef <- Ref.of[IO, Int](0)
       counterResource = CatsResource.pure[IO, Ref[IO, Int]](counterRef)
 
-      lifecycleTool = McpLifecycleTool[IO, IncrementArgs, Ref[IO, Int]](
-        "increment",
-        "Increment counter",
+      lifecycleTool = McpLifecycleTool(
+        Tool("increment").withDescription("Increment counter").input[IncrementArgs],
         counterResource
       ): (args, counter) =>
         counter.update(_ + args.value) *>
           counter.get.map(v => ToolResult.text(s"$v"))
 
-      staticTool = McpTool.pureText[IO, CalcArgs]("add", "Add numbers") { args =>
-        TestNum.str(args.a + args.b)
+      staticTool = Tool("add").withDescription("Add numbers").input[CalcArgs].handle[IO] { args =>
+        IO.pure(ok(TestNum.str(args.a + args.b)))
       }
 
       combined = McpLifecycleTool.combineWith[IO](lifecycleTool, staticTool)
@@ -182,7 +179,7 @@ class LifecycleSpec extends CatsEffectSuite:
         acquiredRef
           .set(true)
           .as(
-            McpTool.pureTextNoArgs[IO]("test", "Test tool")("result")
+            Tool("test").withDescription("Test tool").handle[IO](_ => IO.pure(ok("result")))
           )
       )(_ => releasedRef.set(true))
 
@@ -242,7 +239,7 @@ class LifecycleSpec extends CatsEffectSuite:
   test("Server can be wrapped in pure resource") {
     val server = Server.fromTools[IO](
       ServerInfo("test", "1.0.0"),
-      McpTool.pureTextNoArgs[IO]("test", "Test")("result")
+      Tool("test").withDescription("Test").handle[IO](_ => IO.pure(ok("result")))
     )
 
     server.asResource.use: s =>

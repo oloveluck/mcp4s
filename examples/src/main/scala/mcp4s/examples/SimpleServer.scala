@@ -18,17 +18,15 @@ package mcp4s.examples
 
 import cats.effect.{IO, IOApp}
 import mcp4s.protocol.*
+import mcp4s.schema.Schema
 import mcp4s.server.*
-import mcp4s.server.mcp
-import mcp4s.server.mcp.{ok, user}
-import mcp4s.server.transport.*
 import org.typelevel.otel4s.trace.Tracer
 
 @description("Add two numbers")
 case class Add(
     @description("First number") a: Double,
     @description("Second number") b: Double
-) derives ToolInput
+) derives Schema
 
 /** Simple MCP server without auth for conformance testing.
   *
@@ -36,19 +34,22 @@ case class Add(
   */
 object SimpleServer extends IOApp.Simple:
 
+  import mcp4s.server.dsl.*
+
   val tools: Tools[IO] =
-    mcp.Tool[IO, Add]: args =>
+    Tool.from[Add].handle[IO] { args =>
       IO.pure(ok(s"Result: ${args.a + args.b}"))
+    }
 
   val resources: Resources[IO] =
-    mcp.Resource.text[IO]("test://readme", "Test readme") {
+    Resource.text[IO]("test://readme", "Test readme") {
       "This is a simple test server for conformance testing."
     }
 
   val prompts: Prompts[IO] =
-    mcp.Prompt.withDesc[IO]("test-prompt", "A test prompt", "A simple test prompt")(
-      user("Hello from test prompt")
-    )
+    Prompt("test-prompt")
+      .withDescription("A test prompt")
+      .static[IO](messages("A simple test prompt")(user("Hello from test prompt")))
 
   val server: Server[IO] = Server.from[IO](
     info = ServerInfo("simple-server", "1.0.0"),
@@ -59,6 +60,5 @@ object SimpleServer extends IOApp.Simple:
 
   def run: IO[Unit] =
     given Tracer[IO] = Tracer.noop[IO]
-    val httpConfig   = HttpConfig[IO]()
     IO.println("Starting Simple MCP Server on http://localhost:3000") *>
-      HttpTransport.serve[IO](server, httpConfig).useForever
+      server.http().resource.useForever

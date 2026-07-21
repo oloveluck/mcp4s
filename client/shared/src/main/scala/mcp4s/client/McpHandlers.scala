@@ -52,22 +52,16 @@ object Samplings:
   def apply[F[_]: Concurrent](
       handler: CreateMessageParams => F[CreateMessageResult]
   ): Samplings[F] =
-    new Samplings[F]:
-      def handle(params: CreateMessageParams): OptionT[F, CreateMessageResult] =
-        OptionT.liftF(handler(params))
+    params => OptionT.liftF(handler(params))
 
   /** Create an empty sampling handler that handles nothing. */
   def empty[F[_]: Applicative]: Samplings[F] =
-    new Samplings[F]:
-      def handle(params: CreateMessageParams): OptionT[F, CreateMessageResult] =
-        OptionT.none[F, CreateMessageResult]
+    _ => OptionT.none[F, CreateMessageResult]
 
   /** Semigroup instance that combines handlers by trying each in order. */
   given [F[_]: Concurrent]: Semigroup[Samplings[F]] with
     def combine(x: Samplings[F], y: Samplings[F]): Samplings[F] =
-      new Samplings[F]:
-        def handle(params: CreateMessageParams): OptionT[F, CreateMessageResult] =
-          x.handle(params).orElse(y.handle(params))
+      params => x.handle(params).orElse(y.handle(params))
 
 /** Composable elicitation handler for server-initiated user input requests.
   *

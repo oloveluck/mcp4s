@@ -22,8 +22,11 @@ import io.circe.*
 import io.circe.syntax.*
 import mcp4s.protocol.*
 import munit.CatsEffectSuite
+import mcp4s.server.TestSyntax.*
 
 class McpToolSpec extends CatsEffectSuite:
+
+  import mcp4s.server.dsl.*
 
   private val minimalCtx =
     ToolContext.minimal[IO](SamplingRequester.unsupported[IO], RequestId.NullId)
@@ -31,16 +34,16 @@ class McpToolSpec extends CatsEffectSuite:
   case class CalcArgs(
       @description("First number") a: Double,
       @description("Second number") b: Double
-  ) derives ToolInput
+  ) derives Schema
 
-  // === McpTool composition Tests ===
+  // === Tool composition Tests ===
 
-  test("McpTool values compose with |+|") {
-    val add = McpTool[IO, CalcArgs]("add", "Add") { args =>
+  test("Tool values compose with |+|") {
+    val add = Tool("add").withDescription("Add").input[CalcArgs].handle[IO] { args =>
       IO.pure(ToolResult.text(TestNum.str(args.a + args.b)))
     }
 
-    val subtract = McpTool[IO, CalcArgs]("subtract", "Subtract") { args =>
+    val subtract = Tool("subtract").withDescription("Subtract").input[CalcArgs].handle[IO] { args =>
       IO.pure(ToolResult.text(TestNum.str(args.a - args.b)))
     }
 
@@ -60,8 +63,8 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpTool.noArgs creates tool with empty schema") {
-    val ping = McpTool.noArgs[IO]("ping", "Ping") {
+  test("no-input tool advertises the empty object schema") {
+    val ping = Tool("ping").withDescription("Ping").handle[IO] { _ =>
       IO.pure(ToolResult.text("pong"))
     }
 
@@ -73,18 +76,18 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === McpTool with ToolInput ===
+  // === Tool with derived Schema ===
 
-  case class ReadArgs(@description("File path") path: String) derives ToolInput
+  case class ReadArgs(@description("File path") path: String) derives Schema
 
-  test("McpTool.annotated creates tool with annotations") {
-    val readTool = McpTool.annotated[IO, ReadArgs](
-      "read",
-      "Read data",
-      ToolAnnotations.readOnly()
-    ) { args =>
-      IO.pure(ToolResult.text(s"data from ${args.path}"))
-    }
+  test("withAnnotations creates tool with annotations") {
+    val readTool = Tool("read")
+      .withDescription("Read data")
+      .input[ReadArgs]
+      .withAnnotations(ToolAnnotations.readOnly())
+      .handle[IO] { args =>
+        IO.pure(ToolResult.text(s"data from ${args.path}"))
+      }
 
     for
       tools <- readTool.list
@@ -93,8 +96,8 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpTool works with derived ToolInput") {
-    val add = McpTool[IO, CalcArgs]("add", "Add") { args =>
+  test("Tool works with derived Schema") {
+    val add = Tool("add").withDescription("Add").input[CalcArgs].handle[IO] { args =>
       IO.pure(ToolResult.text(TestNum.str(args.a + args.b)))
     }
 
@@ -107,10 +110,10 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === McpTool with typed output ===
+  // === Tool with typed output ===
 
-  test("McpTool.typed creates tool with output schema") {
-    val add = McpTool.typed[IO, CalcArgs, Double]("add", "Add") { args =>
+  test("output[B] creates tool with output schema") {
+    val add = Tool("add").withDescription("Add").input[CalcArgs].output[Double].handle[IO] { args =>
       IO.pure(args.a + args.b)
     }
 
@@ -127,15 +130,13 @@ class McpToolSpec extends CatsEffectSuite:
   // === Declarative Server.from Tests ===
 
   test("Server.from creates server from composed parts") {
-    val add = McpTool[IO, CalcArgs]("add", "Add") { args =>
+    val add = Tool("add").withDescription("Add").input[CalcArgs].handle[IO] { args =>
       IO.pure(ToolResult.text(TestNum.str(args.a + args.b)))
     }
 
-    val readme = McpResource[IO]("test://readme", "README")("Hello world")
+    val readme = Resource.text[IO]("test://readme", "README")("Hello world")
 
-    val greeting = McpPrompt.noArgs[IO]("greet", "Greet") {
-      IO.pure(GetPromptResult(None, List(PromptMessage(Role.User, TextContent("Hi")))))
-    }
+    val greeting = Prompt("greet").withDescription("Greet").messages[IO](user("Hi"))
 
     val server = Server.from[IO](
       info = ServerInfo("test", "1.0.0"),
@@ -156,16 +157,16 @@ class McpToolSpec extends CatsEffectSuite:
       content <- server.readResource("test://readme")
       _ = assertEquals(content.text, Some("Hello world"))
       prompt <- server.getPrompt("greet", Map.empty)
-      _ = assertEquals(prompt.messages.head.content.asInstanceOf[TextContent].text, "Hi")
+      _ = assertEquals(textOf(prompt.messages.head.content), "Hi")
     yield ()
   }
 
   test("Server.fromTools composes multiple tools with |+|") {
-    val add = McpTool[IO, CalcArgs]("add", "Add") { args =>
+    val add = Tool("add").withDescription("Add").input[CalcArgs].handle[IO] { args =>
       IO.pure(ToolResult.text(TestNum.str(args.a + args.b)))
     }
 
-    val mul = McpTool[IO, CalcArgs]("multiply", "Multiply") { args =>
+    val mul = Tool("multiply").withDescription("Multiply").input[CalcArgs].handle[IO] { args =>
       IO.pure(ToolResult.text(TestNum.str(args.a * args.b)))
     }
 
@@ -189,11 +190,7 @@ class McpToolSpec extends CatsEffectSuite:
       info = ServerInfo("test", "1.0.0"),
       tools = Tools.empty[IO]
     )
-    for
-      result <- server.callTool("nonexistent", Json.obj()).attempt
-      _ = assert(result.isLeft)
-      _ = assert(result.left.exists(_.isInstanceOf[McpError.ToolNotFound]))
-    yield ()
+    interceptIO[McpError.ToolNotFound](server.callTool("nonexistent", Json.obj())).void
   }
 
   test("Server.from raises ResourceNotFound for unknown resource") {
@@ -203,11 +200,7 @@ class McpToolSpec extends CatsEffectSuite:
       resources = Resources.empty[IO],
       prompts = Prompts.empty[IO]
     )
-    for
-      result <- server.readResource("test://unknown").attempt
-      _ = assert(result.isLeft)
-      _ = assert(result.left.exists(_.isInstanceOf[McpError.ResourceNotFound]))
-    yield ()
+    interceptIO[McpError.ResourceNotFound](server.readResource("test://unknown")).void
   }
 
   test("Server.from raises PromptNotFound for unknown prompt") {
@@ -217,20 +210,16 @@ class McpToolSpec extends CatsEffectSuite:
       resources = Resources.empty[IO],
       prompts = Prompts.empty[IO]
     )
-    for
-      result <- server.getPrompt("unknown", Map.empty).attempt
-      _ = assert(result.isLeft)
-      _ = assert(result.left.exists(_.isInstanceOf[McpError.PromptNotFound]))
-    yield ()
+    interceptIO[McpError.PromptNotFound](server.getPrompt("unknown", Map.empty)).void
   }
 
   // === Pure Helper Method Tests ===
 
-  test("McpTool.pureText creates tool with pure string handler") {
-    case class EchoArgs(message: String) derives ToolInput
+  test("pure string handlers via ok(...)") {
+    case class EchoArgs(message: String) derives Schema
 
-    val echo = McpTool.pureText[IO, EchoArgs]("echo", "Echo input") { args =>
-      s"Echo: ${args.message}"
+    val echo = Tool("echo").withDescription("Echo input").input[EchoArgs].handle[IO] { args =>
+      IO.pure(ok(s"Echo: ${args.message}"))
     }
 
     val json = Json.obj("message" -> Json.fromString("hello"))
@@ -240,9 +229,9 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpTool.pureTextNoArgs creates no-arg tool with pure result") {
-    val version = McpTool.pureTextNoArgs[IO]("version", "Get version") {
-      "1.0.0"
+  test("no-arg tool with pure result") {
+    val version = Tool("version").withDescription("Get version").handle[IO] { _ =>
+      IO.pure(ok("1.0.0"))
     }
 
     for
@@ -262,9 +251,9 @@ class McpToolSpec extends CatsEffectSuite:
     assertEquals(result.description, None)
     assertEquals(result.messages.size, 2)
     assertEquals(result.messages(0).role, Role.User)
-    assertEquals(result.messages(0).content.asInstanceOf[TextContent].text, "Hello")
+    assertEquals(textOf(result.messages(0).content), "Hello")
     assertEquals(result.messages(1).role, Role.Assistant)
-    assertEquals(result.messages(1).content.asInstanceOf[TextContent].text, "Hi there")
+    assertEquals(textOf(result.messages(1).content), "Hi there")
   }
 
   test("PromptResult with description") {
@@ -317,16 +306,17 @@ class McpToolSpec extends CatsEffectSuite:
 
   // === Context-Aware Tool Composition Tests ===
 
-  test("McpTool.withContext returns Tools for composition") {
-    case class QueryArgs(query: String) derives ToolInput
+  test("handleWith returns Tools for composition") {
+    case class QueryArgs(query: String) derives Schema
 
-    val regular = McpTool.pureText[IO, CalcArgs]("add", "Add") { args =>
-      TestNum.str(args.a + args.b)
+    val regular = Tool("add").withDescription("Add").input[CalcArgs].handle[IO] { args =>
+      IO.pure(ok(TestNum.str(args.a + args.b)))
     }
 
-    val contextAware = McpTool.withContext[IO, QueryArgs]("smart", "Smart") { (args, _) =>
-      IO.pure(ToolResult.text(s"Query: ${args.query}"))
-    }
+    val contextAware =
+      Tool("smart").withDescription("Smart").input[QueryArgs].handleWith[IO] { (args, _) =>
+        IO.pure(ToolResult.text(s"Query: ${args.query}"))
+      }
 
     // Should compile: regular and context tools compose together
     val combined = regular |+| contextAware
@@ -343,8 +333,8 @@ class McpToolSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpTool.withContextNoArgs works without typed args") {
-    val pingTool = McpTool.withContextNoArgs[IO]("ping", "Ping with context") { ctx =>
+  test("handleWith works without typed args") {
+    val pingTool = Tool("ping").withDescription("Ping with context").handleWith[IO] { (_, ctx) =>
       IO.pure(ToolResult.text(s"pong (request: ${ctx.requestId})"))
     }
 
@@ -354,5 +344,59 @@ class McpToolSpec extends CatsEffectSuite:
       result <- pingTool.call("ping", Json.obj(), minimalCtx).value
       _ = assert(result.isDefined)
       _ = assert(result.get.textContent.startsWith("pong"))
+    yield ()
+  }
+
+  // === Handler-table dispatch Tests ===
+
+  test("statically composed tools dispatch via the handler table, left winning on duplicates") {
+    val left  = Tool("dup").withDescription("Left").handle[IO](_ => IO.pure(ok("left")))
+    val right = Tool("dup").withDescription("Right").handle[IO](_ => IO.pure(ok("right")))
+    val other = Tool("other").withDescription("Other").handle[IO](_ => IO.pure(ok("other")))
+
+    val combined = left |+| right |+| other
+    assert(combined.handlers.isDefined, "static composition should build a handler table")
+
+    for
+      dup      <- combined.call("dup", Json.obj(), minimalCtx).value
+      distinct <- combined.call("other", Json.obj(), minimalCtx).value
+      missing  <- combined.call("nope", Json.obj(), minimalCtx).value
+      tools    <- combined.list
+      _ = assertEquals(dup.map(_.textContent), Some("left"))
+      _ = assertEquals(distinct.map(_.textContent), Some("other"))
+      _ = assertEquals(missing, None)
+      _ = assertEquals(tools.map(_.name), List("dup", "other"))
+    yield ()
+  }
+
+  test("a dynamic Tools instance disables the handler table but keeps first-match-wins") {
+    // A hand-rolled implementation (handlers = None), like tools resolved per call.
+    def dynamic(underlying: Tools[IO]): Tools[IO] = new Tools[IO]:
+      def list                                                 = underlying.list
+      def call(name: String, args: Json, ctx: ToolContext[IO]) = underlying.call(name, args, ctx)
+
+    val left  = Tool("dup").withDescription("Left").handle[IO](_ => IO.pure(ok("left")))
+    val right = Tool("dup").withDescription("Right").handle[IO](_ => IO.pure(ok("right")))
+
+    val mixed = dynamic(left) |+| right
+    assert(mixed.handlers.isEmpty, "a dynamic member should force the orElse scan")
+
+    for
+      result <- mixed.call("dup", Json.obj(), minimalCtx).value
+      _ = assertEquals(result.map(_.textContent), Some("left"))
+    yield ()
+  }
+
+  test("combined prompts prefer the left handler on duplicate names") {
+    val left  = Prompt("dup").withDescription("Left").messages[IO](user("from left"))
+    val right = Prompt("dup").withDescription("Right").messages[IO](user("from right"))
+
+    for
+      result <- (left |+| right).get("dup", Map.empty).value
+      _ = assert(result.isDefined)
+      _ = assertEquals(
+        textOf(result.get.messages.head.content),
+        "from left"
+      )
     yield ()
   }

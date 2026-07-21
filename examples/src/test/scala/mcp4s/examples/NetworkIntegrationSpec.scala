@@ -22,7 +22,7 @@ import com.comcast.ip4s.port
 import io.circe.Json
 import mcp4s.client.*
 import mcp4s.client.transport.*
-import mcp4s.examples.fixtures.*
+import mcp4s.testkit.*
 import mcp4s.protocol.*
 import mcp4s.server.*
 import mcp4s.server.transport.*
@@ -69,7 +69,7 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
       .build
       .flatMap: httpClient =>
         HttpClientTransport
-          .connect[IO](client, HttpClientConfig(s"http://localhost:$port"), httpClient)
+          .connect[IO](client, HttpTransportConfig(s"http://localhost:$port/mcp"), httpClient)
 
   /** HTTP connection with http4s Retry middleware for high-load tests */
   def resilientHttpConnection(
@@ -83,21 +83,21 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
       .flatMap: httpClient =>
         val retryPolicy = Http4sRetryPolicy[IO](
           backoff = Http4sRetryPolicy.exponentialBackoff(maxWait = 1.second, maxRetry = 5),
-          retriable = { (_, result) =>
+          retriable = (_, result) =>
             result match
               case Left(_: java.io.IOException) => true
               case _                            => false
-          }
         )
         val resilientClient = Retry(retryPolicy)(httpClient)
         HttpClientTransport
-          .connect[IO](client, HttpClientConfig(s"http://localhost:$port"), resilientClient)
+          .connect[IO](client, HttpTransportConfig(s"http://localhost:$port/mcp"), resilientClient)
 
   def wsConnection(
       client: McpClient[IO],
       port: Int
   ): Resource[IO, McpConnection[IO]] =
-    WebSocketClientTransport.connect[IO](client, WebSocketClientConfig(s"ws://localhost:$port"))
+    WebSocketClientTransport
+      .connect[IO](client, WebSocketTransportConfig(s"ws://localhost:$port/ws"))
 
   // ============================================================================
   // CATEGORY 1: PROTOCOL COMPLIANCE
@@ -922,18 +922,17 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
               // Use a custom retriable that retries on connection-level exceptions (MCP uses POST)
               val retryPolicy = Http4sRetryPolicy[IO](
                 backoff = Http4sRetryPolicy.exponentialBackoff(maxWait = 1.second, maxRetry = 5),
-                retriable = { (_, result) =>
+                retriable = (_, result) =>
                   result match
                     case Left(_: java.io.IOException) => true
                     case _                            => false
-                }
               )
               val resilientClient = Retry(retryPolicy)(rawHttpClient)
 
               HttpClientTransport
                 .connect[IO](
                   simpleClient,
-                  HttpClientConfig(s"http://localhost:${server.address.getPort}"),
+                  HttpTransportConfig(s"http://localhost:${server.address.getPort}/mcp"),
                   resilientClient
                 )
                 .use: conn =>
@@ -941,4 +940,76 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
                       .callTool("add", Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2)))
                   yield assertEquals(result.isError.getOrElse(false), false)
     }
+  }
+
+  // ============================================================================
+  // CATEGORY 7: BIDIRECTIONAL (server-initiated requests back to the client)
+  // ============================================================================
+
+  /** A server whose tool asks the client for an LLM completion via sampling. */
+  def samplingServer: Server[IO] =
+    import mcp4s.server.dsl.*
+    case class AskArgs(question: String) derives Schema
+    val ask =
+      Tool("ask").withDescription("Ask the LLM via sampling").input[AskArgs].handleWith[IO] {
+        (args, ctx) =>
+          ctx.sampling
+            .createMessage(
+              CreateMessageParams(
+                messages = List(SamplingMessage(Role.User, SamplingTextContent(args.question))),
+                maxTokens = 100
+              )
+            )
+            .map { result =>
+              result.content match
+                case SamplingTextContent(text) => ok(text)
+                case _                         => error("unexpected content")
+            }
+      }
+    Server.fromTools[IO](ServerInfo("sampling-server", "1.0.0"), ask)
+
+  /** A server whose tool elicits structured input from the client. */
+  def elicitingServer: Server[IO] =
+    import mcp4s.server.dsl.*
+    val confirm =
+      Tool("confirm").withDescription("Confirm via elicitation").handleWith[IO] { (_, ctx) =>
+        ctx.elicitation
+          .elicit(ElicitFormParams("Please confirm", JsonSchema.empty))
+          .map(result => ok(s"action=${result.action}"))
+      }
+    Server.fromTools[IO](ServerInfo("eliciting-server", "1.0.0"), confirm)
+
+  test("Bidirectional: HTTP client answers a server-initiated sampling request") {
+    httpServerResource(samplingServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
+        for result <- conn.callTool("ask", Json.obj("question" -> Json.fromString("2+2?")))
+        yield
+          assertEquals(result.isError.getOrElse(false), false)
+          assertEquals(result.textContent, "Echo: 2+2?")
+  }
+
+  test("Bidirectional: WebSocket client answers a server-initiated sampling request") {
+    wsServerResource(samplingServer).use: server =>
+      wsConnection(simpleClient, server.address.getPort).use: conn =>
+        for result <- conn.callTool("ask", Json.obj("question" -> Json.fromString("2+2?")))
+        yield
+          assertEquals(result.isError.getOrElse(false), false)
+          assertEquals(result.textContent, "Echo: 2+2?")
+  }
+
+  test("Bidirectional: HTTP client answers a server-initiated elicitation request") {
+    httpServerResource(elicitingServer).use: server =>
+      httpConnection(simpleClient, server.address.getPort).use: conn =>
+        for result <- conn.callTool("confirm", Json.obj())
+        yield
+          assertEquals(result.isError.getOrElse(false), false)
+          assert(result.textContent.toLowerCase.contains("accept"))
+  }
+
+  test("Bidirectional: sampling raises SamplingNotSupported when the client lacks the capability") {
+    val bareClient = McpClient.from[IO](ClientInfo("bare", "1.0.0"))
+    httpServerResource(samplingServer).use: server =>
+      httpConnection(bareClient, server.address.getPort).use: conn =>
+        for result <- conn.callTool("ask", Json.obj("question" -> Json.fromString("x"))).attempt
+        yield assert(result.isLeft || result.exists(_.isError.getOrElse(false)))
   }

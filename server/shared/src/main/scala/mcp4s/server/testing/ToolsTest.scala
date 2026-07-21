@@ -28,9 +28,9 @@ import mcp4s.server.{SamplingRequester, ToolContext, Tools}
   * Provides a convenient way to test tools in isolation.
   *
   * {{{
-  * import mcp4s.server.mcp.*
-  * case class AddArgs(a: Double, b: Double) derives ToolInput
-  * val tools = Tool[IO, AddArgs]("add", "Add") { args =>
+  * import mcp4s.server.dsl.*
+  * case class AddArgs(a: Double, b: Double) derives Schema
+  * val tools = Tool.from[AddArgs].withDescription("Add").handle[IO] { args =>
   *   IO.pure(ToolResult.text(s"${args.a + args.b}"))
   * }
   *
@@ -82,7 +82,7 @@ object ToolsTest:
     def assertTool(name: String): F[Tool] =
       getTool(name).flatMap {
         case Some(tool) => Concurrent[F].pure(tool)
-        case None =>
+        case None       =>
           Concurrent[F].raiseError(
             new AssertionError(s"Expected tool '$name' to exist")
           )

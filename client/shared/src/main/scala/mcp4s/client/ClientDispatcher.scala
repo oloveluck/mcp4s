@@ -61,8 +61,8 @@ object ClientDispatcher:
 
     private def handleNotification(notif: JsonRpcNotification): F[Unit] =
       notif.method match
-        case McpMethod.Cancelled => Concurrent[F].unit
-        case McpMethod.Progress  => Concurrent[F].unit
+        case McpMethod.Cancelled           => Concurrent[F].unit
+        case McpMethod.Progress            => Concurrent[F].unit
         case McpMethod.ElicitationComplete =>
           notif.params.flatMap(_.as[ElicitationCompleteParams].toOption) match
             case Some(params) => client.onElicitationComplete(params)

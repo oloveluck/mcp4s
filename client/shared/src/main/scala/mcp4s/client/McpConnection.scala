@@ -34,8 +34,10 @@ import mcp4s.protocol.Codecs.given
   *   - List and read resources
   *   - List and get prompts
   *
-  * Connections are created via transport-specific methods like
-  * [[mcp4s.transport.http.HttpClientTransport.connect]].
+  * Connections are created via the transport verbs on [[McpClient]]/`McpClientBuilder` —
+  * `client.stdio(...)`, `client.http(...)`, and (JVM, `import mcp4s.client.syntax.*`)
+  * `client.webSocket(...)` — or directly via a transport object such as
+  * [[mcp4s.client.transport.HttpClientTransport]].
   */
 trait McpConnection[F[_]]:
 
@@ -206,23 +208,27 @@ trait McpConnection[F[_]]:
 
 object McpConnection:
 
+  /** @param nextId
+    *   allocator for fresh request ids — the connection's single id source (shared with the
+    *   handshake via [[mcp4s.RequestCorrelator.nextId]] so ids are never reused)
+    */
   def apply[F[_]: Concurrent](
       serverInfo: ServerInfo,
       serverCapabilities: ServerCapabilities,
+      nextId: F[RequestId],
       sendRequest: JsonRpcRequest => F[Json],
       sendNotification: JsonRpcNotification => F[Unit],
       tracer: Tracer[F]
   ): F[McpConnection[F]] =
     for
-      requestIdGen     <- Ref.of[F, Long](0L)
       inFlightRequests <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
       progressHandlers <- Ref.of[F, Map[RequestId, ProgressParams => F[Unit]]](Map.empty)
     yield new Impl[F](
       serverInfo,
       serverCapabilities,
+      nextId,
       sendRequest,
       sendNotification,
-      requestIdGen,
       inFlightRequests,
       tracer,
       progressHandlers
@@ -231,22 +237,19 @@ object McpConnection:
   private class Impl[F[_]: Concurrent](
       val serverInfo: ServerInfo,
       val serverCapabilities: ServerCapabilities,
+      nextId: F[RequestId],
       sendRequest: JsonRpcRequest => F[Json],
       sendNotification: JsonRpcNotification => F[Unit],
-      requestIdGen: Ref[F, Long],
       inFlightRequests: Ref[F, Map[RequestId, Deferred[F, Unit]]],
       tracer: Tracer[F],
       val progressHandlers: Ref[F, Map[RequestId, ProgressParams => F[Unit]]]
   ) extends McpConnection[F]:
 
-    private def nextId: F[RequestId] =
-      requestIdGen.getAndUpdate(_ + 1).map(n => RequestId.NumberId(n + 1))
-
     private def cancelAndNotify(reqId: RequestId): F[Unit] =
       for
         tokenOpt <- inFlightRequests.get.map(_.get(reqId))
         _        <- tokenOpt.traverse_(_.complete(()).void.handleErrorWith(_ => Concurrent[F].unit))
-        _ <- sendNotification(
+        _        <- sendNotification(
           JsonRpcNotification(
             McpMethod.Cancelled,
             Some(CancelledParams(reqId, Some("Fiber cancelled")).asJson)
@@ -269,11 +272,9 @@ object McpConnection:
             cancelToken <- Deferred[F, Unit]
             _           <- inFlightRequests.update(_ + (reqId -> cancelToken))
             // Inject _meta.progressToken when progress callback is provided
-            finalParams = onProgress match
-              case Some(_) =>
-                params.deepMerge(Json.obj("_meta" -> Json.obj("progressToken" -> reqId.asJson)))
-              case None => params
-            _ <- onProgress.traverse_(_ => progressHandlers.update(_ + (reqId -> onProgress.get)))
+            finalParams = onProgress.fold(params): _ =>
+              params.deepMerge(Json.obj("_meta" -> Json.obj("progressToken" -> reqId.asJson)))
+            _ <- onProgress.traverse_(cb => progressHandlers.update(_ + (reqId -> cb)))
             req = JsonRpcRequest(reqId, method, Some(finalParams))
             result <- Concurrent[F]
               .race(
@@ -450,32 +451,10 @@ object McpConnection:
       for
         tokenOpt <- inFlightRequests.get.map(_.get(requestId))
         _        <- tokenOpt.traverse_(_.complete(()).void.handleErrorWith(_ => Concurrent[F].unit))
-        _ <- sendNotification(
+        _        <- sendNotification(
           JsonRpcNotification(
             McpMethod.Cancelled,
             Some(CancelledParams(requestId, reason).asJson)
           )
         )
       yield ()
-
-/** Streaming extensions for McpConnection.
-  *
-  * These methods return fs2 Streams that emit results incrementally, which is useful for
-  * long-running operations and large data transfers.
-  */
-trait McpStreamingConnection[F[_]] extends McpConnection[F]:
-  import fs2.Stream
-
-  /** Call a tool and receive streaming results.
-    *
-    * Returns a stream that emits ToolResult chunks as they arrive. Useful for long-running tools or
-    * tools that produce large outputs.
-    */
-  def callToolStreaming[A: io.circe.Encoder](name: ToolName, arguments: A): Stream[F, ToolResult]
-
-  /** Read a resource with streaming content.
-    *
-    * Returns a stream that emits ResourceContent chunks as they arrive. Useful for large resources
-    * that benefit from incremental loading.
-    */
-  def readResourceStreaming(uri: ResourceUri): Stream[F, ResourceContent]

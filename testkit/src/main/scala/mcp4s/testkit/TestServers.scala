@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 
-package mcp4s.examples.fixtures
+package mcp4s.testkit
 
 import cats.effect.{Async, Ref, Temporal}
 import cats.syntax.all.*
 import io.circe.Json
 import mcp4s.protocol.*
-import mcp4s.protocol.{Resource => McpResource}
+import mcp4s.protocol.Resource as McpResource
 import mcp4s.server.*
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration.*
 
@@ -34,31 +35,6 @@ import scala.concurrent.duration.*
   *   - Random chaos
   */
 object TestServers:
-
-  /** Wrap a server to add configurable delay to all tool calls.
-    *
-    * @param base
-    *   The server to wrap
-    * @param delay
-    *   Delay to add before each tool call completes
-    */
-  def delaying[F[_]: Temporal](base: Server[F], delay: FiniteDuration): Server[F] =
-    new Server[F]:
-      val info: ServerInfo                 = base.info
-      val capabilities: ServerCapabilities = base.capabilities
-
-      def listTools: F[List[Tool]] = base.listTools
-      def callTool(name: String, arguments: Json): F[ToolResult] =
-        Temporal[F].sleep(delay) *> base.callTool(name, arguments)
-
-      def listResources: F[List[McpResource]]              = base.listResources
-      def listResourceTemplates: F[List[ResourceTemplate]] = base.listResourceTemplates
-      def readResource(uri: String): F[ResourceContent] =
-        Temporal[F].sleep(delay) *> base.readResource(uri)
-
-      def listPrompts: F[List[Prompt]] = base.listPrompts
-      def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult] =
-        Temporal[F].sleep(delay) *> base.getPrompt(name, arguments)
 
   /** Wrap a server to fail tool calls after N successful calls.
     *
@@ -151,43 +127,6 @@ object TestServers:
 
       (server, getCounts)
 
-  /** Wrap a server with random failures (chaos testing).
-    *
-    * @param base
-    *   The server to wrap
-    * @param failureRate
-    *   Probability of failure (0.0 to 1.0)
-    * @param seed
-    *   Optional random seed for reproducibility
-    */
-  def chaotic[F[_]: Async](
-      base: Server[F],
-      failureRate: Double,
-      seed: Option[Long] = None
-  ): F[Server[F]] =
-    val random = seed.fold(new scala.util.Random())(new scala.util.Random(_))
-    Async[F].pure(new Server[F]:
-      val info: ServerInfo                 = base.info
-      val capabilities: ServerCapabilities = base.capabilities
-
-      private def mayFail[A](fa: F[A]): F[A] =
-        Async[F]
-          .delay(random.nextDouble())
-          .flatMap: r =>
-            if r < failureRate then Async[F].raiseError(new RuntimeException("Chaos failure"))
-            else fa
-
-      def listTools: F[List[Tool]] = mayFail(base.listTools)
-      def callTool(name: String, arguments: Json): F[ToolResult] =
-        mayFail(base.callTool(name, arguments))
-      def listResources: F[List[McpResource]]              = mayFail(base.listResources)
-      def listResourceTemplates: F[List[ResourceTemplate]] = mayFail(base.listResourceTemplates)
-      def readResource(uri: String): F[ResourceContent]    = mayFail(base.readResource(uri))
-      def listPrompts: F[List[Prompt]]                     = mayFail(base.listPrompts)
-      def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult] =
-        mayFail(base.getPrompt(name, arguments))
-    )
-
   /** Wrap a server with jittered response delays (chaos testing).
     *
     * @param base
@@ -202,31 +141,30 @@ object TestServers:
       minDelay: FiniteDuration,
       maxDelay: FiniteDuration
   ): F[Server[F]] =
-    val random = new scala.util.Random()
-    Async[F].pure(new Server[F]:
-      val info: ServerInfo                 = base.info
-      val capabilities: ServerCapabilities = base.capabilities
+    cats.effect.std.Random
+      .scalaUtilRandom[F]
+      .map(random =>
+        new Server[F]:
+          val info: ServerInfo                 = base.info
+          val capabilities: ServerCapabilities = base.capabilities
 
-      private def randomDelay: F[Unit] =
-        Async[F]
-          .delay {
-            val range   = (maxDelay - minDelay).toMillis
-            val delayMs = minDelay.toMillis + random.nextLong(range.max(1))
-            delayMs.millis
-          }
-          .flatMap(Temporal[F].sleep)
+          private def randomDelay: F[Unit] =
+            val range = (maxDelay - minDelay).toMillis
+            random
+              .betweenLong(minDelay.toMillis, minDelay.toMillis + range.max(1))
+              .flatMap(delayMs => Temporal[F].sleep(delayMs.millis))
 
-      def listTools: F[List[Tool]] = randomDelay *> base.listTools
-      def callTool(name: String, arguments: Json): F[ToolResult] =
-        randomDelay *> base.callTool(name, arguments)
-      def listResources: F[List[McpResource]] = randomDelay *> base.listResources
-      def listResourceTemplates: F[List[ResourceTemplate]] =
-        randomDelay *> base.listResourceTemplates
-      def readResource(uri: String): F[ResourceContent] = randomDelay *> base.readResource(uri)
-      def listPrompts: F[List[Prompt]]                  = randomDelay *> base.listPrompts
-      def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult] =
-        randomDelay *> base.getPrompt(name, arguments)
-    )
+          def listTools: F[List[Tool]]                               = randomDelay *> base.listTools
+          def callTool(name: String, arguments: Json): F[ToolResult] =
+            randomDelay *> base.callTool(name, arguments)
+          def listResources: F[List[McpResource]]              = randomDelay *> base.listResources
+          def listResourceTemplates: F[List[ResourceTemplate]] =
+            randomDelay *> base.listResourceTemplates
+          def readResource(uri: String): F[ResourceContent] = randomDelay *> base.readResource(uri)
+          def listPrompts: F[List[Prompt]]                  = randomDelay *> base.listPrompts
+          def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult] =
+            randomDelay *> base.getPrompt(name, arguments)
+      )
 
   /** Create a simple test server with basic tools, resources, and prompts.
     *
@@ -301,7 +239,7 @@ object TestServers:
     )
 
     new Server[F]:
-      val info: ServerInfo = ServerInfo("test-server", "1.0.0")
+      val info: ServerInfo                 = ServerInfo("test-server", "1.0.0")
       val capabilities: ServerCapabilities = ServerCapabilities(
         tools = Some(ToolsCapability()),
         resources = Some(ResourcesCapability()),
@@ -358,7 +296,7 @@ object TestServers:
               ResourceContent(
                 uri = "file:///binary.bin",
                 mimeType = Some("application/octet-stream"),
-                blob = Some(java.util.Base64.getEncoder.encodeToString(Array[Byte](0, 1, 2, 3)))
+                blob = Some(ByteVector(0, 1, 2, 3).toBase64)
               )
             )
           case other =>
@@ -380,24 +318,42 @@ object TestServers:
           case other =>
             Async[F].raiseError(McpError.PromptNotFound(other))
 
-  /** Create a server that supports tasks for async operations. */
-  def taskEnabled[F[_]: Async: Temporal]: Server[F] =
-    val base = simple[F]
+  /** [[simple]] plus a context-aware `count` tool that emits three `notifications/progress` before
+    * returning. Use this (with a `progressTool = ToolProbe("count")`) to exercise the
+    * progress-callback compliance check end-to-end.
+    */
+  def withProgress[F[_]: Async: Temporal]: Server[F] =
+    val base      = simple[F]
+    val countTool = Tool(
+      name = "count",
+      description = Some("Counts to 3, emitting a progress notification each step"),
+      inputSchema = JsonSchema.obj(Map.empty, Nil)
+    )
     new Server[F]:
-      val info: ServerInfo = base.info.copy(
-        name = "task-test-server",
-        description = Some("Server with task support")
-      )
-      val capabilities: ServerCapabilities = base.capabilities.copy(
-        tasks = Some(ServerTasksCapability())
-      )
+      val info: ServerInfo                 = base.info.copy(name = "test-progress-server")
+      val capabilities: ServerCapabilities = base.capabilities
 
-      def listTools: F[List[Tool]]                               = base.listTools
-      def callTool(name: String, arguments: Json): F[ToolResult] = base.callTool(name, arguments)
-      def listResources: F[List[mcp4s.protocol.Resource]]        = base.listResources
-      def listResourceTemplates: F[List[ResourceTemplate]]       = base.listResourceTemplates
-      def readResource(uri: String): F[ResourceContent]          = base.readResource(uri)
-      def listPrompts: F[List[Prompt]]                           = base.listPrompts
+      def listTools: F[List[Tool]] = base.listTools.map(_ :+ countTool)
+
+      def callTool(name: String, arguments: Json): F[ToolResult] =
+        if name == "count" then Async[F].pure(ToolResult.text("done"))
+        else base.callTool(name, arguments)
+
+      override def callToolWithContext(
+          name: String,
+          arguments: Json,
+          context: ToolContext[F]
+      ): F[ToolResult] =
+        if name == "count" then
+          context.progress(1, Some(3)) *>
+            context.progress(2, Some(3)) *>
+            context.progress(3, Some(3)).as(ToolResult.text("done"))
+        else base.callTool(name, arguments)
+
+      def listResources: F[List[McpResource]]              = base.listResources
+      def listResourceTemplates: F[List[ResourceTemplate]] = base.listResourceTemplates
+      def readResource(uri: String): F[ResourceContent]    = base.readResource(uri)
+      def listPrompts: F[List[Prompt]]                     = base.listPrompts
       def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult] =
         base.getPrompt(name, arguments)
 

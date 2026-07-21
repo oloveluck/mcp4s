@@ -38,9 +38,6 @@ trait Dispatcher[F[_]]:
 
 object Dispatcher:
 
-  /** JSON-RPC error code for cancelled requests */
-  private val CancelledErrorCode: Int = -32800
-
   /** Create a new dispatcher for the given server.
     *
     * @param server
@@ -48,11 +45,12 @@ object Dispatcher:
     * @param tracer
     *   Optional OpenTelemetry tracer for distributed tracing (defaults to noop)
     */
-  def apply[F[_]: Concurrent](server: Server[F])(using Tracer[F]): F[Dispatcher[F]] =
+  def apply[F[_]: Concurrent](server: Server[F])(using tracer: Tracer[F]): F[Dispatcher[F]] =
     for
-      stateRef    <- Ref.of[F, State](State.Uninitialized)
-      inFlightRef <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
-    yield new DispatcherImpl(server, stateRef, inFlightRef, None, summon[Tracer[F]])
+      stateRef     <- Ref.of[F, State](State.Uninitialized)
+      inFlightRef  <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
+      listCacheRef <- Ref.of[F, Map[String, (AnyRef, Json)]](Map.empty)
+    yield new DispatcherImpl(server, stateRef, inFlightRef, listCacheRef, None, tracer)
 
   /** Create a dispatcher with a ToolContext factory for context-aware tools.
     *
@@ -66,11 +64,19 @@ object Dispatcher:
   def withContext[F[_]: Concurrent](
       server: Server[F],
       contextFactory: (RequestId, Option[RequestId]) => ToolContext[F]
-  )(using Tracer[F]): F[Dispatcher[F]] =
+  )(using tracer: Tracer[F]): F[Dispatcher[F]] =
     for
-      stateRef    <- Ref.of[F, State](State.Uninitialized)
-      inFlightRef <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
-    yield new DispatcherImpl(server, stateRef, inFlightRef, Some(contextFactory), summon[Tracer[F]])
+      stateRef     <- Ref.of[F, State](State.Uninitialized)
+      inFlightRef  <- Ref.of[F, Map[RequestId, Deferred[F, Unit]]](Map.empty)
+      listCacheRef <- Ref.of[F, Map[String, (AnyRef, Json)]](Map.empty)
+    yield new DispatcherImpl(
+      server,
+      stateRef,
+      inFlightRef,
+      listCacheRef,
+      Some(contextFactory),
+      tracer
+    )
 
   private enum State:
     case Uninitialized
@@ -81,6 +87,7 @@ object Dispatcher:
       server: Server[F],
       stateRef: Ref[F, State],
       inFlightRequests: Ref[F, Map[RequestId, Deferred[F, Unit]]],
+      listCache: Ref[F, Map[String, (AnyRef, Json)]],
       contextFactory: Option[(RequestId, Option[RequestId]) => ToolContext[F]],
       tracer: Tracer[F]
   ) extends Dispatcher[F]:
@@ -106,7 +113,7 @@ object Dispatcher:
       (for
         cancelToken <- Deferred[F, Unit]
         _           <- inFlightRequests.update(_ + (req.id -> cancelToken))
-        result <- Concurrent[F]
+        result      <- Concurrent[F]
           .race(
             cancelToken.get,
             handleMethod(req.id, req.method, req.params.getOrElse(Json.obj()))
@@ -116,7 +123,7 @@ object Dispatcher:
         case Left(_) =>
           JsonRpcErrorResponse(
             req.id,
-            JsonRpcError(CancelledErrorCode, "Request cancelled", None)
+            JsonRpcError(JsonRpcErrorCode.RequestCancelled, "Request cancelled", None)
           )
         case Right(json) =>
           JsonRpcResponse(req.id, json)
@@ -149,102 +156,114 @@ object Dispatcher:
         case _ =>
           Concurrent[F].unit
 
+    /** Encode a list response, reusing the cached JSON while the source list is unchanged.
+      *
+      * Encoding tool/resource/prompt lists (circe derivation + `dropNullValues`) is the heaviest
+      * allocator on these endpoints, yet the lists are static between `list_changed` events. A
+      * static server therefore encodes once; a server that swaps its list re-encodes the new one
+      * (matched by value equality).
+      */
+    private def cachedListJson(key: String, source: AnyRef)(encode: => Json): F[Json] =
+      // The encode runs outside the Ref update: Ref.modify may re-evaluate its function
+      // under CAS contention, which would re-run the expensive encode. Concurrent misses
+      // may encode twice, but the result is identical either way.
+      listCache.get
+        .map(_.get(key))
+        .flatMap:
+          case Some((prev, json)) if prev == source => json.pure[F]
+          case _                                    =>
+            val json = encode
+            listCache.update(_.updated(key, (source, json))).as(json)
+
+    private def handleToolsCall(reqId: RequestId, params: Json): F[Json] =
+      val cursor = params.hcursor
+      for
+        name <- cursor.get[String]("name").liftTo[F]
+        args <- cursor.get[Option[Json]]("arguments").map(_.getOrElse(Json.obj())).liftTo[F]
+        progressToken = cursor.downField("_meta").downField("progressToken").as[RequestId].toOption
+        result <- contextFactory match
+          case Some(factory) =>
+            server.callToolWithContext(name, args, factory(reqId, progressToken))
+          case None => server.callTool(name, args)
+      yield result.asJson
+
+    private def handleResourcesRead(params: Json): F[Json] =
+      for
+        uri     <- params.hcursor.get[String]("uri").liftTo[F]
+        content <- server.readResource(uri)
+      yield Json.obj("contents" -> List(content).asJson)
+
+    private def handlePromptsGet(params: Json): F[Json] =
+      for
+        name   <- params.hcursor.get[String]("name").liftTo[F]
+        args   <- params.hcursor.get[Option[Map[String, String]]]("arguments").liftTo[F]
+        result <- server.getPrompt(name, args.getOrElse(Map.empty))
+      yield result.asJson
+
+    private val emptyCompletion: Json =
+      Json.obj(
+        "completion" -> Json.obj(
+          "values"  -> Json.arr(),
+          "total"   -> Json.fromInt(0),
+          "hasMore" -> Json.False
+        )
+      )
+
     private def handleMethod(reqId: RequestId, method: String, params: Json): F[Json] =
       method match
         case McpMethod.Initialize =>
           handleInitialize(params)
 
         case McpMethod.Ping =>
-          Concurrent[F].pure(Json.obj())
+          Json.obj().pure[F]
 
         case McpMethod.ToolsList =>
-          requireInitialized *> server.listTools.map: tools =>
-            Json.obj("tools" -> tools.asJson)
+          requireInitialized *> server.listTools.flatMap: tools =>
+            cachedListJson(McpMethod.ToolsList, tools)(Json.obj("tools" -> tools.asJson))
 
         case McpMethod.ToolsCall =>
-          requireInitialized *> {
-            val cursor = params.hcursor
-            for
-              name <- cursor.get[String]("name").liftTo[F]
-              args <- cursor.get[Option[Json]]("arguments").map(_.getOrElse(Json.obj())).liftTo[F]
-              progressToken = cursor
-                .downField("_meta")
-                .downField("progressToken")
-                .as[RequestId]
-                .toOption
-              result <- contextFactory match
-                case Some(factory) =>
-                  val ctx = factory(reqId, progressToken)
-                  server.callToolWithContext(name, args, ctx)
-                case None =>
-                  server.callTool(name, args)
-            yield result.asJson
-          }
+          requireInitialized *> handleToolsCall(reqId, params)
 
         case McpMethod.ResourcesList =>
-          requireInitialized *> server.listResources.map: resources =>
-            Json.obj("resources" -> resources.asJson)
+          requireInitialized *> server.listResources.flatMap: resources =>
+            cachedListJson(McpMethod.ResourcesList, resources)(
+              Json.obj("resources" -> resources.asJson)
+            )
 
         case McpMethod.ResourcesTemplatesList =>
-          requireInitialized *> server.listResourceTemplates.map: templates =>
-            Json.obj("resourceTemplates" -> templates.asJson)
+          requireInitialized *> server.listResourceTemplates.flatMap: templates =>
+            cachedListJson(McpMethod.ResourcesTemplatesList, templates)(
+              Json.obj("resourceTemplates" -> templates.asJson)
+            )
 
         case McpMethod.ResourcesRead =>
-          requireInitialized *> {
-            val cursor = params.hcursor
-            for
-              uri     <- cursor.get[String]("uri").liftTo[F]
-              content <- server.readResource(uri)
-            yield Json.obj("contents" -> List(content).asJson)
-          }
+          requireInitialized *> handleResourcesRead(params)
 
         case McpMethod.PromptsList =>
-          requireInitialized *> server.listPrompts.map: prompts =>
-            Json.obj("prompts" -> prompts.asJson)
+          requireInitialized *> server.listPrompts.flatMap: prompts =>
+            cachedListJson(McpMethod.PromptsList, prompts)(Json.obj("prompts" -> prompts.asJson))
 
         case McpMethod.PromptsGet =>
-          requireInitialized *> {
-            val cursor = params.hcursor
-            for
-              name   <- cursor.get[String]("name").liftTo[F]
-              args   <- cursor.get[Option[Map[String, String]]]("arguments").liftTo[F]
-              result <- server.getPrompt(name, args.getOrElse(Map.empty))
-            yield result.asJson
-          }
+          requireInitialized *> handlePromptsGet(params)
 
         case McpMethod.Shutdown =>
           stateRef.set(State.ShuttingDown).as(Json.obj())
 
+        // Accepted-but-no-op methods (acknowledged per spec).
         case McpMethod.LoggingSetLevel =>
-          requireInitialized *> {
-            params.hcursor.get[String]("level").liftTo[F].as(Json.obj())
-          }
+          requireInitialized *> params.hcursor.get[String]("level").liftTo[F].as(Json.obj())
 
         case McpMethod.ResourcesSubscribe =>
-          requireInitialized *> {
-            params.hcursor.get[String]("uri").liftTo[F].as(Json.obj())
-          }
+          requireInitialized *> params.hcursor.get[String]("uri").liftTo[F].as(Json.obj())
 
         case McpMethod.ResourcesUnsubscribe =>
-          requireInitialized *> {
-            params.hcursor.get[String]("uri").liftTo[F].as(Json.obj())
-          }
+          requireInitialized *> params.hcursor.get[String]("uri").liftTo[F].as(Json.obj())
 
         case McpMethod.CompletionComplete =>
-          requireInitialized *> {
-            Concurrent[F].pure(
-              Json.obj(
-                "completion" -> Json.obj(
-                  "values"  -> Json.arr(),
-                  "total"   -> Json.fromInt(0),
-                  "hasMore" -> Json.False
-                )
-              )
-            )
-          }
+          requireInitialized *> emptyCompletion.pure[F]
 
         case other =>
-          Concurrent[F].raiseError(McpError.MethodNotFound(other))
+          McpError.MethodNotFound(other).raiseError[F, Json]
 
     private def handleInitialize(params: Json): F[Json] =
       params
@@ -266,13 +285,13 @@ object Dispatcher:
               // notifications/initialized is informational.
               (State.Initialized, result.asJson.pure[F])
             case _ =>
-              (State.Initialized, Concurrent[F].raiseError[Json](McpError.AlreadyInitialized))
+              (State.Initialized, McpError.AlreadyInitialized.raiseError[F, Json])
           }.flatten
 
     private def requireInitialized: F[Unit] =
       stateRef.get.flatMap:
-        case State.Initialized => Concurrent[F].unit
+        case State.Initialized   => Concurrent[F].unit
         case State.Uninitialized =>
-          Concurrent[F].raiseError(McpError.NotInitialized)
+          McpError.NotInitialized.raiseError[F, Unit]
         case State.ShuttingDown =>
-          Concurrent[F].raiseError(McpError.InternalError("Server is shutting down"))
+          McpError.InternalError("Server is shutting down").raiseError[F, Unit]

@@ -55,7 +55,7 @@ class SessionManagerSpec extends CatsEffectSuite:
   test("SessionManager returns None for unknown session IDs") {
     for
       manager   <- SessionManager[IO](testServer)
-      retrieved <- manager.get("unknown-session-id")
+      retrieved <- manager.get(SessionId("unknown-session-id"))
       _ = assertEquals(retrieved, None)
     yield ()
   }
@@ -211,7 +211,7 @@ class SessionManagerSpec extends CatsEffectSuite:
   test("remove handles non-existent session gracefully") {
     for
       manager <- SessionManager[IO](testServer)
-      _       <- manager.remove("nonexistent-id") // should not throw
+      _       <- manager.remove(SessionId("nonexistent-id")) // should not throw
     yield ()
   }
 
@@ -235,5 +235,44 @@ class SessionManagerSpec extends CatsEffectSuite:
       session <- manager.create
       _       <- session.shutdown
       _       <- session.shutdown // second call should not throw
+    yield ()
+  }
+
+  // === maxSessions cap Tests ===
+
+  test("create fails once the session cap is reached") {
+    val capped = SessionConfig(maxSessions = 2)
+    for
+      manager <- SessionManager[IO](testServer, capped)
+      _       <- manager.create
+      _       <- manager.create
+      third   <- manager.create.attempt
+      _ = assert(third.isLeft)
+    yield ()
+  }
+
+  test("create enforces the session cap under concurrency") {
+    import cats.syntax.parallel.*
+    val cap = 8
+    for
+      manager <- SessionManager[IO](testServer, SessionConfig(maxSessions = cap))
+      results <- (1 to 32).toList.parTraverse(_ => manager.create.attempt)
+      created = results.count(_.isRight)
+      count <- manager.sessionCount
+      _ = assertEquals(created, cap)
+      _ = assertEquals(count, cap)
+    yield ()
+  }
+
+  test("remove frees a slot for a new session") {
+    val capped = SessionConfig(maxSessions = 1)
+    for
+      manager <- SessionManager[IO](testServer, capped)
+      first   <- manager.create
+      full    <- manager.create.attempt
+      _ = assert(full.isLeft)
+      _      <- manager.remove(first.id)
+      second <- manager.create.attempt
+      _ = assert(second.isRight)
     yield ()
   }

@@ -2,12 +2,23 @@
 
 MCP uses JSON-RPC error codes to communicate failures. Errors are structured values — you can pattern match on them or handle them per-tool.
 
-> For the full protocol specification, see [spec.modelcontextprotocol.io](https://spec.modelcontextprotocol.io/specification/2025-03-26/).
+> For the full protocol specification, see [modelcontextprotocol.io](https://modelcontextprotocol.io/specification/2025-11-25/).
 
 ## McpError
 
+`McpError` is an `enum` of the protocol failure modes; each case carries a human-readable
+`message`. Map one to a JSON-RPC code with `McpError.toJsonRpcError(e).code`.
+
+<!-- doc-snippet: skip -->
 ```scala
-case class McpError(code: Int, message: String, data: Option[Json]) extends Exception
+enum McpError(val message: String) extends Exception(message):
+  case ToolNotFound(name: String)
+  case ResourceNotFound(uri: String)
+  case InvalidToolArguments(name: String, reason: String)
+  case ToolExecutionError(name: String, detail: String)
+  case MethodNotSupported(method: String)
+  case NotInitialized
+  // … and more
 ```
 
 ## Standard Codes
@@ -27,37 +38,30 @@ These are the JSON-RPC standard error codes used by MCP:
 Return errors from tools using `attempt`:
 
 ```scala
-Tool[IO, Args]("risky", "May fail") { args =>
-  doWork(args).attempt.map {
+import mcp4s.server.dsl.*
+
+case class RiskyArgs(input: String) derives Schema
+def doWork(args: RiskyArgs): IO[String] = ???
+
+val risky = Tool("risky").withDescription("May fail").input[RiskyArgs].handle[IO] { args =>
+  doWork(args).attempt.map:
     case Right(r) => ok(r)
-    case Left(e) => error(e.getMessage)
-  }
+    case Left(e)  => error(e.getMessage)
 }
 ```
 
 ## Client-Side
 
 ```scala
-conn.callTool("tool", args).attempt.flatMap {
-  case Right(result) if result.isError => IO.println("Tool error")
-  case Right(result) => IO.println(s"Success: $result")
-  case Left(e: McpError) => IO.println(s"Protocol error ${e.code}")
-  case Left(e) => IO.println(s"Connection error: ${e.getMessage}")
-}
+conn.callTool("tool", Json.obj()).attempt.flatMap:
+  case Right(result) if result.isError.getOrElse(false) => IO.println("Tool error")
+  case Right(result)     => IO.println(s"Success: $result")
+  case Left(e: McpError) => IO.println(s"Protocol error: ${e.message}")
+  case Left(e)           => IO.println(s"Connection error: ${e.getMessage}")
 ```
 
-## With http4s Middleware
+Typed calls (`conn.call(endpoint)(input)` via `TypedClient`) never return an `isError` result silently — they raise `McpError.ToolExecutionError(name, detail)` instead, so tool failures surface in the same channel as protocol errors.
 
-For HTTP transport, compose retry and timeout middleware on your `Client[F]`:
+## Retry and Timeouts
 
-```scala
-import org.http4s.client.middleware.{Retry, RetryPolicy, Timeout}
-import scala.concurrent.duration.*
-
-val retryPolicy = RetryPolicy[IO](RetryPolicy.exponentialBackoff(maxWait = 10.seconds, maxRetry = 3))
-val resilientClient = Timeout(30.seconds)(Retry(retryPolicy)(rawHttpClient))
-
-HttpClientTransport.connect[IO](client, config, resilientClient).use { conn =>
-  conn.callTool("tool", args)
-}
-```
+For HTTP, compose standard http4s retry middleware on the `Client[F]` you pass to the transport — see [HTTP transport: Retry](../transports/http.md#retry). Request and initialization timeouts are built into every transport config via `timeouts = Timeouts(request = 5.minutes, init = 30.seconds)` (`mcp4s.transport.Timeouts`).

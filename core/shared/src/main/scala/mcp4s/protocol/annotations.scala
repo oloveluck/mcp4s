@@ -25,7 +25,7 @@ import scala.annotation.StaticAnnotation
   * case class AddArgs(
   *   @description("First number to add") a: Double,
   *   @description("Second number to add") b: Double
-  * ) derives ToolInput
+  * ) derives Schema
   * }}}
   */
 final class description(val value: String) extends StaticAnnotation

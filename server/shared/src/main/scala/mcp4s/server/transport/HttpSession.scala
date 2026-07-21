@@ -19,12 +19,8 @@ package mcp4s.server.transport
 import cats.effect.{Async, Ref}
 import cats.effect.std.{Queue, SecureRandom, UUIDGen}
 import cats.syntax.all.*
-import io.circe.*
-import io.circe.syntax.*
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.RequestCorrelator
 import mcp4s.protocol.*
-import mcp4s.protocol.Codecs.given
 import mcp4s.server.*
 
 import scala.concurrent.duration.FiniteDuration
@@ -32,22 +28,23 @@ import scala.concurrent.duration.FiniteDuration
 /** Represents an HTTP session for MCP Streamable HTTP transport.
   *
   * Each session has its own Dispatcher instance, providing isolated state for initialization and
-  * request handling per client.
-  *
-  * Supports bidirectional communication via SSE streams:
-  *   - Server can send progress/logging notifications during tool execution
-  *   - Server can send sampling/elicitation requests and await client responses
+  * request handling per client. The bidirectional machinery (correlation, capability gating,
+  * sampling/elicitation requesters) lives in the shared [[ServerSession]]; this class adds the
+  * HTTP-specific parts: session id, expiry tracking, and the SSE out-queue.
   */
 final class HttpSession[F[_]] private (
-    val id: String,
+    val id: SessionId,
     val dispatcher: Dispatcher[F],
     val createdAt: FiniteDuration,
     lastAccessedRef: Ref[F, FiniteDuration],
     val outQueue: Queue[F, JsonRpcMessage],
-    correlator: RequestCorrelator[F],
-    val clientCapsRef: Ref[F, Option[ClientCapabilities]],
+    session: ServerSession[F],
     val config: SessionConfig,
-    tracer: Tracer[F]
+    /** Progress tokens of the streaming requests currently in flight on this session. The out-queue
+      * is shared, so each SSE poller uses this to hand a foreign stream's progress events back
+      * instead of emitting (and possibly losing) them.
+      */
+    val activeProgressTokens: Ref[F, Set[RequestId]]
 )(using F: Async[F]):
 
   /** Get the last access time for this session, as a duration since the epoch */
@@ -64,100 +61,23 @@ final class HttpSession[F[_]] private (
     yield (now - last) > config.timeout
 
   /** Shutdown this session, completing any pending requests with an error */
-  def shutdown: F[Unit] =
-    correlator.cancelAll(JsonRpcError(-32000, "Session closed", None))
+  def shutdown: F[Unit] = session.cancelPending
 
   /** Get the number of pending requests awaiting responses */
-  def pendingRequestCount: F[Int] = correlator.inFlightCount
+  def pendingRequestCount: F[Int] = session.pendingRequestCount
 
   /** Get the current queue size */
   def queueSize: F[Int] = outQueue.size
 
   /** Extract client capabilities from initialize request */
   def maybeExtractClientCaps(message: JsonRpcMessage): F[Unit] =
-    message match
-      case req: JsonRpcRequest if req.method == McpMethod.Initialize =>
-        req.params.flatMap(_.as[InitializeParams].toOption) match
-          case Some(params) => clientCapsRef.set(Some(params.capabilities))
-          case None         => F.unit
-      case _ => F.unit
+    session.maybeExtractClientCaps(message)
 
   /** Handle a response from the client to a server-initiated request */
-  def handleResponse(resp: JsonRpcResponse): F[Unit] =
-    correlator.complete(resp.id, resp.result)
+  def handleResponse(resp: JsonRpcResponse): F[Unit] = session.handleResponse(resp)
 
   /** Handle an error response from the client to a server-initiated request */
-  def handleErrorResponse(resp: JsonRpcErrorResponse): F[Unit] =
-    correlator.fail(resp.id, resp.error)
-
-  /** Send a request to the client and await the response. The request will timeout after the
-    * configured requestTimeout duration.
-    */
-  private[transport] def sendRequest[A: Decoder](method: String, params: Json): F[A] =
-    for
-      reqId <- correlator.nextId
-      json <- correlator.request(reqId, config.requestTimeout):
-        outQueue.offer(JsonRpcRequest(reqId, method, Some(params)))
-      decoded <- json.as[A].liftTo[F]
-    yield decoded
-
-  /** Send a notification to the client */
-  private[transport] def sendNotification(notification: JsonRpcNotification): F[Unit] =
-    outQueue.offer(notification)
-
-  /** Send a progress notification */
-  private[transport] def sendProgressNotification(
-      token: RequestId,
-      prog: Double,
-      total: Option[Double]
-  ): F[Unit] =
-    val notification = JsonRpcNotification(
-      McpMethod.Progress,
-      Some(ProgressParams(token, prog, total).asJson)
-    )
-    sendNotification(notification)
-
-  /** Send a logging notification */
-  private[transport] def sendLoggingNotification(
-      level: LogLevel,
-      message: String,
-      data: Option[Json]
-  ): F[Unit] =
-    val notification = JsonRpcNotification(
-      McpMethod.LoggingMessage,
-      Some(LogMessage(level, None, data.getOrElse(Json.fromString(message))).asJson)
-    )
-    sendNotification(notification)
-
-  /** SamplingRequester for this session */
-  val samplingRequester: SamplingRequester[F] =
-    new SamplingRequester[F]:
-      def supportsSampling: Boolean = true // Actual check happens in createMessage
-
-      def createMessage(params: CreateMessageParams): F[CreateMessageResult] =
-        tracer.span("mcp.sampling.createMessage").surround {
-          clientCapsRef.get.flatMap {
-            case Some(caps) if caps.sampling.isDefined =>
-              sendRequest[CreateMessageResult](McpMethod.SamplingCreateMessage, params.asJson)
-            case _ =>
-              F.raiseError(McpError.SamplingNotSupported)
-          }
-        }
-
-  /** ElicitationRequester for this session */
-  val elicitationRequester: ElicitationRequester[F] =
-    new ElicitationRequester[F]:
-      def supportsElicitation: Boolean = true // Actual check happens in elicit
-
-      def elicit(params: ElicitParams): F[ElicitResult] =
-        tracer.span("mcp.elicitation.create").surround {
-          clientCapsRef.get.flatMap {
-            case Some(caps) if caps.elicitation.isDefined =>
-              sendRequest[ElicitResult](McpMethod.ElicitationCreate, params.asJson)
-            case _ =>
-              F.raiseError(McpError.ElicitationNotSupported)
-          }
-        }
+  def handleErrorResponse(resp: JsonRpcErrorResponse): F[Unit] = session.handleErrorResponse(resp)
 
 object HttpSession:
 
@@ -177,34 +97,20 @@ object HttpSession:
     for
       id <- SecureRandom
         .javaSecuritySecureRandom[F]
-        .flatMap { implicit sr =>
+        .flatMap { sr =>
+          given SecureRandom[F] = sr
           UUIDGen[F].randomUUID
         }
-        .map(_.toString)
+        .map(uuid => SessionId(uuid.toString))
       // Use bounded queue with configurable max size for backpressure
       outQueue        <- Queue.bounded[F, JsonRpcMessage](config.maxQueueSize)
-      correlator      <- RequestCorrelator[F]
-      clientCapsRef   <- Ref.of[F, Option[ClientCapabilities]](None)
+      session         <- ServerSession.create[F](outQueue.offer, config.requestTimeout, tracer)
       now             <- Async[F].realTime
       lastAccessedRef <- Ref.of[F, FiniteDuration](now)
+      activeTokens    <- Ref.of[F, Set[RequestId]](Set.empty)
 
-      // Create a partial session with a placeholder dispatcher
-      // We need the session reference to create the context factory
-      placeholderDispatcher <- Dispatcher[F](server)
-      session = new HttpSession[F](
-        id,
-        placeholderDispatcher,
-        now,
-        lastAccessedRef,
-        outQueue,
-        correlator,
-        clientCapsRef,
-        config,
-        tracer
-      )
-
-      // Create context factory with full capabilities
-      // progressToken from _meta is used for progress notifications when provided
+      // Context factory with full capabilities; progressToken from _meta is used for
+      // progress notifications when provided.
       contextFactory = (reqId: RequestId, progressToken: Option[RequestId]) =>
         ToolContext[F](
           session.samplingRequester,
@@ -215,16 +121,14 @@ object HttpSession:
           session.sendLoggingNotification
         )
 
-      // Create the real dispatcher with context factory
-      realDispatcher <- Dispatcher.withContext[F](server, contextFactory)
+      dispatcher <- Dispatcher.withContext[F](server, contextFactory)
     yield new HttpSession[F](
       id,
-      realDispatcher,
+      dispatcher,
       now,
       lastAccessedRef,
       outQueue,
-      correlator,
-      clientCapsRef,
+      session,
       config,
-      tracer
+      activeTokens
     )

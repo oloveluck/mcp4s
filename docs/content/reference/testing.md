@@ -2,35 +2,43 @@
 
 MCP4S provides testing utilities for verifying servers and tools without running a transport.
 
+> For full **compliance** and **performance** suites that run a server over live transports —
+> usable against your own MCP server — see [Testing your MCP server](../testing/README.md)
+> (`mcp4s-testkit`). This page covers the lighter in-process `ServerTest` / `ToolsTest` helpers.
+
 ## ServerTest
 
 Test a full server with an in-memory client:
 
 ```scala
 import cats.effect.IO
+import io.circe.Encoder
 import munit.CatsEffectSuite
 import mcp4s.server.*
-import mcp4s.server.mcp.*
+import mcp4s.server.dsl.*
 import mcp4s.server.testing.*
 
 class MyServerSuite extends CatsEffectSuite:
 
-  val tools = Tool[IO, AddArgs]("add", "Add") { args => IO.pure(ok(s"${args.a + args.b}")) }
+  // Schema drives the tool; Encoder.AsObject lets tests pass typed arguments
+  case class AddArgs(a: Double, b: Double) derives Schema, Encoder.AsObject
+
+  val tools = Tool("add").withDescription("Add").input[AddArgs].handle[IO] { args =>
+    IO.pure(ok(s"${args.a + args.b}"))
+  }
   val server = Server.fromTools[IO](ServerInfo("test", "1.0.0"), tools)
 
-  test("add tool returns correct result") {
-    ServerTest(server).use { client =>
-      for
-        result <- client.callTool("add", AddArgs(2.0, 3.0))
+  test("add tool returns correct result"):
+    ServerTest(server).use: client =>
+      for result <- client.callTool("add", AddArgs(2.0, 3.0))
       yield assertEquals(result.textContent, "5.0")
-    }
-  }
 ```
 
 ### Synchronous Variant
 
 For simpler tests that don't need Resource lifecycle:
 
+<!-- doc-snippet: skip -->
 ```scala
 test("sync test") {
   val client = ServerTest.sync(server)
@@ -42,6 +50,7 @@ test("sync test") {
 
 ### Available Operations
 
+<!-- doc-snippet: skip -->
 ```scala
 client.listTools                           // IO[List[Tool]]
 client.callTool("name", args)             // IO[ToolResult]
@@ -59,37 +68,34 @@ Test tools directly without building a full server:
 
 ```scala
 import mcp4s.server.testing.*
-import mcp4s.server.mcp.*
-import mcp4s.protocol.*
+import mcp4s.server.testing.ToolsTest.*
 
-@description("Add two numbers")
-case class AddArgs(a: Double, b: Double) derives ToolInput
+class MyToolsSuite extends CatsEffectSuite:
+  import mcp4s.server.dsl.*
 
-val tools = Tool[IO, AddArgs] { args =>
-  IO.pure(ToolResult.text(s"${args.a + args.b}"))
-}
+  @description("Add two numbers")
+  case class MyAddArgs(a: Double, b: Double) derives Schema
 
-test("call tool directly") {
-  for
-    result <- tools.testCall("add", args("a" -> 3.0, "b" -> 2.0))
-  yield assertEquals(result.textContent, "5.0")
-}
+  val tools = Tool.from[MyAddArgs].withName("add").handle[IO] { args =>
+    IO.pure(ok(s"${args.a + args.b}"))
+  }
 
-test("tool exists") {
-  for
-    exists <- tools.hasTool("add")
-  yield assert(exists)
-}
+  test("call tool directly"):
+    for result <- tools.testCall("add", args("a" -> 3.0, "b" -> 2.0))
+    yield assertEquals(result.textContent, "5.0")
 
-test("get tool definition") {
-  for
-    tool <- tools.assertTool("add")
-  yield assertEquals(tool.name, "add")
-}
+  test("tool exists"):
+    for exists <- tools.hasTool("add")
+    yield assert(exists)
+
+  test("get tool definition"):
+    for tool <- tools.assertTool("add")
+    yield assertEquals(tool.name, "add")
 ```
 
 ### Extension Methods
 
+<!-- doc-snippet: skip -->
 ```scala
 tools.testCall("name", arguments)   // Call tool, raises McpError.ToolNotFound if missing
 tools.testCallJson("name", json)    // Call with raw JSON
@@ -117,32 +123,28 @@ Supports `String`, `Int`, `Double`, `Boolean`, and up to 4 key-value pairs.
 
 ### Testing Error Cases
 
+<!-- doc-snippet: skip -->
 ```scala
-test("unknown tool raises error") {
+test("unknown tool raises error"):
   tools.testCall("nonexistent", args.empty).intercept[McpError]
-}
 ```
 
 ### Testing Resources
 
+<!-- doc-snippet: skip -->
 ```scala
-test("read resource") {
-  ServerTest(server).use { client =>
-    for
-      content <- client.readResource("file:///readme")
+test("read resource"):
+  ServerTest(server).use: client =>
+    for content <- client.readResource("file:///readme")
     yield assert(content.text.exists(_.contains("Hello")))
-  }
-}
 ```
 
 ### Testing Prompts
 
+<!-- doc-snippet: skip -->
 ```scala
-test("prompt generates messages") {
-  ServerTest(server).use { client =>
-    for
-      result <- client.getPromptMap("greet", Map("name" -> "Alice"))
+test("prompt generates messages"):
+  ServerTest(server).use: client =>
+    for result <- client.getPromptMap("greet", Map("name" -> "Alice"))
     yield assert(result.messages.nonEmpty)
-  }
-}
 ```

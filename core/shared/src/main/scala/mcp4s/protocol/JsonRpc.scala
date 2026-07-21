@@ -40,6 +40,9 @@ object JsonRpcErrorCode:
   val ServerErrorStart: Int = -32099
   val ServerErrorEnd: Int   = -32000
 
+  /** MCP: the request was cancelled before a response was produced. */
+  val RequestCancelled: Int = -32800
+
 /** JSON-RPC 2.0 error object */
 final case class JsonRpcError(
     code: Int,

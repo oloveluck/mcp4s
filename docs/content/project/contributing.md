@@ -36,6 +36,20 @@ sbt docs/run
 
 The output will be in `docs/target/site/`. Open `index.html` in a browser.
 
+### Keep Doc Snippets Compiling
+
+Every ```` ```scala ```` block in `docs/content` is extracted automatically at compile
+time (by `project/DocSnippets.scala`, wired as a source generator for the `examples`
+module) and compiled against the real API — so CI fails if the documentation drifts
+from the published API. After editing documentation, verify with:
+
+```bash
+sbt examples/Test/compile
+```
+
+Mark a fence with `<!-- doc-snippet: skip -->` (non-compilable listing) or
+`<!-- doc-snippet: reset -->` (page redefines an earlier name) on the line above it when needed.
+
 ## Code Style
 
 mcp4s uses strict compiler settings:
@@ -59,9 +73,9 @@ mcp4s targets a single Scala 3 version across three platforms:
 
 | Platform | Notes |
 |----------|-------|
-| JVM | Reference platform; the `examples` and `docs` modules are JVM-only |
+| JVM | Reference platform; the `examples`, `benchmarks`, and `docs` modules are JVM-only |
 | Scala.js (Node) | Full server and client support via http4s-ember |
-| Scala Native | Server and client; the sttp-based WebSocket *client* transport is JVM-only |
+| Scala Native | Server and client; the WebSocket *client* transport (built on `JdkWSClient`) is JVM-only |
 
 Your code must compile on **all three** platforms. Platform-specific code lives
 under `<module>/{jvm,js,native}/src`; shared code under `<module>/shared/src`.
@@ -72,9 +86,11 @@ See [Version Support](version-support.md) for full dependency details.
 
 ```
 mcp4s/
-├── core/          # Protocol types, codec derivation (JVM/JS/Native)
-├── server/        # Server DSL and runtime (JVM/JS/Native)
-├── client/        # Client connection and resilience (JVM/JS/Native)
+├── core/          # Protocol types, Schema + endpoints, codecs (JVM/JS/Native)
+├── server/        # Server DSL, runtime, and transports (JVM/JS/Native)
+├── client/        # Client connection and transports (JVM/JS/Native)
+├── testkit/       # Test fixtures + compliance/performance suites (JVM/JS/Native)
+├── benchmarks/    # JMH microbenchmarks (JVM-only, unpublished)
 ├── examples/      # Example servers and clients (JVM-only)
 ├── conformance/   # MCP protocol conformance suite (git submodule)
 ├── docs/          # Documentation site (Laika, JVM-only)
@@ -92,7 +108,7 @@ mcp4s/
 
 ### PR Checklist
 
-- Code compiles without warnings on both Scala 3.3.4 and 3.6.4
+- Code compiles without warnings (`-Werror` is enforced in CI)
 - Tests pass
 - New functionality has test coverage
 - No unused imports or variables

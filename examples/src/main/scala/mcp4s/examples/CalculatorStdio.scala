@@ -18,7 +18,6 @@ package mcp4s.examples
 
 import cats.effect.*
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.server.transport.*
 
 /** Stdio version of the calculator server.
   *
@@ -32,4 +31,4 @@ object CalculatorStdio extends IOApp.Simple:
 
   def run: IO[Unit] =
     given Tracer[IO] = Tracer.noop[IO]
-    StdioTransport.run[IO](CalculatorServer.server)
+    CalculatorServer.server.stdio.run

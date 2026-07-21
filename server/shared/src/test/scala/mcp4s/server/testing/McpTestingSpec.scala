@@ -24,21 +24,26 @@ import mcp4s.protocol.*
 import mcp4s.server.*
 import mcp4s.server.testing.ToolsTest.*
 import munit.CatsEffectSuite
+import mcp4s.server.TestSyntax.*
 
 class McpTestingSpec extends CatsEffectSuite:
 
+  import mcp4s.server.dsl.*
+
   // === ToolsTest Extension Tests ===
 
-  case class CalcArgs(a: Double, b: Double) derives ToolInput
+  case class CalcArgs(a: Double, b: Double) derives Schema
 
   val calcTools: Tools[IO] =
-    McpTool.pureText[IO, CalcArgs]("add", "Add")(args => TestNum.str(args.a + args.b)) |+|
-      McpTool.pureText[IO, CalcArgs]("subtract", "Subtract") { args =>
-        TestNum.str(args.a - args.b)
+    Tool("add").withDescription("Add").input[CalcArgs].handle[IO] { args =>
+      IO.pure(ok(TestNum.str(args.a + args.b)))
+    } |+|
+      Tool("subtract").withDescription("Subtract").input[CalcArgs].handle[IO] { args =>
+        IO.pure(ok(TestNum.str(args.a - args.b)))
       }
 
   test("testCall with typed arguments") {
-    case class AddArgs(a: Double, b: Double) derives ToolInput, Encoder.AsObject
+    case class AddArgs(a: Double, b: Double) derives Encoder.AsObject
 
     for
       result <- calcTools.testCall("add", AddArgs(3.0, 2.0))
@@ -54,11 +59,7 @@ class McpTestingSpec extends CatsEffectSuite:
   }
 
   test("testCall raises ToolNotFound for unknown tool") {
-    for
-      result <- calcTools.testCall("unknown", Json.obj()).attempt
-      _ = assert(result.isLeft)
-      _ = assert(result.left.exists(_.isInstanceOf[McpError.ToolNotFound]))
-    yield ()
+    interceptIO[McpError.ToolNotFound](calcTools.testCall("unknown", Json.obj())).void
   }
 
   test("hasTool returns true for existing tool") {
@@ -99,11 +100,7 @@ class McpTestingSpec extends CatsEffectSuite:
   }
 
   test("assertTool raises AssertionError for non-existent tool") {
-    for
-      result <- calcTools.assertTool("multiply").attempt
-      _ = assert(result.isLeft)
-      _ = assert(result.left.exists(_.isInstanceOf[AssertionError]))
-    yield ()
+    interceptIO[AssertionError](calcTools.assertTool("multiply")).void
   }
 
   // === args Helper Tests ===
@@ -145,10 +142,8 @@ class McpTestingSpec extends CatsEffectSuite:
   val testServer: Server[IO] = Server.from[IO](
     info = ServerInfo("test-server", "1.0.0"),
     tools = calcTools,
-    resources = McpResource[IO]("test://readme", "README")("Hello world"),
-    prompts = McpPrompt.noArgs[IO]("greet", "Greet") {
-      IO.pure(GetPromptResult(None, List(PromptMessage(Role.User, TextContent("Hi")))))
-    }
+    resources = Resource.text[IO]("test://readme", "README")("Hello world"),
+    prompts = Prompt("greet").withDescription("Greet").messages[IO](user("Hi"))
   )
 
   test("ServerTest.sync creates test client") {
@@ -167,7 +162,7 @@ class McpTestingSpec extends CatsEffectSuite:
   }
 
   test("ServerTest calls tools with typed args") {
-    case class CalcArgs(a: Double, b: Double) derives ToolInput, Encoder.AsObject
+    case class CalcArgs(a: Double, b: Double) derives Encoder.AsObject
 
     ServerTest(testServer).use: client =>
       for
@@ -213,6 +208,6 @@ class McpTestingSpec extends CatsEffectSuite:
       for
         result <- client.getPromptMap("greet", Map.empty)
         _ = assertEquals(result.messages.length, 1)
-        _ = assertEquals(result.messages.head.content.asInstanceOf[TextContent].text, "Hi")
+        _ = assertEquals(textOf(result.messages.head.content), "Hi")
       yield ()
   }

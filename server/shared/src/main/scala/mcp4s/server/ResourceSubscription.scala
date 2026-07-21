@@ -162,10 +162,8 @@ object ResourceSubscriptionManager:
     def unsubscribeAll(sessionId: String): F[Unit] =
       subscriptionsRef.update { subs =>
         subs
-          .map { case (uri, sessions) =>
-            uri -> (sessions - sessionId)
-          }
-          .filter { case (_, sessions) => sessions.nonEmpty }
+          .map((uri, sessions) => uri -> (sessions - sessionId))
+          .filter((_, sessions) => sessions.nonEmpty)
       }
 
     def notifyChanged(uri: String): F[Unit] =

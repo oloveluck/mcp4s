@@ -53,16 +53,27 @@ trait Tools[F[_]]:
   /** Call a tool with context, returning None if not handled */
   def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult]
 
+  /** True when no tools are registered. Used to derive server capabilities: a server built from
+    * empty routes does not advertise the `tools` capability.
+    */
+  def isEmpty: Boolean = false
+
+  /** Tool definitions statically known at construction time (empty for fully dynamic
+    * implementations). Used by `ServiceRoutes` for construction-time completeness checks.
+    */
+  def definitions: List[Tool] = Nil
+
+  /** Name-indexed handlers when statically known; `None` for dynamic implementations. Lets
+    * [[Tools.combine]] dispatch by Map lookup instead of scanning the composition chain — any
+    * dynamic instance in a composition falls back to the first-match-wins `orElse` chain.
+    */
+  private[server] def handlers: Option[Map[String, (Json, ToolContext[F]) => F[ToolResult]]] = None
+
 object Tools:
 
   /** Create tool routes from a single tool (ignores context) */
   def single[F[_]: Concurrent](tool: Tool)(handler: Json => F[ToolResult]): Tools[F] =
-    new Tools[F]:
-      def list: F[List[Tool]] = Applicative[F].pure(List(tool))
-
-      def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
-        if name == tool.name then OptionT.liftF(handler(args))
-        else OptionT.none[F, ToolResult]
+    singleWithContext(tool)((args, _) => handler(args))
 
   /** Create context-aware tool routes from a single tool.
     *
@@ -73,7 +84,9 @@ object Tools:
       handler: (Json, ToolContext[F]) => F[ToolResult]
   ): Tools[F] =
     new Tools[F]:
-      def list: F[List[Tool]] = Applicative[F].pure(List(tool))
+      def list: F[List[Tool]]               = Applicative[F].pure(List(tool))
+      override def definitions: List[Tool]  = List(tool)
+      override private[server] val handlers = Some(Map(tool.name -> handler))
 
       def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
         if name == tool.name then OptionT.liftF(handler(args, ctx))
@@ -84,10 +97,19 @@ object Tools:
     new Tools[F]:
       def list: F[List[Tool]] = Applicative[F].pure(Nil)
       def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] = OptionT.none
+      override def isEmpty: Boolean                                                   = true
+      override private[server] val handlers = Some(Map.empty)
 
   /** Combine two Tools instances (first match wins) */
   def combine[F[_]: Concurrent](x: Tools[F], y: Tools[F]): Tools[F] =
     new Tools[F]:
+      override def isEmpty: Boolean        = x.isEmpty && y.isEmpty
+      override val definitions: List[Tool] =
+        val xNames = x.definitions.map(_.name).toSet
+        x.definitions ++ y.definitions.filterNot(t => xNames.contains(t.name))
+      // Left side wins on duplicate names, matching the orElse chain's shadowing.
+      override private[server] val handlers =
+        (x.handlers, y.handlers).mapN((xh, yh) => yh ++ xh)
       def list: F[List[Tool]] =
         for
           xTools <- x.list
@@ -96,7 +118,9 @@ object Tools:
         yield xTools ++ yTools.filterNot(t => xNames.contains(t.name))
 
       def call(name: String, args: Json, ctx: ToolContext[F]): OptionT[F, ToolResult] =
-        x.call(name, args, ctx).orElse(y.call(name, args, ctx))
+        handlers match
+          case Some(table) => OptionT(table.get(name).traverse(h => h(args, ctx)))
+          case None        => x.call(name, args, ctx).orElse(y.call(name, args, ctx))
 
   /** Semigroup instance for Tools composition via |+| */
   given [F[_]: Concurrent]: Semigroup[Tools[F]] with

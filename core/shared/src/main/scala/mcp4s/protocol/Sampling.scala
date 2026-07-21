@@ -83,12 +83,10 @@ final case class ModelHint(
 
 /** Tool choice specification Spec ref: schema.ts ToolChoice
   */
-sealed trait ToolChoice
-
-object ToolChoice:
-  case object Auto                        extends ToolChoice
-  case object None                        extends ToolChoice
-  final case class Specific(name: String) extends ToolChoice
+enum ToolChoice:
+  case Auto
+  case None
+  case Specific(name: String)
 
 /** Parameters for sampling/createMessage request Spec ref: schema.ts CreateMessageRequestParams
   */

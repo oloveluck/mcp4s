@@ -40,6 +40,9 @@ object CalculatorClient extends IOApp.Simple:
 
   def run: IO[Unit] =
     given Tracer[IO] = Tracer.noop[IO]
+    // This brings its own http4s `Client[F]` (the cross-platform path). On the JVM the whole
+    // block collapses to a one-liner: `client.http("http://localhost:3000/mcp").use: conn =>`
+    // (see `import mcp4s.client.syntax.*`), which builds and manages an Ember client for you.
     IO.println("Connecting to Calculator MCP Server...") *>
       EmberClientBuilder
         .default[IO]
@@ -48,7 +51,7 @@ object CalculatorClient extends IOApp.Simple:
           HttpClientTransport
             .connect[IO](
               client,
-              HttpClientConfig[IO]("http://localhost:3000"),
+              HttpTransportConfig[IO]("http://localhost:3000/mcp"),
               httpClient
             )
             .use: conn =>
@@ -64,7 +67,7 @@ object CalculatorClient extends IOApp.Simple:
                 _ <- IO.println("")
 
                 // Test addition
-                _ <- IO.println("Testing 5 + 3:")
+                _         <- IO.println("Testing 5 + 3:")
                 addResult <- conn.callTool(
                   "add",
                   Json.obj(
@@ -75,7 +78,7 @@ object CalculatorClient extends IOApp.Simple:
                 _ <- IO.println(s"  ${formatResult(addResult)}")
 
                 // Test subtraction
-                _ <- IO.println("Testing 10 - 4:")
+                _         <- IO.println("Testing 10 - 4:")
                 subResult <- conn.callTool(
                   "subtract",
                   Json.obj(
@@ -86,7 +89,7 @@ object CalculatorClient extends IOApp.Simple:
                 _ <- IO.println(s"  ${formatResult(subResult)}")
 
                 // Test multiplication
-                _ <- IO.println("Testing 7 * 8:")
+                _         <- IO.println("Testing 7 * 8:")
                 mulResult <- conn.callTool(
                   "multiply",
                   Json.obj(
@@ -97,7 +100,7 @@ object CalculatorClient extends IOApp.Simple:
                 _ <- IO.println(s"  ${formatResult(mulResult)}")
 
                 // Test division
-                _ <- IO.println("Testing 100 / 4:")
+                _         <- IO.println("Testing 100 / 4:")
                 divResult <- conn.callTool(
                   "divide",
                   Json.obj(
@@ -108,7 +111,7 @@ object CalculatorClient extends IOApp.Simple:
                 _ <- IO.println(s"  ${formatResult(divResult)}")
 
                 // Test division by zero
-                _ <- IO.println("Testing 5 / 0 (should error):")
+                _             <- IO.println("Testing 5 / 0 (should error):")
                 divZeroResult <- conn.callTool(
                   "divide",
                   Json.obj(
@@ -119,7 +122,7 @@ object CalculatorClient extends IOApp.Simple:
                 _ <- IO.println(s"  ${formatResult(divZeroResult)}")
 
                 // Test batch_add with progress reporting
-                _ <- IO.println("Testing batch_add [1, 2, 3, 4, 5] with progress:")
+                _           <- IO.println("Testing batch_add [1, 2, 3, 4, 5] with progress:")
                 batchResult <- conn.callTool(
                   "batch_add",
                   Json.obj(

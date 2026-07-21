@@ -16,11 +16,13 @@
 
 package mcp4s.server.transport
 
-import cats.effect.{Async, Resource as CatsResource}
+import cats.effect.{Async, Deferred, Outcome, Resource as CatsResource}
 import cats.effect.syntax.spawn.*
 import fs2.Stream
 import fs2.io.net.Network
 import cats.syntax.all.*
+
+import scala.concurrent.duration.*
 import com.comcast.ip4s.{host, port, Host, Port}
 import io.circe.*
 import io.circe.syntax.*
@@ -141,15 +143,13 @@ object HttpTransport:
       config: HttpConfig[F] = HttpConfig.default[F]
   )(using Tracer[F]): CatsResource[F, Http4sServer] =
     for
-      mcpRoutes <- routes(server, config)
+      mcpRoutes  <- routes(server, config)
       httpServer <- EmberServerBuilder
         .default[F]
         .withHost(config.host)
         .withPort(config.port)
         .withHttpApp(Router("/" -> mcpRoutes).orNotFound)
-        .withIdleTimeout(
-          scala.concurrent.duration.FiniteDuration(10, "min")
-        ) // SSE streams need long idle timeout
+        .withIdleTimeout(10.minutes) // SSE streams need long idle timeout
         .build
     yield httpServer
 
@@ -160,7 +160,7 @@ object HttpTransport:
       configHost: Host,
       tracer: Tracer[F]
   ): HttpRoutes[F] =
-    val dsl = new Http4sDsl[F] {}
+    given dsl: Http4sDsl[F] = new Http4sDsl[F] {}
     import dsl.*
 
     HttpRoutes.of[F] {
@@ -208,8 +208,8 @@ object HttpTransport:
       sessionManager: SessionManager[F],
       span: org.typelevel.otel4s.trace.Span[F],
       useSSE: Boolean
-  ): F[Response[F]] =
-    val sessionIdOpt = req.headers.get(SessionHeaderName).map(_.head.value)
+  )(using Http4sDsl[F]): F[Response[F]] =
+    val sessionIdOpt = req.headers.get(SessionHeaderName).map(h => SessionId(h.head.value))
     val isInitialize = message match
       case r: JsonRpcRequest => r.method == McpMethod.Initialize
       case _                 => false
@@ -219,7 +219,7 @@ object HttpTransport:
       case (None, true) =>
         sessionManager.create.flatMap { session =>
           dispatchWithSession(session, message, span, useSSE).map { response =>
-            response.putHeaders(Header.Raw(SessionHeaderName, session.id))
+            response.putHeaders(Header.Raw(SessionHeaderName, session.id.value))
           }
         }
 
@@ -228,7 +228,7 @@ object HttpTransport:
         sessionManager.get(sessionId).flatMap {
           case Some(session) =>
             dispatchWithSession(session, message, span, useSSE).map { response =>
-              response.putHeaders(Header.Raw(SessionHeaderName, session.id))
+              response.putHeaders(Header.Raw(SessionHeaderName, session.id.value))
             }
           case None =>
             // Invalid session ID
@@ -245,8 +245,7 @@ object HttpTransport:
       message: JsonRpcMessage,
       span: org.typelevel.otel4s.trace.Span[F],
       useSSE: Boolean
-  ): F[Response[F]] =
-    val dsl = new Http4sDsl[F] {}
+  )(using dsl: Http4sDsl[F]): F[Response[F]] =
     import dsl.*
 
     // Check if this is a response to a server-initiated request
@@ -273,86 +272,118 @@ object HttpTransport:
   /** Handle a request with SSE streaming response.
     *
     * Returns an SSE stream that:
-    *   1. Runs dispatch in a background fiber 2. Polls the outQueue for notifications (progress,
-    *      logging, server requests) and emits SSE events 3. When dispatch completes, drains any
-    *      remaining queue messages and emits the final response
+    *   1. Runs dispatch in a background fiber 2. Blocks on the outQueue for notifications
+    *      (progress, logging, server requests) and emits SSE events, until dispatch completes 3.
+    *      When dispatch completes, drains any remaining queue messages and emits the final response
     *
-    * Uses non-destructive tryTake/tryGet polling to avoid a race condition where race(deferred.get,
-    * queue.take) could consume and discard a queue item when the deferred wins. When we observe the
-    * Deferred is complete, we know all notifications have been enqueued (since they are enqueued
-    * before the tool handler returns), so a final drainQueue is guaranteed to capture any
-    * stragglers.
+    * The live phase blocks on `outQueue.take` interrupted by the dispatch Deferred rather than
+    * polling with sleeps. Interrupting a `take` cannot lose an element (cats-effect's Queue
+    * restores a delivered element on cancellation), and all notifications are enqueued before the
+    * handler returns, so the final drain after interruption captures any stragglers.
+    *
+    * The out-queue is shared by every in-flight request on the session, so a progress notification
+    * belonging to a *different* concurrent request may surface here. Emitting it on this stream
+    * would lose it if this stream is closed early (e.g. the owning call was cancelled), so progress
+    * events whose token belongs to another active stream are re-offered for that stream's poller to
+    * pick up.
     */
   private def handleStreamingRequest[F[_]: Async](
       session: HttpSession[F],
       message: JsonRpcMessage,
       span: org.typelevel.otel4s.trace.Span[F]
-  ): F[Response[F]] =
-    val dsl = new Http4sDsl[F] {}
+  )(using dsl: Http4sDsl[F]): F[Response[F]] =
     import dsl.*
-
-    import cats.effect.Deferred
 
     def toSSE(msg: JsonRpcMessage): ServerSentEvent =
       ServerSentEvent(data = Some(msg.asJson.noSpaces), eventType = Some("message"))
+
+    // The progress token this stream owns: _meta.progressToken if the client set one,
+    // otherwise the request id (the McpConnection client uses its request id as token).
+    val myToken: Option[RequestId] = message match
+      case req: JsonRpcRequest =>
+        val metaToken = req.params
+          .flatMap(_.hcursor.downField("_meta").downField("progressToken").as[RequestId].toOption)
+        metaToken.orElse(Some(req.id))
+      case _ => None
+
+    // A progress event for another ACTIVE stream must not be emitted here; hand it back.
+    def foreignToken(msg: JsonRpcMessage): F[Boolean] =
+      msg match
+        case JsonRpcNotification(McpMethod.Progress, Some(params)) =>
+          params.as[ProgressParams].toOption.map(_.progressToken) match
+            case Some(token) if !myToken.contains(token) =>
+              session.activeProgressTokens.get.map(_.contains(token))
+            case _ => Async[F].pure(false)
+        case _ => Async[F].pure(false)
+
+    def register: F[Unit]   = myToken.traverse_(t => session.activeProgressTokens.update(_ + t))
+    def deregister: F[Unit] = myToken.traverse_(t => session.activeProgressTokens.update(_ - t))
 
     Deferred[F, Either[Throwable, Option[JsonRpcMessage]]].flatMap { dispatchResult =>
       val sseStream: Stream[F, ServerSentEvent] =
         // Start dispatch in a background fiber; result (or error) completes the Deferred
         Stream.bracket(
-          session.dispatcher.dispatch(message).attempt.flatMap(dispatchResult.complete).void.start
-        )(_.cancel) >> {
-          // Poll the queue with non-destructive tryTake/tryGet to avoid a race
-          // condition where queue.take consumes an item that is then lost when
-          // race() picks dispatchResult.get as the winner.
-          def pollQueue: Stream[F, ServerSentEvent] =
-            Stream.eval(session.outQueue.tryTake).flatMap {
-              case Some(msg) =>
-                Stream.emit(toSSE(msg)) ++ pollQueue
-              case None =>
-                Stream.eval(dispatchResult.tryGet).flatMap {
-                  case Some(result) =>
-                    // Dispatch completed. All notifications were enqueued before the
-                    // handler returned, so drain the queue to capture any remaining items,
-                    // then emit the response (or propagate the error).
-                    Stream.eval(drainQueue(session)).flatMap { remaining =>
-                      Stream.emits(remaining.map(toSSE))
-                    } ++ (result match
-                      case Right(Some(response)) => Stream.emit(toSSE(response))
-                      case Right(None)           => Stream.empty
-                      case Left(error)           => Stream.raiseError[F](error)
-                    )
-                  case None =>
-                    // Dispatch still running, wait briefly and retry
-                    Stream.eval(
-                      Async[F].sleep(scala.concurrent.duration.Duration(5, "ms"))
-                    ) >> pollQueue
-                }
+          register *>
+            session.dispatcher.dispatch(message).attempt.flatMap(dispatchResult.complete).void.start
+        )(fiber => deregister *> fiber.cancel) >> {
+          def emitOrReoffer(msg: JsonRpcMessage): Stream[F, ServerSentEvent] =
+            Stream.eval(foreignToken(msg)).flatMap {
+              case true =>
+                // Another live stream owns this event; put it back and yield briefly so
+                // we don't immediately re-take our own re-offer in a hot loop.
+                Stream.exec(session.outQueue.offer(msg) *> Async[F].sleep(1.milli))
+              case false => Stream.emit(toSSE(msg))
             }
 
-          pollQueue
+          // Live phase: block on the queue racing dispatch completion (no polling).
+          // This must be racePair, not race: a plain race discards a completed loser,
+          // so a `take` that already dequeued an element when the Deferred wins would
+          // silently drop that element. With racePair we inspect the take fiber after
+          // cancelling it — if it completed with an element, we emit it before moving
+          // on. (Queue.take itself never loses elements on cancellation; only the
+          // race combinator's result-discarding does.)
+          val nextEvent: F[Either[Option[JsonRpcMessage], JsonRpcMessage]] =
+            Async[F].racePair(dispatchResult.get, session.outQueue.take).flatMap {
+              case Left((_, takeFiber)) =>
+                takeFiber.cancel *> takeFiber.join.flatMap {
+                  case Outcome.Succeeded(msg) => msg.map(m => Left(Some(m)))
+                  case _                      => Async[F].pure(Left(None))
+                }
+              case Right((getFiber, takeOutcome)) =>
+                getFiber.cancel *> takeOutcome.embed(Async[F].never).map(Right(_))
+            }
+
+          def live: Stream[F, ServerSentEvent] =
+            Stream.eval(nextEvent).flatMap {
+              case Right(msg)            => emitOrReoffer(msg) ++ live
+              case Left(Some(straggler)) => emitOrReoffer(straggler)
+              case Left(None)            => Stream.empty
+            }
+
+          // Dispatch completed: drain stragglers, then emit the response (or propagate).
+          val finale: Stream[F, ServerSentEvent] =
+            Stream.eval(dispatchResult.get).flatMap { result =>
+              Stream.eval(session.outQueue.tryTakeN(None)).flatMap { remaining =>
+                Stream.emits(remaining).flatMap(emitOrReoffer)
+              } ++ (result match
+                case Right(Some(response)) => Stream.emit(toSSE(response))
+                case Right(None)           => Stream.empty
+                case Left(error)           => Stream.raiseError[F](error))
+            }
+
+          live ++ finale
         }
 
       span.addAttribute(Attribute("http.status_code", 200L)) *>
         Ok(sseStream, `Content-Type`(SseMediaType))
     }
 
-  /** Drain all remaining messages from the queue */
-  private def drainQueue[F[_]: Async](session: HttpSession[F]): F[List[JsonRpcMessage]] =
-    def loop(acc: List[JsonRpcMessage]): F[List[JsonRpcMessage]] =
-      session.outQueue.tryTake.flatMap {
-        case Some(msg) => loop(acc :+ msg)
-        case None      => Async[F].pure(acc)
-      }
-    loop(Nil)
-
   /** Handle a simple (non-streaming) request */
   private def handleSimpleRequest[F[_]: Async](
       session: HttpSession[F],
       message: JsonRpcMessage,
       span: org.typelevel.otel4s.trace.Span[F]
-  ): F[Response[F]] =
-    val dsl = new Http4sDsl[F] {}
+  )(using dsl: Http4sDsl[F]): F[Response[F]] =
     import dsl.*
 
     session.dispatcher.dispatch(message).flatMap {
@@ -365,8 +396,9 @@ object HttpTransport:
     }
 
   /** Return HTTP 400 with JSON-RPC error for invalid/missing session */
-  private def invalidSessionResponse[F[_]: Async](message: JsonRpcMessage): F[Response[F]] =
-    val dsl = new Http4sDsl[F] {}
+  private def invalidSessionResponse[F[_]: Async](message: JsonRpcMessage)(using
+      dsl: Http4sDsl[F]
+  ): F[Response[F]] =
     import dsl.*
 
     val requestId = message match

@@ -65,15 +65,17 @@ object Codecs:
 
   // === JSON-RPC Messages ===
 
+  // Note: `params` is added only when present rather than via dropNullValues, which
+  // would also strip a legitimate `"id": null` (RequestId.NullId) and turn the
+  // request into a notification on the wire.
   given Encoder[JsonRpcRequest] = Encoder.instance: req =>
-    Json
-      .obj(
+    Json.fromFields(
+      List(
         "jsonrpc" -> Json.fromString(req.jsonrpc),
         "id"      -> req.id.asJson,
-        "method"  -> Json.fromString(req.method),
-        "params"  -> req.params.getOrElse(Json.Null)
-      )
-      .dropNullValues
+        "method"  -> Json.fromString(req.method)
+      ) ++ req.params.map("params" -> _)
+    )
 
   given Decoder[JsonRpcRequest] = Decoder.instance: cursor =>
     for
@@ -83,13 +85,12 @@ object Codecs:
     yield JsonRpcRequest(id, method, params)
 
   given Encoder[JsonRpcNotification] = Encoder.instance: notif =>
-    Json
-      .obj(
+    Json.fromFields(
+      List(
         "jsonrpc" -> Json.fromString(notif.jsonrpc),
-        "method"  -> Json.fromString(notif.method),
-        "params"  -> notif.params.getOrElse(Json.Null)
-      )
-      .dropNullValues
+        "method"  -> Json.fromString(notif.method)
+      ) ++ notif.params.map("params" -> _)
+    )
 
   given Decoder[JsonRpcNotification] = Decoder.instance: cursor =>
     for
@@ -140,7 +141,7 @@ object Codecs:
       case (false, true, false, false) => cursor.as[JsonRpcNotification]
       case (true, false, true, false)  => cursor.as[JsonRpcResponse]
       case (true, false, false, true)  => cursor.as[JsonRpcErrorResponse]
-      case _ =>
+      case _                           =>
         Left(DecodingFailure("Invalid JSON-RPC message structure", cursor.history))
 
   // === Common Types ===
@@ -153,14 +154,9 @@ object Codecs:
 
   // === MCP Types ===
 
+  // ClientInfo is an alias of ServerInfo, so these givens cover both.
   given Encoder[ServerInfo] = derivedEncoder[ServerInfo]
   given Decoder[ServerInfo] = deriveDecoder
-
-  given Encoder[ClientInfo] = derivedEncoder[ClientInfo]
-  given Decoder[ClientInfo] = deriveDecoder
-
-  given Encoder[Implementation] = derivedEncoder[Implementation]
-  given Decoder[Implementation] = deriveDecoder
 
   // === Capabilities ===
 
@@ -299,7 +295,7 @@ object Codecs:
   given Encoder[ResourceContentRef] = Encoder.instance: rc =>
     Json
       .obj(
-        "type" -> Json.fromString("resource"),
+        "type"     -> Json.fromString("resource"),
         "resource" -> Json
           .obj(
             "uri"      -> Json.fromString(rc.uri),
@@ -588,8 +584,8 @@ object Codecs:
   given Decoder[ModelPreferences] = deriveDecoder
 
   given Encoder[ToolChoice] = Encoder.instance:
-    case ToolChoice.Auto => Json.obj("type" -> Json.fromString("auto"))
-    case ToolChoice.None => Json.obj("type" -> Json.fromString("none"))
+    case ToolChoice.Auto           => Json.obj("type" -> Json.fromString("auto"))
+    case ToolChoice.None           => Json.obj("type" -> Json.fromString("none"))
     case ToolChoice.Specific(name) =>
       Json.obj("type" -> Json.fromString("tool"), "name" -> Json.fromString(name))
 
@@ -660,8 +656,7 @@ object Codecs:
           for
             message <- cursor.get[String]("message")
             schema  <- cursor.get[JsonSchema]("requestedSchema")
-            mode    <- cursor.get[Option[String]]("mode")
-          yield ElicitFormParams(message, schema, mode)
+          yield ElicitFormParams(message, schema)
 
   given Encoder[ElicitAction] = Encoder.encodeString.contramap:
     case ElicitAction.Accept  => "accept"

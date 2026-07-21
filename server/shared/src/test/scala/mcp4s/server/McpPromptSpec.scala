@@ -20,17 +20,21 @@ import cats.effect.IO
 import cats.syntax.semigroup.*
 import mcp4s.protocol.*
 import munit.CatsEffectSuite
+import mcp4s.server.TestSyntax.*
 
 class McpPromptSpec extends CatsEffectSuite:
 
-  case class GreetArgs(@description("Who to greet") name: String) derives PromptInput
+  import mcp4s.server.dsl.{Prompt as PromptDef, *}
 
-  test("McpPrompt creates prompt with PromptInput-based arguments") {
-    val greet = McpPrompt[IO, GreetArgs]("greet", "Greet someone") { args =>
-      IO.pure(
-        GetPromptResult(None, List(PromptMessage(Role.User, TextContent(s"Hi ${args.name}"))))
-      )
-    }
+  case class GreetArgs(@description("Who to greet") name: String) derives Schema
+
+  test("Prompt with typed input derives argument metadata") {
+    val greet =
+      PromptDef("greet").withDescription("Greet someone").input[GreetArgs].handle[IO] { args =>
+        IO.pure(
+          GetPromptResult(None, List(PromptMessage(Role.User, TextContent(s"Hi ${args.name}"))))
+        )
+      }
 
     for
       prompts <- greet.list
@@ -45,8 +49,8 @@ class McpPromptSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpPrompt calls handler with decoded args") {
-    val greet = McpPrompt[IO, GreetArgs]("greet", "Greet") { args =>
+  test("Prompt calls handler with decoded args") {
+    val greet = PromptDef("greet").withDescription("Greet").input[GreetArgs].handle[IO] { args =>
       IO.pure(
         GetPromptResult(None, List(PromptMessage(Role.User, TextContent(s"Hi ${args.name}"))))
       )
@@ -55,15 +59,13 @@ class McpPromptSpec extends CatsEffectSuite:
     for
       result <- greet.get("greet", Map("name" -> "Alice")).value
       _   = assert(result.isDefined)
-      msg = result.get.messages.head.content.asInstanceOf[TextContent].text
+      msg = textOf(result.get.messages.head.content)
       _   = assertEquals(msg, "Hi Alice")
     yield ()
   }
 
-  test("McpPrompt returns None for unknown prompt name") {
-    val greet = McpPrompt.noArgs[IO]("greet", "Greet") {
-      IO.pure(GetPromptResult(None, List(PromptMessage(Role.User, TextContent("Hi")))))
-    }
+  test("Prompt returns None for unknown prompt name") {
+    val greet = PromptDef("greet").withDescription("Greet").messages[IO](user("Hi"))
 
     for
       result <- greet.get("other", Map.empty).value
@@ -71,10 +73,12 @@ class McpPromptSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpPrompt.noArgs creates prompt without arguments") {
-    val hello = McpPrompt.noArgs[IO]("hello", "Say hello") {
-      IO.pure(GetPromptResult(Some("Hello"), List(PromptMessage(Role.User, TextContent("Hello!")))))
-    }
+  test("Prompt without input has no arguments") {
+    val hello = PromptDef("hello")
+      .withDescription("Say hello")
+      .static[IO](
+        GetPromptResult(Some("Hello"), List(PromptMessage(Role.User, TextContent("Hello!"))))
+      )
 
     for
       prompts <- hello.list
@@ -84,11 +88,13 @@ class McpPromptSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("McpPrompt.raw creates prompt from map handler") {
-    val calc = McpPrompt.raw[IO](
-      "calc",
-      "Calculate",
-      List(PromptArgument("op", Some("Operation"), required = true))
+  test("Prompts.single creates prompt from raw map handler") {
+    val calc = Prompts.single[IO](
+      mcp4s.protocol.Prompt(
+        "calc",
+        Some("Calculate"),
+        List(PromptArgument("op", Some("Operation"), required = true))
+      )
     ) { args =>
       IO.pure(
         GetPromptResult(
@@ -105,13 +111,8 @@ class McpPromptSpec extends CatsEffectSuite:
   }
 
   test("Prompts compose with |+|") {
-    val greet = McpPrompt.noArgs[IO]("greet", "Greet") {
-      IO.pure(GetPromptResult(None, List(PromptMessage(Role.User, TextContent("Hi")))))
-    }
-
-    val farewell = McpPrompt.noArgs[IO]("farewell", "Farewell") {
-      IO.pure(GetPromptResult(None, List(PromptMessage(Role.User, TextContent("Bye")))))
-    }
+    val greet    = PromptDef("greet").withDescription("Greet").messages[IO](user("Hi"))
+    val farewell = PromptDef("farewell").withDescription("Farewell").messages[IO](user("Bye"))
 
     val all = greet |+| farewell
 
@@ -119,19 +120,19 @@ class McpPromptSpec extends CatsEffectSuite:
       prompts <- all.list
       _ = assertEquals(prompts.map(_.name).toSet, Set("greet", "farewell"))
       g <- all.get("greet", Map.empty).value
-      _ = assertEquals(g.get.messages.head.content.asInstanceOf[TextContent].text, "Hi")
+      _ = assertEquals(textOf(g.get.messages.head.content), "Hi")
       f <- all.get("farewell", Map.empty).value
-      _ = assertEquals(f.get.messages.head.content.asInstanceOf[TextContent].text, "Bye")
+      _ = assertEquals(textOf(f.get.messages.head.content), "Bye")
     yield ()
   }
 
   case class CalcArgs(
       @description("The operation") operation: String,
       @description("The value") value: String
-  ) derives PromptInput
+  ) derives Schema
 
-  test("McpPrompt with PromptInput extracts argument metadata") {
-    val prompt = McpPrompt[IO, CalcArgs]("calc", "Calculate") { args =>
+  test("Prompt with typed input extracts argument metadata") {
+    val prompt = PromptDef("calc").withDescription("Calculate").input[CalcArgs].handle[IO] { args =>
       IO.pure(
         GetPromptResult(
           None,

@@ -113,7 +113,7 @@ object ServerTest:
     def getPrompt[A: Encoder](name: String, arguments: A): F[GetPromptResult] =
       // Convert typed args to Map[String, String] via JSON
       val json = arguments.asJson
-      val map = json.asObject
+      val map  = json.asObject
         .map { obj =>
           obj.toMap.collect { case (k, v) if v.isString => k -> v.asString.get }
         }

@@ -31,11 +31,11 @@ import mcp4s.protocol.*
   * import mcp4s.client.mcp.*
   *
   * val sampling = Sampling[IO] { params =>
-  *   message("Hello from LLM", "mock-model").pure[IO]
+  *   IO.pure(message("Hello from LLM", "mock-model"))
   * }
   *
   * val elicitation = Elicitation[IO] { params =>
-  *   accept(Map("confirmed" -> Json.fromBoolean(true))).pure[IO]
+  *   IO.pure(accept(Map("confirmed" -> Json.fromBoolean(true))))
   * }
   *
   * val roots = Roots[IO](
@@ -229,14 +229,3 @@ object mcp:
     /** Create an empty roots provider with no roots. */
     def empty[F[_]: Applicative]: mcp4s.client.Roots[F] =
       mcp4s.client.Roots.empty[F]
-
-  // === Pure Extension ===
-
-  /** Extension to lift pure values into any Applicative context.
-    *
-    * Example:
-    * {{{
-    * val result: IO[CreateMessageResult] = message("Hello", "model").pure[IO]
-    * }}}
-    */
-  extension [A](a: A) def pure[F[_]: Applicative]: F[A] = Applicative[F].pure(a)

@@ -64,45 +64,45 @@ class PropertySpec extends ScalaCheckSuite:
     Gen.const(Json.False)
   )
 
-  val genJsonObject: Gen[Json] = for {
+  val genJsonObject: Gen[Json] = for
     keys   <- Gen.listOfN(3, Gen.alphaStr.suchThat(_.nonEmpty))
     values <- Gen.listOfN(3, genJsonPrimitive)
-  } yield Json.obj(keys.zip(values)*)
+  yield Json.obj(keys.zip(values)*)
 
-  val genJsonRpcRequest: Gen[JsonRpcRequest] = for {
+  val genJsonRpcRequest: Gen[JsonRpcRequest] = for
     id     <- genNonNullRequestId
     method <- genMethod
     params <- Gen.option(genJsonObject)
-  } yield JsonRpcRequest(id, method, params)
+  yield JsonRpcRequest(id, method, params)
 
   given Arbitrary[JsonRpcRequest] = Arbitrary(genJsonRpcRequest)
 
-  val genJsonRpcNotification: Gen[JsonRpcNotification] = for {
+  val genJsonRpcNotification: Gen[JsonRpcNotification] = for
     method <- genMethod
     params <- Gen.option(genJsonObject)
-  } yield JsonRpcNotification(method, params)
+  yield JsonRpcNotification(method, params)
 
   given Arbitrary[JsonRpcNotification] = Arbitrary(genJsonRpcNotification)
 
-  val genJsonRpcResponse: Gen[JsonRpcResponse] = for {
+  val genJsonRpcResponse: Gen[JsonRpcResponse] = for
     id     <- genNonNullRequestId
     result <- genJsonObject
-  } yield JsonRpcResponse(id, result)
+  yield JsonRpcResponse(id, result)
 
   given Arbitrary[JsonRpcResponse] = Arbitrary(genJsonRpcResponse)
 
-  val genJsonRpcError: Gen[JsonRpcError] = for {
+  val genJsonRpcError: Gen[JsonRpcError] = for
     code    <- Gen.oneOf(-32700, -32600, -32601, -32602, -32603)
     message <- Gen.alphaNumStr
     data    <- Gen.option(genJsonPrimitive)
-  } yield JsonRpcError(code, message, data)
+  yield JsonRpcError(code, message, data)
 
   given Arbitrary[JsonRpcError] = Arbitrary(genJsonRpcError)
 
-  val genJsonRpcErrorResponse: Gen[JsonRpcErrorResponse] = for {
+  val genJsonRpcErrorResponse: Gen[JsonRpcErrorResponse] = for
     id    <- genNonNullRequestId
     error <- genJsonRpcError
-  } yield JsonRpcErrorResponse(id, error)
+  yield JsonRpcErrorResponse(id, error)
 
   given Arbitrary[JsonRpcErrorResponse] = Arbitrary(genJsonRpcErrorResponse)
 
@@ -135,20 +135,20 @@ class PropertySpec extends ScalaCheckSuite:
   // Icon and Annotations Generators
   // ============================================================================
 
-  val genIcon: Gen[Icon] = for {
+  val genIcon: Gen[Icon] = for
     src      <- Gen.alphaNumStr.map(s => s"https://example.com/$s.png")
     mimeType <- Gen.option(Gen.oneOf("image/png", "image/svg+xml", "image/jpeg"))
     sizes    <- Gen.option(Gen.listOfN(2, Gen.oneOf("16x16", "32x32", "64x64")))
     theme    <- Gen.option(Gen.oneOf("light", "dark"))
-  } yield Icon(src, mimeType, sizes, theme)
+  yield Icon(src, mimeType, sizes, theme)
 
   given Arbitrary[Icon] = Arbitrary(genIcon)
 
-  val genAnnotations: Gen[Annotations] = for {
+  val genAnnotations: Gen[Annotations] = for
     audience     <- Gen.option(Gen.listOfN(2, Gen.oneOf("user", "assistant")))
     priority     <- Gen.option(Gen.choose(0.0, 1.0))
     lastModified <- Gen.option(Gen.const("2024-01-15T10:30:00Z"))
-  } yield Annotations(audience, priority, lastModified)
+  yield Annotations(audience, priority, lastModified)
 
   given Arbitrary[Annotations] = Arbitrary(genAnnotations)
 
@@ -156,43 +156,43 @@ class PropertySpec extends ScalaCheckSuite:
   // Content Types Generators (Phase 1)
   // ============================================================================
 
-  val genTextContent: Gen[TextContent] = for {
+  val genTextContent: Gen[TextContent] = for
     text        <- Gen.alphaNumStr
     annotations <- Gen.option(genAnnotations)
     meta        <- Gen.option(genJsonObject)
-  } yield TextContent(text, annotations, meta)
+  yield TextContent(text, annotations, meta)
 
   given Arbitrary[TextContent] = Arbitrary(genTextContent)
 
-  val genImageContent: Gen[ImageContent] = for {
+  val genImageContent: Gen[ImageContent] = for
     data        <- Gen.alphaNumStr.filter(_.nonEmpty)
     mimeType    <- Gen.oneOf("image/png", "image/jpeg", "image/gif", "image/webp")
     annotations <- Gen.option(genAnnotations)
     meta        <- Gen.option(genJsonObject)
-  } yield ImageContent(data, mimeType, annotations, meta)
+  yield ImageContent(data, mimeType, annotations, meta)
 
   given Arbitrary[ImageContent] = Arbitrary(genImageContent)
 
-  val genAudioContent: Gen[AudioContent] = for {
+  val genAudioContent: Gen[AudioContent] = for
     data        <- Gen.alphaNumStr.filter(_.nonEmpty)
     mimeType    <- Gen.oneOf("audio/wav", "audio/mp3", "audio/ogg", "audio/mpeg")
     annotations <- Gen.option(genAnnotations)
     meta        <- Gen.option(genJsonObject)
-  } yield AudioContent(data, mimeType, annotations, meta)
+  yield AudioContent(data, mimeType, annotations, meta)
 
   given Arbitrary[AudioContent] = Arbitrary(genAudioContent)
 
-  val genResourceContentRef: Gen[ResourceContentRef] = for {
+  val genResourceContentRef: Gen[ResourceContentRef] = for
     uri         <- Gen.alphaNumStr.map(s => s"file:///path/to/$s")
     mimeType    <- Gen.option(Gen.oneOf("text/plain", "application/json", "text/markdown"))
     text        <- Gen.option(Gen.alphaNumStr)
     annotations <- Gen.option(genAnnotations)
     meta        <- Gen.option(genJsonObject)
-  } yield ResourceContentRef(uri, mimeType, text, annotations, meta)
+  yield ResourceContentRef(uri, mimeType, text, annotations, meta)
 
   given Arbitrary[ResourceContentRef] = Arbitrary(genResourceContentRef)
 
-  val genResourceLinkContent: Gen[ResourceLinkContent] = for {
+  val genResourceLinkContent: Gen[ResourceLinkContent] = for
     uri         <- Gen.alphaNumStr.map(s => s"file:///path/to/$s")
     name        <- Gen.alphaNumStr.filter(_.nonEmpty)
     title       <- Gen.option(Gen.alphaNumStr)
@@ -201,7 +201,7 @@ class PropertySpec extends ScalaCheckSuite:
     annotations <- Gen.option(genAnnotations)
     size        <- Gen.option(Gen.choose(0L, 1000000L))
     icons       <- Gen.option(Gen.listOfN(2, genIcon))
-  } yield ResourceLinkContent(uri, name, title, description, mimeType, annotations, size, icons)
+  yield ResourceLinkContent(uri, name, title, description, mimeType, annotations, size, icons)
 
   given Arbitrary[ResourceLinkContent] = Arbitrary(genResourceLinkContent)
 
@@ -224,33 +224,33 @@ class PropertySpec extends ScalaCheckSuite:
 
   given Arbitrary[SamplingTextContent] = Arbitrary(genSamplingTextContent)
 
-  val genSamplingImageContent: Gen[SamplingImageContent] = for {
+  val genSamplingImageContent: Gen[SamplingImageContent] = for
     data     <- Gen.alphaNumStr.filter(_.nonEmpty)
     mimeType <- Gen.oneOf("image/png", "image/jpeg", "image/gif")
-  } yield SamplingImageContent(data, mimeType)
+  yield SamplingImageContent(data, mimeType)
 
   given Arbitrary[SamplingImageContent] = Arbitrary(genSamplingImageContent)
 
-  val genSamplingAudioContent: Gen[SamplingAudioContent] = for {
+  val genSamplingAudioContent: Gen[SamplingAudioContent] = for
     data     <- Gen.alphaNumStr.filter(_.nonEmpty)
     mimeType <- Gen.oneOf("audio/wav", "audio/mp3", "audio/ogg")
-  } yield SamplingAudioContent(data, mimeType)
+  yield SamplingAudioContent(data, mimeType)
 
   given Arbitrary[SamplingAudioContent] = Arbitrary(genSamplingAudioContent)
 
-  val genToolUseContent: Gen[ToolUseContent] = for {
+  val genToolUseContent: Gen[ToolUseContent] = for
     id    <- Gen.alphaNumStr.filter(_.nonEmpty)
     name  <- Gen.alphaNumStr.filter(_.nonEmpty)
     input <- genJsonObject
-  } yield ToolUseContent(id, name, input)
+  yield ToolUseContent(id, name, input)
 
   given Arbitrary[ToolUseContent] = Arbitrary(genToolUseContent)
 
-  val genToolResultContent: Gen[ToolResultContent] = for {
+  val genToolResultContent: Gen[ToolResultContent] = for
     toolUseId <- Gen.alphaNumStr.filter(_.nonEmpty)
     content   <- Gen.listOfN(2, genTextContent.map(identity[Content]))
     isError   <- Gen.oneOf(true, false)
-  } yield ToolResultContent(toolUseId, content, isError)
+  yield ToolResultContent(toolUseId, content, isError)
 
   given Arbitrary[ToolResultContent] = Arbitrary(genToolResultContent)
 
@@ -264,26 +264,26 @@ class PropertySpec extends ScalaCheckSuite:
 
   given Arbitrary[SamplingContent] = Arbitrary(genSamplingContent)
 
-  val genSamplingMessage: Gen[SamplingMessage] = for {
+  val genSamplingMessage: Gen[SamplingMessage] = for
     role    <- genRole
     content <- genSamplingContent
     meta    <- Gen.option(genJsonObject)
-  } yield SamplingMessage(role, content, meta)
+  yield SamplingMessage(role, content, meta)
 
   given Arbitrary[SamplingMessage] = Arbitrary(genSamplingMessage)
 
-  val genModelHint: Gen[ModelHint] = for {
-    name <- Gen.option(Gen.oneOf("claude-3-opus", "claude-3-sonnet", "gpt-4"))
-  } yield ModelHint(name)
+  val genModelHint: Gen[ModelHint] =
+    for name <- Gen.option(Gen.oneOf("claude-3-opus", "claude-3-sonnet", "gpt-4"))
+    yield ModelHint(name)
 
   given Arbitrary[ModelHint] = Arbitrary(genModelHint)
 
-  val genModelPreferences: Gen[ModelPreferences] = for {
+  val genModelPreferences: Gen[ModelPreferences] = for
     hints                <- Gen.option(Gen.listOfN(2, genModelHint))
     costPriority         <- Gen.option(Gen.choose(0.0, 1.0))
     speedPriority        <- Gen.option(Gen.choose(0.0, 1.0))
     intelligencePriority <- Gen.option(Gen.choose(0.0, 1.0))
-  } yield ModelPreferences(hints, costPriority, speedPriority, intelligencePriority)
+  yield ModelPreferences(hints, costPriority, speedPriority, intelligencePriority)
 
   given Arbitrary[ModelPreferences] = Arbitrary(genModelPreferences)
 
@@ -296,7 +296,7 @@ class PropertySpec extends ScalaCheckSuite:
   given Arbitrary[ToolChoice] = Arbitrary(genToolChoice)
 
   // Simplified CreateMessageParams generator (without nested Tool to avoid cycles)
-  val genCreateMessageParams: Gen[CreateMessageParams] = for {
+  val genCreateMessageParams: Gen[CreateMessageParams] = for
     messages         <- Gen.listOfN(2, genSamplingMessage)
     maxTokens        <- Gen.choose(100, 4096)
     modelPreferences <- Gen.option(genModelPreferences)
@@ -306,7 +306,7 @@ class PropertySpec extends ScalaCheckSuite:
     stopSequences    <- Gen.option(Gen.listOfN(2, Gen.alphaNumStr))
     metadata         <- Gen.option(genJsonObject)
     toolChoice       <- Gen.option(genToolChoice)
-  } yield CreateMessageParams(
+  yield CreateMessageParams(
     messages,
     maxTokens,
     modelPreferences,
@@ -321,13 +321,13 @@ class PropertySpec extends ScalaCheckSuite:
 
   given Arbitrary[CreateMessageParams] = Arbitrary(genCreateMessageParams)
 
-  val genCreateMessageResult: Gen[CreateMessageResult] = for {
+  val genCreateMessageResult: Gen[CreateMessageResult] = for
     role       <- genRole
     content    <- genSamplingContent
     model      <- Gen.oneOf("claude-3-opus-20240229", "claude-3-sonnet-20240229", "gpt-4-turbo")
     stopReason <- Gen.option(Gen.oneOf("endTurn", "stopSequence", "maxTokens", "toolUse"))
     meta       <- Gen.option(genJsonObject)
-  } yield CreateMessageResult(role, content, model, stopReason, meta)
+  yield CreateMessageResult(role, content, model, stopReason, meta)
 
   given Arbitrary[CreateMessageResult] = Arbitrary(genCreateMessageResult)
 
@@ -343,13 +343,13 @@ class PropertySpec extends ScalaCheckSuite:
 
   given Arbitrary[ElicitAction] = Arbitrary(genElicitAction)
 
-  val genElicitResult: Gen[ElicitResult] = for {
-    action <- genElicitAction
-    content <- Gen.option(for {
+  val genElicitResult: Gen[ElicitResult] = for
+    action  <- genElicitAction
+    content <- Gen.option(for
       key   <- Gen.alphaStr.filter(_.nonEmpty)
       value <- genJsonPrimitive
-    } yield Map(key -> value))
-  } yield ElicitResult(action, content)
+    yield Map(key -> value))
+  yield ElicitResult(action, content)
 
   given Arbitrary[ElicitResult] = Arbitrary(genElicitResult)
 
@@ -357,22 +357,22 @@ class PropertySpec extends ScalaCheckSuite:
   // Capability Types Generators (Phase 4)
   // ============================================================================
 
-  val genToolsCapability: Gen[ToolsCapability] = for {
-    listChanged <- Gen.option(Gen.oneOf(true, false))
-  } yield ToolsCapability(listChanged)
+  val genToolsCapability: Gen[ToolsCapability] =
+    for listChanged <- Gen.option(Gen.oneOf(true, false))
+    yield ToolsCapability(listChanged)
 
   given Arbitrary[ToolsCapability] = Arbitrary(genToolsCapability)
 
-  val genResourcesCapability: Gen[ResourcesCapability] = for {
+  val genResourcesCapability: Gen[ResourcesCapability] = for
     subscribe   <- Gen.option(Gen.oneOf(true, false))
     listChanged <- Gen.option(Gen.oneOf(true, false))
-  } yield ResourcesCapability(subscribe, listChanged)
+  yield ResourcesCapability(subscribe, listChanged)
 
   given Arbitrary[ResourcesCapability] = Arbitrary(genResourcesCapability)
 
-  val genPromptsCapability: Gen[PromptsCapability] = for {
-    listChanged <- Gen.option(Gen.oneOf(true, false))
-  } yield PromptsCapability(listChanged)
+  val genPromptsCapability: Gen[PromptsCapability] =
+    for listChanged <- Gen.option(Gen.oneOf(true, false))
+    yield PromptsCapability(listChanged)
 
   given Arbitrary[PromptsCapability] = Arbitrary(genPromptsCapability)
 
@@ -384,43 +384,43 @@ class PropertySpec extends ScalaCheckSuite:
 
   given Arbitrary[CompletionsCapability] = Arbitrary(genCompletionsCapability)
 
-  val genServerCapabilities: Gen[ServerCapabilities] = for {
+  val genServerCapabilities: Gen[ServerCapabilities] = for
     tools        <- Gen.option(genToolsCapability)
     resources    <- Gen.option(genResourcesCapability)
     prompts      <- Gen.option(genPromptsCapability)
     logging      <- Gen.option(genLoggingCapability)
     completions  <- Gen.option(genCompletionsCapability)
     experimental <- Gen.option(genJsonObject)
-  } yield ServerCapabilities(tools, resources, prompts, logging, completions, None, experimental)
+  yield ServerCapabilities(tools, resources, prompts, logging, completions, None, experimental)
 
   given Arbitrary[ServerCapabilities] = Arbitrary(genServerCapabilities)
 
-  val genRootsCapability: Gen[RootsCapability] = for {
-    listChanged <- Gen.option(Gen.oneOf(true, false))
-  } yield RootsCapability(listChanged)
+  val genRootsCapability: Gen[RootsCapability] =
+    for listChanged <- Gen.option(Gen.oneOf(true, false))
+    yield RootsCapability(listChanged)
 
   given Arbitrary[RootsCapability] = Arbitrary(genRootsCapability)
 
-  val genSamplingCapability: Gen[SamplingCapability] = for {
+  val genSamplingCapability: Gen[SamplingCapability] = for
     context <- Gen.option(genJsonObject)
     tools   <- Gen.option(genJsonObject)
-  } yield SamplingCapability(context, tools)
+  yield SamplingCapability(context, tools)
 
   given Arbitrary[SamplingCapability] = Arbitrary(genSamplingCapability)
 
-  val genElicitationCapability: Gen[ElicitationCapability] = for {
+  val genElicitationCapability: Gen[ElicitationCapability] = for
     form <- Gen.option(genJsonObject)
     url  <- Gen.option(genJsonObject)
-  } yield ElicitationCapability(form, url)
+  yield ElicitationCapability(form, url)
 
   given Arbitrary[ElicitationCapability] = Arbitrary(genElicitationCapability)
 
-  val genClientCapabilities: Gen[ClientCapabilities] = for {
+  val genClientCapabilities: Gen[ClientCapabilities] = for
     roots        <- Gen.option(genRootsCapability)
     sampling     <- Gen.option(genSamplingCapability)
     elicitation  <- Gen.option(genElicitationCapability)
     experimental <- Gen.option(genJsonObject)
-  } yield ClientCapabilities(roots, sampling, elicitation, None, experimental)
+  yield ClientCapabilities(roots, sampling, elicitation, None, experimental)
 
   given Arbitrary[ClientCapabilities] = Arbitrary(genClientCapabilities)
 
@@ -428,22 +428,22 @@ class PropertySpec extends ScalaCheckSuite:
   // JsonSchema Types Generators (Phase 5)
   // ============================================================================
 
-  val genJsonSchemaProperty: Gen[JsonSchemaProperty] = for {
+  val genJsonSchemaProperty: Gen[JsonSchemaProperty] = for
     typ         <- Gen.oneOf("string", "number", "boolean", "integer", "array")
     description <- Gen.option(Gen.alphaNumStr)
     enumVals    <- Gen.option(Gen.listOfN(3, Gen.alphaStr.filter(_.nonEmpty)))
     default     <- Gen.option(genJsonPrimitive)
-  } yield JsonSchemaProperty.make(typ, description, enumVals, default)
+  yield JsonSchemaProperty.make(typ, description, enumVals, default)
 
   given Arbitrary[JsonSchemaProperty] = Arbitrary(genJsonSchemaProperty)
 
-  val genJsonSchema: Gen[JsonSchema] = for {
-    properties <- Gen.option(for {
+  val genJsonSchema: Gen[JsonSchema] = for
+    properties <- Gen.option(for
       keys  <- Gen.listOfN(3, Gen.alphaStr.filter(_.nonEmpty))
       props <- Gen.listOfN(3, genJsonSchemaProperty)
-    } yield keys.zip(props).toMap)
+    yield keys.zip(props).toMap)
     required <- Gen.option(Gen.listOfN(2, Gen.alphaStr.filter(_.nonEmpty)))
-  } yield JsonSchema("object", properties, required)
+  yield JsonSchema("object", properties, required)
 
   given Arbitrary[JsonSchema] = Arbitrary(genJsonSchema)
 
@@ -451,7 +451,7 @@ class PropertySpec extends ScalaCheckSuite:
   // Resource & Prompt Types Generators (Phase 6)
   // ============================================================================
 
-  val genResource: Gen[Resource] = for {
+  val genResource: Gen[Resource] = for
     uri         <- Gen.alphaNumStr.map(s => s"file:///resource/$s")
     name        <- Gen.alphaNumStr.filter(_.nonEmpty)
     description <- Gen.option(Gen.alphaNumStr)
@@ -461,11 +461,11 @@ class PropertySpec extends ScalaCheckSuite:
     size        <- Gen.option(Gen.choose(0L, 1000000L))
     icons       <- Gen.option(Gen.listOfN(2, genIcon))
     meta        <- Gen.option(genJsonObject)
-  } yield Resource(uri, name, description, mimeType, title, annotations, size, icons, meta)
+  yield Resource(uri, name, description, mimeType, title, annotations, size, icons, meta)
 
   given Arbitrary[Resource] = Arbitrary(genResource)
 
-  val genResourceTemplate: Gen[ResourceTemplate] = for {
+  val genResourceTemplate: Gen[ResourceTemplate] = for
     uriTemplate <- Gen.alphaNumStr.map(s => s"file:///template/{$s}")
     name        <- Gen.alphaNumStr.filter(_.nonEmpty)
     description <- Gen.option(Gen.alphaNumStr)
@@ -474,7 +474,7 @@ class PropertySpec extends ScalaCheckSuite:
     annotations <- Gen.option(genAnnotations)
     icons       <- Gen.option(Gen.listOfN(2, genIcon))
     meta        <- Gen.option(genJsonObject)
-  } yield ResourceTemplate(
+  yield ResourceTemplate(
     uriTemplate,
     name,
     description,
@@ -487,62 +487,62 @@ class PropertySpec extends ScalaCheckSuite:
 
   given Arbitrary[ResourceTemplate] = Arbitrary(genResourceTemplate)
 
-  val genResourceContent: Gen[ResourceContent] = for {
+  val genResourceContent: Gen[ResourceContent] = for
     uri      <- Gen.alphaNumStr.map(s => s"file:///content/$s")
     mimeType <- Gen.option(Gen.oneOf("text/plain", "application/json"))
     text     <- Gen.option(Gen.alphaNumStr)
-    blob <- Gen.option(
+    blob     <- Gen.option(
       Gen.alphaNumStr.map(s => java.util.Base64.getEncoder.encodeToString(s.getBytes))
     )
-  } yield ResourceContent(uri, mimeType, text, blob)
+  yield ResourceContent(uri, mimeType, text, blob)
 
   given Arbitrary[ResourceContent] = Arbitrary(genResourceContent)
 
-  val genPromptArgument: Gen[PromptArgument] = for {
+  val genPromptArgument: Gen[PromptArgument] = for
     name        <- Gen.alphaStr.filter(_.nonEmpty)
     description <- Gen.option(Gen.alphaNumStr)
     required    <- Gen.oneOf(true, false)
     title       <- Gen.option(Gen.alphaNumStr)
-  } yield PromptArgument(name, description, required, title)
+  yield PromptArgument(name, description, required, title)
 
   given Arbitrary[PromptArgument] = Arbitrary(genPromptArgument)
 
-  val genPrompt: Gen[Prompt] = for {
+  val genPrompt: Gen[Prompt] = for
     name        <- Gen.alphaStr.filter(_.nonEmpty)
     description <- Gen.option(Gen.alphaNumStr)
     arguments   <- Gen.listOfN(2, genPromptArgument)
     title       <- Gen.option(Gen.alphaNumStr)
     icons       <- Gen.option(Gen.listOfN(2, genIcon))
     meta        <- Gen.option(genJsonObject)
-  } yield Prompt(name, description, arguments, title, icons, meta)
+  yield Prompt(name, description, arguments, title, icons, meta)
 
   given Arbitrary[Prompt] = Arbitrary(genPrompt)
 
-  val genPromptMessage: Gen[PromptMessage] = for {
+  val genPromptMessage: Gen[PromptMessage] = for
     role    <- genRole
     content <- genContent
-  } yield PromptMessage(role, content)
+  yield PromptMessage(role, content)
 
   given Arbitrary[PromptMessage] = Arbitrary(genPromptMessage)
 
-  val genGetPromptResult: Gen[GetPromptResult] = for {
+  val genGetPromptResult: Gen[GetPromptResult] = for
     description <- Gen.option(Gen.alphaNumStr)
     messages    <- Gen.listOfN(2, genPromptMessage)
-  } yield GetPromptResult(description, messages)
+  yield GetPromptResult(description, messages)
 
   given Arbitrary[GetPromptResult] = Arbitrary(genGetPromptResult)
 
-  val genRoot: Gen[Root] = for {
+  val genRoot: Gen[Root] = for
     uri  <- Gen.alphaNumStr.map(s => s"file:///root/$s")
     name <- Gen.option(Gen.alphaNumStr)
     meta <- Gen.option(genJsonObject)
-  } yield Root(uri, name, meta)
+  yield Root(uri, name, meta)
 
   given Arbitrary[Root] = Arbitrary(genRoot)
 
-  val genListRootsResult: Gen[ListRootsResult] = for {
-    roots <- Gen.listOfN(2, genRoot)
-  } yield ListRootsResult(roots)
+  val genListRootsResult: Gen[ListRootsResult] =
+    for roots <- Gen.listOfN(2, genRoot)
+    yield ListRootsResult(roots)
 
   given Arbitrary[ListRootsResult] = Arbitrary(genListRootsResult)
 
@@ -550,86 +550,67 @@ class PropertySpec extends ScalaCheckSuite:
   // Lifecycle & Misc Types Generators (Phase 7)
   // ============================================================================
 
-  val genServerInfo: Gen[ServerInfo] = for {
+  val genServerInfo: Gen[ServerInfo] = for
     name        <- Gen.alphaStr.filter(_.nonEmpty)
     version     <- Gen.oneOf("1.0.0", "2.0.0", "0.1.0")
     title       <- Gen.option(Gen.alphaNumStr)
     description <- Gen.option(Gen.alphaNumStr)
     websiteUrl  <- Gen.option(Gen.const("https://example.com"))
     icons       <- Gen.option(Gen.listOfN(2, genIcon))
-  } yield ServerInfo(name, version, title, description, websiteUrl, icons)
+  yield ServerInfo(name, version, title, description, websiteUrl, icons)
 
   given Arbitrary[ServerInfo] = Arbitrary(genServerInfo)
 
-  val genClientInfo: Gen[ClientInfo] = for {
-    name        <- Gen.alphaStr.filter(_.nonEmpty)
-    version     <- Gen.oneOf("1.0.0", "2.0.0", "0.1.0")
-    title       <- Gen.option(Gen.alphaNumStr)
-    description <- Gen.option(Gen.alphaNumStr)
-    websiteUrl  <- Gen.option(Gen.const("https://example.com"))
-    icons       <- Gen.option(Gen.listOfN(2, genIcon))
-  } yield ClientInfo(name, version, title, description, websiteUrl, icons)
+  // ClientInfo is an alias of ServerInfo; the ServerInfo Arbitrary covers both.
+  val genClientInfo: Gen[ClientInfo] = genServerInfo
 
-  given Arbitrary[ClientInfo] = Arbitrary(genClientInfo)
-
-  val genImplementation: Gen[Implementation] = for {
-    name        <- Gen.alphaStr.filter(_.nonEmpty)
-    version     <- Gen.oneOf("1.0.0", "2.0.0", "0.1.0")
-    title       <- Gen.option(Gen.alphaNumStr)
-    description <- Gen.option(Gen.alphaNumStr)
-    websiteUrl  <- Gen.option(Gen.const("https://example.com"))
-    icons       <- Gen.option(Gen.listOfN(2, genIcon))
-  } yield Implementation(name, version, title, description, websiteUrl, icons)
-
-  given Arbitrary[Implementation] = Arbitrary(genImplementation)
-
-  val genInitializeParams: Gen[InitializeParams] = for {
+  val genInitializeParams: Gen[InitializeParams] = for
     protocolVersion <- Gen.oneOf("2024-11-05", "2025-11-25")
     capabilities    <- genClientCapabilities
     clientInfo      <- genClientInfo
-  } yield InitializeParams(protocolVersion, capabilities, clientInfo)
+  yield InitializeParams(protocolVersion, capabilities, clientInfo)
 
   given Arbitrary[InitializeParams] = Arbitrary(genInitializeParams)
 
-  val genInitializeResult: Gen[InitializeResult] = for {
+  val genInitializeResult: Gen[InitializeResult] = for
     protocolVersion <- Gen.oneOf("2024-11-05", "2025-11-25")
     capabilities    <- genServerCapabilities
     serverInfo      <- genServerInfo
     instructions    <- Gen.option(Gen.alphaNumStr)
-  } yield InitializeResult(protocolVersion, capabilities, serverInfo, instructions)
+  yield InitializeResult(protocolVersion, capabilities, serverInfo, instructions)
 
   given Arbitrary[InitializeResult] = Arbitrary(genInitializeResult)
 
-  val genProgressParams: Gen[ProgressParams] = for {
+  val genProgressParams: Gen[ProgressParams] = for
     progressToken <- genNonNullRequestId
     progress      <- Gen.choose(0.0, 100.0)
     total         <- Gen.option(Gen.choose(0.0, 100.0))
-  } yield ProgressParams(progressToken, progress, total)
+  yield ProgressParams(progressToken, progress, total)
 
   given Arbitrary[ProgressParams] = Arbitrary(genProgressParams)
 
-  val genCancelledParams: Gen[CancelledParams] = for {
+  val genCancelledParams: Gen[CancelledParams] = for
     requestId <- genNonNullRequestId
     reason    <- Gen.option(Gen.alphaNumStr)
-  } yield CancelledParams(requestId, reason)
+  yield CancelledParams(requestId, reason)
 
   given Arbitrary[CancelledParams] = Arbitrary(genCancelledParams)
 
-  val genLogMessage: Gen[LogMessage] = for {
+  val genLogMessage: Gen[LogMessage] = for
     level  <- genLogLevel
     logger <- Gen.option(Gen.alphaStr.filter(_.nonEmpty))
     data   <- genJsonPrimitive
-  } yield LogMessage(level, logger, data)
+  yield LogMessage(level, logger, data)
 
   given Arbitrary[LogMessage] = Arbitrary(genLogMessage)
 
-  val genToolAnnotations: Gen[ToolAnnotations] = for {
+  val genToolAnnotations: Gen[ToolAnnotations] = for
     title           <- Gen.option(Gen.alphaNumStr)
     readOnlyHint    <- Gen.option(Gen.oneOf(true, false))
     destructiveHint <- Gen.option(Gen.oneOf(true, false))
     idempotentHint  <- Gen.option(Gen.oneOf(true, false))
     openWorldHint   <- Gen.option(Gen.oneOf(true, false))
-  } yield ToolAnnotations(title, readOnlyHint, destructiveHint, idempotentHint, openWorldHint)
+  yield ToolAnnotations(title, readOnlyHint, destructiveHint, idempotentHint, openWorldHint)
 
   given Arbitrary[ToolAnnotations] = Arbitrary(genToolAnnotations)
 
@@ -641,13 +622,13 @@ class PropertySpec extends ScalaCheckSuite:
 
   given Arbitrary[TaskSupport] = Arbitrary(genTaskSupport)
 
-  val genToolExecution: Gen[ToolExecution] = for {
-    taskSupport <- Gen.option(genTaskSupport)
-  } yield ToolExecution(taskSupport)
+  val genToolExecution: Gen[ToolExecution] =
+    for taskSupport <- Gen.option(genTaskSupport)
+    yield ToolExecution(taskSupport)
 
   given Arbitrary[ToolExecution] = Arbitrary(genToolExecution)
 
-  val genTool: Gen[Tool] = for {
+  val genTool: Gen[Tool] = for
     name         <- Gen.alphaStr.filter(_.nonEmpty)
     description  <- Gen.option(Gen.alphaNumStr)
     inputSchema  <- genJsonSchema
@@ -657,7 +638,7 @@ class PropertySpec extends ScalaCheckSuite:
     annotations  <- Gen.option(genToolAnnotations)
     icons        <- Gen.option(Gen.listOfN(2, genIcon))
     meta         <- Gen.option(genJsonObject)
-  } yield Tool(
+  yield Tool(
     name,
     description,
     inputSchema,
@@ -671,11 +652,11 @@ class PropertySpec extends ScalaCheckSuite:
 
   given Arbitrary[Tool] = Arbitrary(genTool)
 
-  val genToolResult: Gen[ToolResult] = for {
+  val genToolResult: Gen[ToolResult] = for
     content           <- Gen.listOfN(2, genContent)
     isError           <- Gen.oneOf(true, false)
     structuredContent <- Gen.option(genJsonObject)
-  } yield ToolResult(content, Some(isError), structuredContent)
+  yield ToolResult(content, Some(isError), structuredContent)
 
   given Arbitrary[ToolResult] = Arbitrary(genToolResult)
 
@@ -687,18 +668,18 @@ class PropertySpec extends ScalaCheckSuite:
     Gen.alphaStr.filter(_.nonEmpty).map(McpError.ToolNotFound(_)),
     Gen.alphaStr.filter(_.nonEmpty).map(McpError.ResourceNotFound(_)),
     Gen.alphaStr.filter(_.nonEmpty).map(McpError.PromptNotFound(_)),
-    for {
+    for
       name   <- Gen.alphaStr.filter(_.nonEmpty)
       reason <- Gen.alphaStr.filter(_.nonEmpty)
-    } yield McpError.InvalidToolArguments(name, reason),
-    for {
+    yield McpError.InvalidToolArguments(name, reason),
+    for
       name   <- Gen.alphaStr.filter(_.nonEmpty)
       reason <- Gen.alphaStr.filter(_.nonEmpty)
-    } yield McpError.InvalidPromptArguments(name, reason),
-    for {
+    yield McpError.InvalidPromptArguments(name, reason),
+    for
       requested <- Gen.oneOf("2024-11-05", "2025-11-25")
       supported <- Gen.oneOf("2024-11-05", "2025-11-25")
-    } yield McpError.ProtocolVersionMismatch(requested, supported),
+    yield McpError.ProtocolVersionMismatch(requested, supported),
     Gen.const(McpError.NotInitialized),
     Gen.const(McpError.AlreadyInitialized),
     Gen.alphaStr.filter(_.nonEmpty).map(McpError.InternalError(_)),
@@ -1363,14 +1344,6 @@ class PropertySpec extends ScalaCheckSuite:
     }
   }
 
-  property("Implementation serialization roundtrip") {
-    forAll { (impl: Implementation) =>
-      val json    = impl.asJson
-      val decoded = json.as[Implementation]
-      decoded == Right(impl)
-    }
-  }
-
   property("InitializeParams serialization roundtrip") {
     forAll { (ip: InitializeParams) =>
       val json    = ip.asJson
@@ -1476,12 +1449,11 @@ class PropertySpec extends ScalaCheckSuite:
       // Message is either preserved or enhanced (e.g., methodNotFound prepends "Method not found: ")
       jsonErr.message.contains(err.message) || err.message.contains(jsonErr.message) ||
       // Special case: methodNotFound helper reformats the message
-      (err match {
+      (err match
         case _: McpError.ToolNotFound | _: McpError.MethodNotFound |
             _: McpError.MethodNotSupported =>
           jsonErr.message.startsWith("Method not found:")
-        case _ => false
-      })
+        case _ => false)
     }
   }
 

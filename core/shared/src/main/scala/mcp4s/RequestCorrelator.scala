@@ -70,22 +70,22 @@ final class RequestCorrelator[F[_]] private (
     * within `timeout`.
     */
   def request(id: RequestId, timeout: FiniteDuration)(send: F[Unit]): F[Json] =
-    register(id).flatMap: deferred =>
+    register(id).bracket { deferred =>
       F.race(F.sleep(timeout), send *> deferred.get)
-        .guarantee(remove(id))
         .flatMap:
           case Left(_) => F.raiseError(McpError.InternalError(s"Request timed out after $timeout"))
           case Right(Right(json)) => F.pure(json)
-          case Right(Left(err))   => F.raiseError(McpError.fromJsonRpcError(err))
+          case Right(Left(err))   => F.raiseError(McpError.fromJsonRpcError(err, id))
+    }(_ => remove(id))
 
   /** Like [[request]] but without a timeout — awaits the response indefinitely. */
   def requestUntimed(id: RequestId)(send: F[Unit]): F[Json] =
-    register(id).flatMap: deferred =>
+    register(id).bracket { deferred =>
       (send *> deferred.get)
-        .guarantee(remove(id))
         .flatMap:
           case Right(json) => F.pure(json)
-          case Left(err)   => F.raiseError(McpError.fromJsonRpcError(err))
+          case Left(err)   => F.raiseError(McpError.fromJsonRpcError(err, id))
+    }(_ => remove(id))
 
   private def register(id: RequestId): F[Deferred[F, Either[JsonRpcError, Json]]] =
     Deferred[F, Either[JsonRpcError, Json]].flatTap(d => pending.update(_ + (id -> d)))

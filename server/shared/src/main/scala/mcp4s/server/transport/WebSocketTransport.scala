@@ -17,7 +17,7 @@
 package mcp4s.server.transport
 
 import cats.effect.{Async, Ref, Resource as CatsResource}
-import cats.effect.std.Queue
+import cats.effect.std.{Queue, Supervisor}
 import cats.syntax.all.*
 import com.comcast.ip4s.{host, port, Host, Port}
 import fs2.{Pipe, Stream}
@@ -33,7 +33,6 @@ import org.http4s.server.{Router, Server as Http4sServer}
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
 import org.typelevel.otel4s.trace.Tracer
-import mcp4s.RequestCorrelator
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 import mcp4s.server.*
@@ -125,22 +124,30 @@ object WebSocketTransport:
       Queue.bounded[F, WebSocketFrame](config.maxQueueSize).flatMap { outQueue =>
         // Give session access to the outQueue for sending requests
         session.setOutQueue(outQueue) *> {
-          // Process incoming frames and dispatch to handler, with cleanup on disconnect
-          val receive: Pipe[F, WebSocketFrame, Unit] = _.evalMap {
-            case WebSocketFrame.Text(text, _) =>
-              tracer.span("ws.message.receive").surround {
-                session.handleMessage(text, outQueue)
+          // Process incoming frames and dispatch to handler, with cleanup on disconnect.
+          // Dispatch fibers run under a connection-scoped Supervisor so a tool call
+          // still running when the socket closes is cancelled rather than leaked.
+          val receive: Pipe[F, WebSocketFrame, Unit] = in =>
+            Stream
+              .resource(Supervisor[F])
+              .flatMap { supervisor =>
+                in.evalMap {
+                  case WebSocketFrame.Text(text, _) =>
+                    tracer.span("ws.message.receive").surround {
+                      session.handleMessage(text, outQueue, supervisor)
+                    }
+
+                  case WebSocketFrame.Close(_) =>
+                    Async[F].unit
+
+                  case WebSocketFrame.Ping(data) =>
+                    outQueue.offer(WebSocketFrame.Pong(data))
+
+                  case _ =>
+                    Async[F].unit
+                }
               }
-
-            case WebSocketFrame.Close(_) =>
-              Async[F].unit
-
-            case WebSocketFrame.Ping(data) =>
-              outQueue.offer(WebSocketFrame.Pong(data))
-
-            case _ =>
-              Async[F].unit
-          }.onFinalize(session.cleanup)
+              .onFinalize(session.cleanup)
 
           // Stream of outgoing frames from the queue
           val send: Stream[F, WebSocketFrame] = Stream.fromQueueUnterminated(outQueue)
@@ -152,26 +159,20 @@ object WebSocketTransport:
 
 /** Manages state for a single WebSocket connection.
   *
-  * Handles:
-  *   - Request dispatching to the MCP server
-  *   - Server-to-client request correlation (for sampling)
-  *   - Client capability tracking
+  * The bidirectional machinery (correlation, capability gating, sampling/elicitation requesters)
+  * lives in the shared [[ServerSession]]; this class adds WebSocket frame handling and dispatch.
   */
 private class WebSocketSession[F[_]: Async](
     dispatcherRef: Ref[F, Option[Dispatcher[F]]],
-    correlator: RequestCorrelator[F],
-    clientCapsRef: Ref[F, Option[ClientCapabilities]],
-    outQueueRef: Ref[F, Option[Queue[F, WebSocketFrame]]],
-    tracer: Tracer[F],
-    config: WebSocketConfig
+    session: ServerSession[F],
+    outQueueRef: Ref[F, Option[Queue[F, WebSocketFrame]]]
 ):
 
   /** Clean up session resources on disconnect. Fails all pending requests with a connection-closed
     * error and clears refs.
     */
   def cleanup: F[Unit] =
-    correlator.cancelAll(JsonRpcError(-32000, "Connection closed", None)) *>
-      outQueueRef.set(None) *> clientCapsRef.set(None)
+    session.cancelPending *> outQueueRef.set(None)
 
   /** Set the dispatcher (used during initialization) */
   private[transport] def setDispatcher(d: Dispatcher[F]): F[Unit] =
@@ -182,29 +183,42 @@ private class WebSocketSession[F[_]: Async](
     outQueueRef.set(Some(queue))
 
   /** Handle an incoming WebSocket message */
-  def handleMessage(text: String, outQueue: Queue[F, WebSocketFrame]): F[Unit] =
+  def handleMessage(
+      text: String,
+      outQueue: Queue[F, WebSocketFrame],
+      supervisor: Supervisor[F]
+  ): F[Unit] =
     decode[JsonRpcMessage](text) match
       case Right(message) =>
         message match
           case resp: JsonRpcResponse =>
             // Response to a server-initiated request (e.g., sampling)
-            handleResponse(resp)
+            session.handleResponse(resp)
 
           case errResp: JsonRpcErrorResponse =>
             // Error response to a server-initiated request
-            handleErrorResponse(errResp)
+            session.handleErrorResponse(errResp)
 
           case req: JsonRpcRequest =>
-            // Client request - dispatch and maybe capture client capabilities
+            // Client request - dispatch and maybe capture client capabilities.
+            // Dispatch runs in its own fiber so the receive pipe stays free: a tool
+            // handler may await a server-initiated round trip (sampling/elicitation)
+            // whose response arrives as a later frame on this same connection.
             dispatcherRef.get.flatMap {
               case Some(dispatcher) =>
-                maybeExtractClientCaps(req) *>
-                  dispatcher.dispatch(req).flatMap {
-                    case Some(response) =>
-                      outQueue.offer(WebSocketFrame.Text(response.asJson.noSpaces))
-                    case None =>
-                      Async[F].unit
-                  }
+                session.maybeExtractClientCaps(req) *>
+                  supervisor
+                    .supervise(
+                      dispatcher
+                        .dispatch(req)
+                        .flatMap {
+                          case Some(response) =>
+                            outQueue.offer(WebSocketFrame.Text(response.asJson.noSpaces))
+                          case None =>
+                            Async[F].unit
+                        }
+                    )
+                    .void
               case None =>
                 // Dispatcher not yet initialized - this shouldn't happen
                 val error =
@@ -227,94 +241,6 @@ private class WebSocketSession[F[_]: Async](
         )
         outQueue.offer(WebSocketFrame.Text(error.asJson.noSpaces))
 
-  /** SamplingRequester for this session (cached instance) */
-  val samplingRequester: SamplingRequester[F] =
-    new SamplingRequester[F]:
-      def supportsSampling: Boolean = true // Actual check happens in createMessage
-
-      def createMessage(params: CreateMessageParams): F[CreateMessageResult] =
-        tracer.span("mcp.sampling.createMessage").surround {
-          clientCapsRef.get.flatMap {
-            case Some(caps) if caps.sampling.isDefined =>
-              sendRequest[CreateMessageResult](McpMethod.SamplingCreateMessage, params.asJson)
-            case _ =>
-              Async[F].raiseError(McpError.SamplingNotSupported)
-          }
-        }
-
-  /** ElicitationRequester for this session (cached instance) */
-  val elicitationRequester: ElicitationRequester[F] =
-    new ElicitationRequester[F]:
-      def supportsElicitation: Boolean = true // Actual check happens in elicit
-
-      def elicit(params: ElicitParams): F[ElicitResult] =
-        tracer.span("mcp.elicitation.create").surround {
-          clientCapsRef.get.flatMap {
-            case Some(caps) if caps.elicitation.isDefined =>
-              sendRequest[ElicitResult](McpMethod.ElicitationCreate, params.asJson)
-            case _ =>
-              Async[F].raiseError(McpError.ElicitationNotSupported)
-          }
-        }
-
-  /** Send a progress notification */
-  private def sendProgressNotification(
-      token: RequestId,
-      prog: Double,
-      total: Option[Double]
-  ): F[Unit] =
-    val notification = JsonRpcNotification(
-      McpMethod.Progress,
-      Some(ProgressParams(token, prog, total).asJson)
-    )
-    sendNotification(notification)
-
-  /** Send a logging notification */
-  private def sendLoggingNotification(
-      level: LogLevel,
-      message: String,
-      data: Option[Json]
-  ): F[Unit] =
-    val notification = JsonRpcNotification(
-      McpMethod.LoggingMessage,
-      Some(LogMessage(level, None, data.getOrElse(Json.fromString(message))).asJson)
-    )
-    sendNotification(notification)
-
-  /** Send a notification through the WebSocket */
-  private def sendNotification(notification: JsonRpcNotification): F[Unit] =
-    outQueueRef.get.flatMap {
-      case Some(queue) => queue.offer(WebSocketFrame.Text(notification.asJson.noSpaces))
-      case None        => Async[F].unit
-    }
-
-  private def sendRequest[A: Decoder](method: String, params: Json): F[A] =
-    outQueueRef.get.flatMap:
-      case None => Async[F].raiseError(new RuntimeException("WebSocket not connected"))
-      case Some(queue) =>
-        for
-          reqId <- correlator.nextId
-          json <- correlator.request(reqId, config.requestTimeout):
-            queue.offer(
-              WebSocketFrame.Text(JsonRpcRequest(reqId, method, Some(params)).asJson.noSpaces)
-            )
-          decoded <- json.as[A].liftTo[F]
-        yield decoded
-
-  private def handleResponse(resp: JsonRpcResponse): F[Unit] =
-    correlator.complete(resp.id, resp.result)
-
-  private def handleErrorResponse(resp: JsonRpcErrorResponse): F[Unit] =
-    correlator.fail(resp.id, resp.error)
-
-  /** Extract client capabilities from initialize request */
-  private def maybeExtractClientCaps(req: JsonRpcRequest): F[Unit] =
-    if req.method == McpMethod.Initialize then
-      req.params.flatMap(_.as[InitializeParams].toOption) match
-        case Some(params) => clientCapsRef.set(Some(params.capabilities))
-        case None         => Async[F].unit
-    else Async[F].unit
-
 private object WebSocketSession:
   def apply[F[_]: Async](
       server: Server[F],
@@ -324,27 +250,27 @@ private object WebSocketSession:
     given Tracer[F] = tracer
     for
       dispatcherRef <- Ref.of[F, Option[Dispatcher[F]]](None)
-      correlator    <- RequestCorrelator[F]
-      clientCapsRef <- Ref.of[F, Option[ClientCapabilities]](None)
       outQueueRef   <- Ref.of[F, Option[Queue[F, WebSocketFrame]]](None)
-      // Create session
-      session = new WebSocketSession(
-        dispatcherRef,
-        correlator,
-        clientCapsRef,
-        outQueueRef,
-        tracer,
-        config
-      )
+
+      // Outbound delivery: frame the message and offer it to the connection's queue (if open).
+      sendMessage = (message: JsonRpcMessage) =>
+        outQueueRef.get.flatMap {
+          case Some(queue) => queue.offer(WebSocketFrame.Text(message.asJson.noSpaces))
+          case None        => Async[F].unit
+        }
+
+      shared <- ServerSession.create[F](sendMessage, config.requestTimeout, tracer)
+      session = new WebSocketSession(dispatcherRef, shared, outQueueRef)
+
       // Create context factory with full capabilities: sampling, elicitation, progress, logging
       contextFactory = (reqId: RequestId, progressToken: Option[RequestId]) =>
         ToolContext[F](
-          session.samplingRequester,
-          session.elicitationRequester,
+          shared.samplingRequester,
+          shared.elicitationRequester,
           reqId,
           progressToken,
-          session.sendProgressNotification,
-          session.sendLoggingNotification
+          shared.sendProgressNotification,
+          shared.sendLoggingNotification
         )
       // Create dispatcher with context factory
       dispatcher <- Dispatcher.withContext[F](server, contextFactory)

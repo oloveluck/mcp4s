@@ -21,10 +21,11 @@ import io.circe.*
 import io.circe.syntax.*
 import mcp4s.protocol.*
 import munit.CatsEffectSuite
+import mcp4s.server.TestSyntax.*
 
 class McpDslDerivedSpec extends CatsEffectSuite:
 
-  import mcp4s.server.mcp.*
+  import mcp4s.server.dsl.*
 
   private val minimalCtx =
     ToolContext.minimal[IO](SamplingRequester.unsupported[IO], RequestId.NullId)
@@ -35,10 +36,10 @@ class McpDslDerivedSpec extends CatsEffectSuite:
   case class Add(
       @description("First number") a: Double,
       @description("Second number") b: Double
-  ) derives ToolInput
+  ) derives Schema
 
   test("Tool with derived name and description") {
-    val add = Tool[IO, Add] { args =>
+    val add = Tool.from[Add].handle[IO] { args =>
       IO.pure(ok(TestNum.str(args.a + args.b)))
     }
 
@@ -56,7 +57,7 @@ class McpDslDerivedSpec extends CatsEffectSuite:
   // === Tool: custom name, derived description ===
 
   test("Tool with custom name and derived description") {
-    val custom = Tool[IO, Add]("custom-add") { args =>
+    val custom = Tool.from[Add].withName("custom-add").handle[IO] { args =>
       IO.pure(ok(TestNum.str(args.a + args.b)))
     }
 
@@ -70,14 +71,14 @@ class McpDslDerivedSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === Tool.text: derived name ===
+  // === Tool with pure text handler: derived name ===
 
   @description("Echo a message")
-  case class Echo(@description("Message") message: String) derives ToolInput
+  case class Echo(@description("Message") message: String) derives Schema
 
-  test("Tool.text with derived name and description") {
-    val echo = Tool.text[IO, Echo] { args =>
-      s"Echo: ${args.message}"
+  test("Tool with pure text handler, derived name and description") {
+    val echo = Tool.from[Echo].handle[IO] { args =>
+      IO.pure(ok(s"Echo: ${args.message}"))
     }
 
     val json = Json.obj("message" -> "hello".asJson)
@@ -90,13 +91,13 @@ class McpDslDerivedSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === Tool.withContext: derived name ===
+  // === Tool.handleWith (context-aware): derived name ===
 
   @description("Context-aware tool")
-  case class CtxArgs(@description("Input") input: String) derives ToolInput
+  case class CtxArgs(@description("Input") input: String) derives Schema
 
-  test("Tool.withContext with derived name and description") {
-    val ctxTool = Tool.withContext[IO, CtxArgs] { (args, ctx) =>
+  test("Tool.handleWith with derived name and description") {
+    val ctxTool = Tool.from[CtxArgs].handleWith[IO] { (args, ctx) =>
       IO.pure(ok(s"Input: ${args.input}, Request: ${ctx.requestId}"))
     }
 
@@ -111,8 +112,8 @@ class McpDslDerivedSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("Tool.withContext with custom name and derived description") {
-    val ctxTool = Tool.withContext[IO, CtxArgs]("custom-ctx") { (args, _) =>
+  test("Tool.handleWith with custom name and derived description") {
+    val ctxTool = Tool.from[CtxArgs].withName("custom-ctx").handleWith[IO] { (args, _) =>
       IO.pure(ok(s"Input: ${args.input}"))
     }
 
@@ -126,10 +127,10 @@ class McpDslDerivedSpec extends CatsEffectSuite:
   // === Tool with Args suffix stripping ===
 
   @description("Search for items")
-  case class SearchArgs(@description("Query") query: String) derives ToolInput
+  case class SearchArgs(@description("Query") query: String) derives Schema
 
   test("Tool derives name with Args suffix stripped") {
-    val search = Tool[IO, SearchArgs] { args =>
+    val search = Tool.from[SearchArgs].handle[IO] { args =>
       IO.pure(ok(s"Searching: ${args.query}"))
     }
 
@@ -142,27 +143,27 @@ class McpDslDerivedSpec extends CatsEffectSuite:
 
   // === Tool with no class-level description ===
 
-  case class NoDesc(@description("Value") value: String) derives ToolInput
+  case class NoDesc(@description("Value") value: String) derives Schema
 
-  test("Tool with no class-level description uses empty string") {
-    val tool = Tool[IO, NoDesc] { args =>
+  test("Tool with no class-level description has no description") {
+    val tool = Tool.from[NoDesc].handle[IO] { args =>
       IO.pure(ok(args.value))
     }
 
     for
       tools <- tool.list
       _ = assertEquals(tools.head.name, "no_desc")
-      _ = assertEquals(tools.head.description, Some(""))
+      _ = assertEquals(tools.head.description, None)
     yield ()
   }
 
   // === Prompt: derived name + description ===
 
   @description("A greeting prompt")
-  case class Greet(@description("Name") name: String) derives PromptInput
+  case class Greet(@description("Name") name: String) derives Schema
 
   test("Prompt with derived name and description") {
-    val greet = Prompt[IO, Greet] { args =>
+    val greet = Prompt.from[Greet].handle[IO] { args =>
       IO.pure(messages(user(s"Hello, ${args.name}!")))
     }
 
@@ -173,7 +174,7 @@ class McpDslDerivedSpec extends CatsEffectSuite:
       _ = assertEquals(prompts.head.description, Some("A greeting prompt"))
       result <- greet.get("greet", Map("name" -> "Alice")).value
       _ = assertEquals(
-        result.get.messages.head.content.asInstanceOf[TextContent].text,
+        textOf(result.get.messages.head.content),
         "Hello, Alice!"
       )
     yield ()
@@ -182,7 +183,7 @@ class McpDslDerivedSpec extends CatsEffectSuite:
   // === Prompt: custom name, derived description ===
 
   test("Prompt with custom name and derived description") {
-    val greet = Prompt[IO, Greet]("custom-greet") { args =>
+    val greet = Prompt.from[Greet].withName("custom-greet").handle[IO] { args =>
       IO.pure(messages(user(s"Hello, ${args.name}!")))
     }
 

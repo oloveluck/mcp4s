@@ -29,7 +29,7 @@ import mcp4s.protocol.*
   * stream for subscription support.
   *
   * {{{
-  * import mcp4s.server.mcp.*
+  * import mcp4s.server.dsl.*
   *
   * val readme = Resource.text[IO]("file:///readme", "README")("Hello world")
   * val config = Resource.text[IO]("file:///config", "Config")("{}")
@@ -50,6 +50,21 @@ trait Resources[F[_]]:
   /** Stream of URIs that have changed. Empty for static resources. */
   def changes: Stream[F, String]
 
+  /** True when no resources are registered. Used to derive server capabilities. */
+  def isEmpty: Boolean = false
+
+  /** True when at least one registered resource supports change subscriptions. Drives the
+    * `resources.subscribe` capability flag.
+    */
+  def supportsSubscribe: Boolean = false
+
+  /** Exact-URI read handlers when statically known; `None` for dynamic implementations and
+    * pattern-matched templates. Lets [[Resources.combine]] dispatch by Map lookup instead of
+    * scanning the composition chain — any template or dynamic instance in a composition falls back
+    * to the first-match-wins `orElse` chain.
+    */
+  private[server] def exactReads: Option[Map[String, String => F[ResourceContent]]] = None
+
 object Resources:
 
   def empty[F[_]: Applicative]: Resources[F] =
@@ -58,6 +73,8 @@ object Resources:
       def listTemplates: F[List[ResourceTemplate]]       = Applicative[F].pure(Nil)
       def read(uri: String): OptionT[F, ResourceContent] = OptionT.none
       def changes: Stream[F, String]                     = Stream.empty
+      override def isEmpty: Boolean                      = true
+      override private[server] val exactReads            = Some(Map.empty)
 
   /** Create resource routes from a raw Resource definition and a handler. */
   def single[F[_]: Concurrent](resource: Resource)(
@@ -67,6 +84,11 @@ object Resources:
 
   def combine[F[_]: Concurrent](x: Resources[F], y: Resources[F]): Resources[F] =
     new Resources[F]:
+      override def isEmpty: Boolean           = x.isEmpty && y.isEmpty
+      override def supportsSubscribe: Boolean = x.supportsSubscribe || y.supportsSubscribe
+      // Left side wins on duplicate URIs, matching the orElse chain's shadowing.
+      override private[server] val exactReads =
+        (x.exactReads, y.exactReads).mapN((xr, yr) => yr ++ xr)
       def list: F[List[Resource]] =
         for
           xRes <- x.list
@@ -82,7 +104,9 @@ object Resources:
         yield xTemplates ++ yTemplates.filterNot(t => xUris.contains(t.uriTemplate))
 
       def read(uri: String): OptionT[F, ResourceContent] =
-        x.read(uri).orElse(y.read(uri))
+        exactReads match
+          case Some(table) => OptionT(table.get(uri).traverse(h => h(uri)))
+          case None        => x.read(uri).orElse(y.read(uri))
 
       def changes: Stream[F, String] =
         x.changes.merge(y.changes)
@@ -117,22 +141,25 @@ object Resources:
         description = if description.isEmpty then None else Some(description)
       )
 
+      // Compile the match pattern once. A URI template like "test://template/{id}/data" becomes
+      // a regex with `{...}` placeholders turned into `[^/]+` segments; everything between
+      // placeholders is quoted so regex metacharacters in the pattern (`?`, `+`, `(`, ...)
+      // match literally.
+      private val templateRegex =
+        uriPattern
+          .split("\\{[^}]+\\}", -1)
+          .map(scala.util.matching.Regex.quote)
+          .mkString("[^/]+")
+          .r
+
       def list: F[List[Resource]]                  = Applicative[F].pure(Nil)
       def listTemplates: F[List[ResourceTemplate]] = Applicative[F].pure(List(resourceTemplate))
       def read(uri: String): OptionT[F, ResourceContent] =
-        if matchesTemplate(uriPattern, uri) then OptionT.liftF(handler(uri))
+        if templateRegex.matches(uri) then OptionT.liftF(handler(uri))
         else OptionT.none[F, ResourceContent]
       def changes: Stream[F, String] = Stream.empty
 
-      private def matchesTemplate(pattern: String, uri: String): Boolean =
-        // Convert URI template pattern like "test://template/{id}/data" to regex
-        val regexPattern = pattern
-          .replace(".", "\\.")
-          .replace("/", "\\/")
-          .replaceAll("\\{[^}]+\\}", "[^/]+")
-        uri.matches(regexPattern)
-
-/** Internal resource factory. Use `Resource` from `import mcp4s.server.mcp.*` instead. */
+/** Internal resource factory. Use `Resource` from `import mcp4s.server.dsl.*` instead. */
 private[server] object McpResource:
 
   /** Create a static text resource */
@@ -152,8 +179,9 @@ private[server] object McpResource:
       handler: String => F[ResourceContent]
   ): Resources[F] =
     new Resources[F]:
-      def list: F[List[Resource]]                  = Applicative[F].pure(List(resource))
-      def listTemplates: F[List[ResourceTemplate]] = Applicative[F].pure(Nil)
+      def list: F[List[Resource]]                        = Applicative[F].pure(List(resource))
+      def listTemplates: F[List[ResourceTemplate]]       = Applicative[F].pure(Nil)
+      override private[server] val exactReads            = Some(Map(resource.uri -> handler))
       def read(uri: String): OptionT[F, ResourceContent] =
         if uri == resource.uri then OptionT.liftF(handler(uri))
         else OptionT.none[F, ResourceContent]
@@ -182,11 +210,13 @@ private[server] object McpResource:
     new Resources[F]:
       private val resource        = Resource(uri, name, mimeType = Some("text/plain"))
       def list: F[List[Resource]] = Applicative[F].pure(List(resource))
-      def listTemplates: F[List[ResourceTemplate]] = Applicative[F].pure(Nil)
+      def listTemplates: F[List[ResourceTemplate]]          = Applicative[F].pure(Nil)
+      override private[server] val exactReads               = Some(Map(uri -> readHandler))
       def read(reqUri: String): OptionT[F, ResourceContent] =
         if reqUri == uri then OptionT.liftF(readHandler(reqUri))
         else OptionT.none[F, ResourceContent]
-      def changes: Stream[F, String] = changeStream.as(uri)
+      def changes: Stream[F, String]          = changeStream.as(uri)
+      override def supportsSubscribe: Boolean = true
 
   /** Create a subscribable resource that polls for changes.
     *
