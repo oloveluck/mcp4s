@@ -131,7 +131,11 @@ abstract class McpComplianceSuite extends IOSuite:
           for
             seen <- IO.ref(0)
             _    <- conn.callTool(p.name, p.arguments, _ => seen.update(_ + 1))
-            n    <- seen.get
+            // The callback runs on the notification-routing fiber and can land just
+            // after the call's response completes; await it briefly instead of racing it.
+            n <- (IO.sleep(10.millis) *> seen.get)
+              .iterateUntil(_ > 0)
+              .timeoutTo(2.seconds, seen.get)
           yield expect(n > 0)
     }
 
