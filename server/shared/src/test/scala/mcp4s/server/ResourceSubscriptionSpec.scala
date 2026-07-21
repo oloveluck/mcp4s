@@ -196,8 +196,9 @@ class ResourceSubscriptionSpec extends CatsEffectSuite:
     val resource = McpResource[IO]("file:///static", "Static")("content")
 
     for
-      result <- resource.changes.compile.toList.timeout(100.millis).attempt
-      // Stream is empty, so compile.toList completes immediately with Nil
+      // Stream is empty, so compile.toList completes immediately with Nil; the
+      // generous timeout only bounds the hanging-stream case on a loaded runner.
+      result <- resource.changes.compile.toList.timeout(2.seconds).attempt
       _ = assertEquals(result, Right(Nil))
     yield ()
   }

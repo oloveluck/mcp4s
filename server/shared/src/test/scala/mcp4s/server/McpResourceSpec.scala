@@ -95,7 +95,9 @@ class McpResourceSpec extends CatsEffectSuite:
     val readme = McpResource[IO]("file:///readme", "README")("Hello")
 
     for
-      changes <- readme.changes.compile.toList.timeout(100.millis).attempt
+      // Generous timeout: an empty stream completes instantly, but a loaded CI
+      // runner needs headroom; the timeout only bounds the hanging-stream case.
+      changes <- readme.changes.compile.toList.timeout(2.seconds).attempt
       _ = assertEquals(changes, Right(Nil))
     yield ()
   }
