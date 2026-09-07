@@ -43,7 +43,7 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   javas = List(JavaSpec.temurin("17")),
   steps = githubWorkflowJobSetup.value.toList ++ List(
     WorkflowStep.Use(
-      UseRef.Public("actions", "setup-node", "v4"),
+      UseRef.Public("actions", "setup-node", "v7"),
       name = Some("Setup Node.js"),
       params = Map("node-version" -> "22")
     ),
@@ -63,7 +63,7 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   steps = WorkflowStep.Checkout ::
     WorkflowStep.SetupJava(List(JavaSpec.temurin("17")), enableCaching = false) :::
     WorkflowStep.Use(
-      UseRef.Public("coursier", "setup-action", "v1"),
+      UseRef.Public("coursier", "setup-action", "v3"),
       Map("apps" -> "scala-steward")
     ) ::
     WorkflowStep.Run(List("scala-steward validate-repo-config .scala-steward.conf")) :: Nil
