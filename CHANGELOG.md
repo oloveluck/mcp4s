@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Build
+
+- **Dependency updates** — Scala 3.8.4 → 3.9.0, cats-effect 3.7.0 → 3.7.1, fs2 3.13.0 → 3.14.0, circe 0.14.15 → 0.14.16, otel4s 1.0.1 → 1.1.0, munit-scalacheck 1.3.0 → 1.3.1, weaver 0.10.1 → 0.13.0; sbt-typelevel 0.8.6 → 0.8.7, sbt-jmh 0.4.7 → 0.4.8. All three platforms (JVM/JS/Native) compile and the full test + MCP conformance suites pass.
+- **http4s held at 0.23.34.** 0.23.35 regressed ember's parallel request throughput (concurrent calls serialize — the parallel-vs-sequential perf test flips), so http4s is pinned to 0.23.34 in both `build.sbt` and `.scala-steward.conf` until a fixed 0.23.x ships. (circe and http4s also remain on their pre-1.0/0.15 stable lines, whose milestone successors have no Scala Native build.)
+
 ## 0.3.0 - 2026-07-21
 
 ### Changed (breaking) — smithy4s-style redesign
