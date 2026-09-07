@@ -10,8 +10,8 @@ ThisBuild / scmInfo          := Some(
 )
 
 val Scala3 = "3.9.0"
-ThisBuild / scalaVersion               := Scala3
-ThisBuild / crossScalaVersions         := Seq(Scala3)
+ThisBuild / scalaVersion       := Scala3
+ThisBuild / crossScalaVersions := Seq(Scala3)
 // Build and test on the current JDK (temurin 25) in CI, but keep emitting
 // JVM 17-compatible bytecode (tlJdkRelease) so downstream users can stay on JVM 17+.
 ThisBuild / tlJdkRelease               := Some(17)
