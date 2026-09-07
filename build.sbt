@@ -9,7 +9,7 @@ ThisBuild / scmInfo          := Some(
   ScmInfo(url("https://github.com/mcp4s/mcp4s"), "scm:git:git@github.com:mcp4s/mcp4s.git")
 )
 
-val Scala3 = "3.8.4"
+val Scala3 = "3.9.0"
 ThisBuild / scalaVersion               := Scala3
 ThisBuild / crossScalaVersions         := Seq(Scala3)
 ThisBuild / tlJdkRelease               := Some(17)
@@ -51,7 +51,7 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   )
 )
 
-// scala-steward binaries now require JRE 17+, but sbt-typelevel 0.8.6 hardcodes
+// scala-steward binaries now require JRE 17+, but sbt-typelevel 0.8.7 hardcodes
 // JDK 11 into its validate-steward job (UnsupportedClassVersionError in CI).
 // Disable the built-in job and add the same job pinned to temurin 17.
 ThisBuild / tlCiStewardValidateConfig := None
@@ -76,17 +76,22 @@ ThisBuild / tlMimaPreviousVersions := Set.empty
 // http4s and circe are intentionally held on their stable lines: their newer
 // releases (http4s 1.0.0-Mxx, circe 0.15.0-Mx) are milestones with no Scala Native
 // build, which would break the cross-build.
-val CatsEffect      = "3.7.0"
-val Circe           = "0.14.15"
-val Fs2             = "3.13.0"
+//
+// http4s is additionally pinned to 0.23.34 (not the newest 0.23.x): 0.23.35 regressed
+// ember's parallel request throughput — with 0.23.35/0.23.36 the "parallel is faster
+// than sequential" perf test flips (parallel ~5.2s vs sequential ~2.1s for 10 slow
+// calls), i.e. concurrent calls serialize. 0.23.34 is the last good release.
+val CatsEffect      = "3.7.1"
+val Circe           = "0.14.16"
+val Fs2             = "3.14.0"
 val Http4s          = "0.23.34"
-val Otel4s          = "1.0.1"
+val Otel4s          = "1.1.0"
 val JdkHttpClient   = "0.9.2"
 val ScodecBits      = "1.2.5"
 val MunitCatsEffect = "2.2.0"
-val MunitScalaCheck = "1.3.0"
+val MunitScalaCheck = "1.3.1"
 val Laika           = "1.3.2"
-val Weaver          = "0.10.1"
+val Weaver          = "0.13.0"
 val HdrHistogram    = "2.2.2"
 
 lazy val commonSettings = Seq(
