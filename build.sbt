@@ -10,10 +10,12 @@ ThisBuild / scmInfo          := Some(
 )
 
 val Scala3 = "3.9.0"
-ThisBuild / scalaVersion               := Scala3
-ThisBuild / crossScalaVersions         := Seq(Scala3)
+ThisBuild / scalaVersion       := Scala3
+ThisBuild / crossScalaVersions := Seq(Scala3)
+// Build and test on the current JDK (temurin 25) in CI, but keep emitting
+// JVM 17-compatible bytecode (tlJdkRelease) so downstream users can stay on JVM 17+.
 ThisBuild / tlJdkRelease               := Some(17)
-ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
+ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("25"))
 
 // Only publish from tags (v*). Don't auto-publish snapshots on `main` pushes — the
 // Central Portal snapshot repo isn't enabled for this namespace (was 403'ing).
@@ -34,13 +36,13 @@ ThisBuild / githubWorkflowBuildPreamble ++= Seq(
 ThisBuild / tlCiDependencyGraphJob := false
 
 // Run the MCP conformance suite as a dedicated CI job (manages the server itself).
-// Pin JDK 17 — the build targets `tlJdkRelease := 17`, which cannot run on the
-// default JDK 11 that added jobs would otherwise use.
+// Pin the CI JDK to temurin 25 (matching githubWorkflowJavaVersions) — added jobs
+// otherwise default to JDK 11, too old to build this project.
 ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   id = "conformance",
   name = "MCP Conformance",
   scalas = List(Scala3),
-  javas = List(JavaSpec.temurin("17")),
+  javas = List(JavaSpec.temurin("25")),
   steps = githubWorkflowJobSetup.value.toList ++ List(
     WorkflowStep.Use(
       UseRef.Public("actions", "setup-node", "v7"),
@@ -53,15 +55,15 @@ ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
 
 // scala-steward binaries now require JRE 17+, but sbt-typelevel 0.8.7 hardcodes
 // JDK 11 into its validate-steward job (UnsupportedClassVersionError in CI).
-// Disable the built-in job and add the same job pinned to temurin 17.
+// Disable the built-in job and add the same job pinned to temurin 25.
 ThisBuild / tlCiStewardValidateConfig := None
 ThisBuild / githubWorkflowAddedJobs += WorkflowJob(
   id = "validate-steward",
   name = "Validate Steward Config",
-  javas = List(JavaSpec.temurin("17")),
+  javas = List(JavaSpec.temurin("25")),
   scalas = List.empty,
   steps = WorkflowStep.Checkout ::
-    WorkflowStep.SetupJava(List(JavaSpec.temurin("17")), enableCaching = false) :::
+    WorkflowStep.SetupJava(List(JavaSpec.temurin("25")), enableCaching = false) :::
     WorkflowStep.Use(
       UseRef.Public("coursier", "setup-action", "v3"),
       Map("apps" -> "scala-steward")
