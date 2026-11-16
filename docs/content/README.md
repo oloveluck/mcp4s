@@ -56,9 +56,9 @@ API on each build.
 <!-- doc-snippet: skip -->
 ```scala
 libraryDependencies ++= Seq(
-  "io.github.oloveluck" %%% "mcp4s-core"   % "0.3.0",
-  "io.github.oloveluck" %%% "mcp4s-server" % "0.3.0",   // servers
-  "io.github.oloveluck" %%% "mcp4s-client" % "0.3.0"    // clients
+  "io.github.oloveluck" %%% "mcp4s-core"   % "0.3.1",
+  "io.github.oloveluck" %%% "mcp4s-server" % "0.3.1",   // servers
+  "io.github.oloveluck" %%% "mcp4s-client" % "0.3.1"    // clients
 )
 ```
 
