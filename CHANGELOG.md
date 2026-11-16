@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 - 2026-11-16
+
+> Although numbered as a patch, this release removes and reshapes some public API (see **Changed**
+> and the removals listed there). Treat the upgrade from 0.3.0 as source-incompatible.
 
 ### Fixed
 
