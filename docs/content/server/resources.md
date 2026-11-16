@@ -94,9 +94,11 @@ Resource.polling[IO]("file:///config", "Config", 10.seconds, configChanged)(uri 
 )
 ```
 
-Clients subscribe via `subscribeResource` and receive `notifications/resources/updated` when changes occur. This works with all persistent transports (HTTP with SSE, WebSocket, Stdio).
+Clients subscribe via `conn.subscribeResource(uri)` and receive `notifications/resources/updated` through their notification handler (`McpClientBuilder.withNotifications`) when changes occur. Each session forwards only the URIs its client subscribed to. This works over every transport: WebSocket and stdio deliver on the connection, Streamable HTTP on the standalone `GET` stream the mcp4s client opens automatically.
 
 The server advertises `resources.subscribe = true` only when at least one subscribable resource is registered — capabilities always reflect what's actually there.
+
+The change stream is consumed once per connected session, so it must be safe to run several times: derive it from a broadcast source such as an fs2 `Topic` (`topic.subscribe(n)`) or a `SignallingRef`, not from a single-consumer queue.
 
 ## Template Example
 

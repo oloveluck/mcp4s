@@ -148,6 +148,16 @@ object dsl:
       val prompt = e.toPrompt
       new Prompts[F]:
         def list: F[List[Prompt]] = Applicative[F].pure(List(prompt))
+        override def complete(
+            name: String,
+            argument: CompletionArgument,
+            context: Map[String, String]
+        )(using Applicative[F]): F[Completion] =
+          if name == e.name then
+            Completion
+              .matching(PromptCodec.candidates(e.inputSchema, argument.name), argument.value)
+              .pure[F]
+          else Completion.empty.pure[F]
         def get(name: String, args: Map[String, String]): OptionT[F, GetPromptResult] =
           if name == e.name then
             PromptCodec.decode(e.inputSchema, args) match

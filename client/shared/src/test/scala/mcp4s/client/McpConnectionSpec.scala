@@ -427,35 +427,54 @@ class McpConnectionSpec extends CatsEffectSuite:
       assert(meta.isEmpty, "Request should not contain _meta when no progress callback")
   }
 
+  /** A connection wired to an explicit progress-handler registry, as the transport runner does. */
+  def createConnectionWithProgress(
+      handler: JsonRpcRequest => IO[Json],
+      handlers: cats.effect.Ref[IO, Map[RequestId, ProgressParams => IO[Unit]]]
+  ): IO[McpConnection[IO]] =
+    for
+      idGen <- cats.effect.Ref.of[IO, Long](0L)
+      conn  <- McpConnection[IO](
+        InitializeResult(McpVersion.Current, testServerCapabilities, testServerInfo),
+        idGen.updateAndGet(_ + 1).map(RequestId.NumberId(_)),
+        handler,
+        _ => IO.unit,
+        handlers,
+        Tracer.noop[IO]
+      )
+    yield conn
+
   test("progress handler is registered and cleaned up after request completes") {
     val response = ToolResult.text("done").asJson
 
     for
-      conn     <- createConnection(_ => IO.pure(response))
+      handlers <- cats.effect.Ref.of[IO, Map[RequestId, ProgressParams => IO[Unit]]](Map.empty)
+      conn     <- createConnectionWithProgress(_ => IO.pure(response), handlers)
       _        <- conn.callTool("my-tool", Map.empty[String, String], _ => IO.unit)
-      handlers <- conn.progressHandlers.get
-    yield assert(handlers.isEmpty, "Progress handlers should be cleaned up after request completes")
+      after    <- handlers.get
+    yield assert(after.isEmpty, "Progress handlers should be cleaned up after request completes")
   }
 
   test("progress handler receives notifications routed by transport") {
-    val progressUpdates = scala.collection.mutable.ArrayBuffer[ProgressParams]()
-    val response        = ToolResult.text("done").asJson
+    val response = ToolResult.text("done").asJson
 
     for
-      conn <- createConnection(_ => IO.pure(response))
-      // Register a progress handler manually to simulate what happens during a request
-      _ <- conn.progressHandlers.update(
-        _ + (RequestId.NumberId(42) ->
-          ((p: ProgressParams) => IO { progressUpdates += p; () }))
+      handlers <- cats.effect.Ref.of[IO, Map[RequestId, ProgressParams => IO[Unit]]](Map.empty)
+      seen     <- cats.effect.Ref.of[IO, List[ProgressParams]](Nil)
+      // While the request is in flight, deliver a progress notification the way the transport
+      // runner does: look the handler up by the request's progress token and invoke it.
+      conn <- createConnectionWithProgress(
+        req =>
+          val token = req.params.get.hcursor.downField("_meta").get[RequestId]("progressToken")
+          val pp    = ProgressParams(token.toOption.get, 50.0, Some(100.0))
+          handlers.get.flatMap(_.get(pp.progressToken).traverse_(_(pp))).as(response)
+        ,
+        handlers
       )
-      // Simulate transport routing a progress notification
-      handlers <- conn.progressHandlers.get
-      pp = ProgressParams(RequestId.NumberId(42), 50.0, Some(100.0))
-      _ <- handlers.get(pp.progressToken).traverse_(_(pp))
-      // Clean up
-      _ <- conn.progressHandlers.update(_ - RequestId.NumberId(42))
+      _       <- conn.callTool("my-tool", Map.empty[String, String], p => seen.update(_ :+ p))
+      updates <- seen.get
     yield
-      assertEquals(progressUpdates.length, 1)
-      assertEquals(progressUpdates.head.progress, 50.0)
-      assertEquals(progressUpdates.head.total, Some(100.0))
+      assertEquals(updates.length, 1)
+      assertEquals(updates.head.progress, 50.0)
+      assertEquals(updates.head.total, Some(100.0))
   }

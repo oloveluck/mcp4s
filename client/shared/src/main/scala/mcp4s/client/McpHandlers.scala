@@ -129,6 +129,32 @@ object Elicitations:
         def onComplete(params: ElicitationCompleteParams): F[Unit] =
           x.onComplete(params) *> y.onComplete(params)
 
+/** Handler for notifications the server pushes outside any request: resource updates, list changes,
+  * log messages, task status changes. Handlers combine with `|+|` (both run, in order).
+  *
+  * {{{
+  * val notifications = Notifications[IO]:
+  *   case ServerNotification.ResourceUpdated(uri) => IO.println(s"$uri changed")
+  *   case ServerNotification.Log(msg)             => IO.println(msg.data.noSpaces)
+  *   case _                                       => IO.unit
+  * }}}
+  */
+trait Notifications[F[_]]:
+  def handle(notification: ServerNotification): F[Unit]
+
+object Notifications:
+
+  /** A handler from a (possibly partial) function; unmatched notifications are ignored. */
+  def apply[F[_]: Applicative](f: PartialFunction[ServerNotification, F[Unit]]): Notifications[F] =
+    n => f.applyOrElse(n, (_: ServerNotification) => Applicative[F].unit)
+
+  /** Ignores every notification. */
+  def empty[F[_]: Applicative]: Notifications[F] = _ => Applicative[F].unit
+
+  given [F[_]: Applicative]: Semigroup[Notifications[F]] with
+    def combine(x: Notifications[F], y: Notifications[F]): Notifications[F] =
+      n => x.handle(n) *> y.handle(n)
+
 /** Composable roots provider for exposing filesystem boundaries to servers.
   *
   * Roots can be combined using the Semigroup instance, which will concatenate the root lists.

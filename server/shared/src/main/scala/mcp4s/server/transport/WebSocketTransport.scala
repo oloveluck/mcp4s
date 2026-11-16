@@ -16,7 +16,7 @@
 
 package mcp4s.server.transport
 
-import cats.effect.{Async, Ref, Resource as CatsResource}
+import cats.effect.{Async, Resource as CatsResource}
 import cats.effect.std.{Queue, Supervisor}
 import cats.syntax.all.*
 import com.comcast.ip4s.{host, port, Host, Port}
@@ -37,6 +37,8 @@ import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 import mcp4s.server.*
 
+import scala.concurrent.duration.*
+
 /** WebSocket transport configuration */
 final case class WebSocketConfig(
     host: Host = host"0.0.0.0",
@@ -45,8 +47,7 @@ final case class WebSocketConfig(
     /** Maximum queue size for outgoing messages (bounded queue with backpressure) */
     maxQueueSize: Int = 1000,
     /** Request timeout for pending server-to-client operations (e.g. sampling) */
-    requestTimeout: scala.concurrent.duration.FiniteDuration =
-      scala.concurrent.duration.FiniteDuration(5, "min")
+    requestTimeout: FiniteDuration = 5.minutes
 )
 
 object WebSocketConfig:
@@ -118,162 +119,45 @@ object WebSocketTransport:
       tracer: Tracer[F],
       config: WebSocketConfig
   ): F[Response[F]] =
-    // Create session state for this connection
-    WebSocketSession[F](server, tracer, config).flatMap { session =>
-      // Queue for outgoing messages (bounded with backpressure)
-      Queue.bounded[F, WebSocketFrame](config.maxQueueSize).flatMap { outQueue =>
-        // Give session access to the outQueue for sending requests
-        session.setOutQueue(outQueue) *> {
-          // Process incoming frames and dispatch to handler, with cleanup on disconnect.
-          // Dispatch fibers run under a connection-scoped Supervisor so a tool call
-          // still running when the socket closes is cancelled rather than leaked.
-          val receive: Pipe[F, WebSocketFrame, Unit] = in =>
-            Stream
-              .resource(Supervisor[F])
-              .flatMap { supervisor =>
-                in.evalMap {
-                  case WebSocketFrame.Text(text, _) =>
-                    tracer.span("ws.message.receive").surround {
-                      session.handleMessage(text, outQueue, supervisor)
-                    }
-
-                  case WebSocketFrame.Close(_) =>
-                    Async[F].unit
-
-                  case WebSocketFrame.Ping(data) =>
-                    outQueue.offer(WebSocketFrame.Pong(data))
-
-                  case _ =>
-                    Async[F].unit
-                }
+    for
+      // Outgoing frames (bounded, with backpressure). Every server-to-client message — responses,
+      // notifications and server-initiated requests — is framed onto this one queue.
+      outQueue <- Queue.bounded[F, WebSocketFrame](config.maxQueueSize)
+      send = (message: JsonRpcMessage) =>
+        outQueue.offer(WebSocketFrame.Text(message.asJson.noSpaces))
+      session <- ServerSession
+        .create[F](server, Outbound.uniform(send), config.requestTimeout, tracer)
+      response <-
+        // Incoming frames are handled under a connection-scoped Supervisor: dispatch runs in its
+        // own fiber so the receive pipe stays free (a tool may await a sampling/elicitation round
+        // trip whose answer is a later frame), and a handler still running when the socket closes
+        // is cancelled rather than leaked.
+        val receive: Pipe[F, WebSocketFrame, Unit] = in =>
+          Stream
+            .resource(Supervisor[F])
+            .flatMap { supervisor =>
+              in.evalMap {
+                case WebSocketFrame.Text(text, _) =>
+                  tracer
+                    .span("ws.message.receive")
+                    .surround(handleText(session, text, send, supervisor))
+                case WebSocketFrame.Ping(data) => outQueue.offer(WebSocketFrame.Pong(data))
+                case _                         => Async[F].unit
               }
-              .onFinalize(session.cleanup)
+            }
+            .onFinalize(session.close)
 
-          // Stream of outgoing frames from the queue
-          val send: Stream[F, WebSocketFrame] = Stream.fromQueueUnterminated(outQueue)
+        wsb.build(Stream.fromQueueUnterminated(outQueue), receive)
+    yield response
 
-          wsb.build(send, receive)
-        }
-      }
-    }
-
-/** Manages state for a single WebSocket connection.
-  *
-  * The bidirectional machinery (correlation, capability gating, sampling/elicitation requesters)
-  * lives in the shared [[ServerSession]]; this class adds WebSocket frame handling and dispatch.
-  */
-private class WebSocketSession[F[_]: Async](
-    dispatcherRef: Ref[F, Option[Dispatcher[F]]],
-    session: ServerSession[F],
-    outQueueRef: Ref[F, Option[Queue[F, WebSocketFrame]]]
-):
-
-  /** Clean up session resources on disconnect. Fails all pending requests with a connection-closed
-    * error and clears refs.
-    */
-  def cleanup: F[Unit] =
-    session.cancelPending *> outQueueRef.set(None)
-
-  /** Set the dispatcher (used during initialization) */
-  private[transport] def setDispatcher(d: Dispatcher[F]): F[Unit] =
-    dispatcherRef.set(Some(d))
-
-  /** Set the output queue for sending messages */
-  def setOutQueue(queue: Queue[F, WebSocketFrame]): F[Unit] =
-    outQueueRef.set(Some(queue))
-
-  /** Handle an incoming WebSocket message */
-  def handleMessage(
+  private def handleText[F[_]: Async](
+      session: ServerSession[F],
       text: String,
-      outQueue: Queue[F, WebSocketFrame],
+      send: JsonRpcMessage => F[Unit],
       supervisor: Supervisor[F]
   ): F[Unit] =
     decode[JsonRpcMessage](text) match
       case Right(message) =>
-        message match
-          case resp: JsonRpcResponse =>
-            // Response to a server-initiated request (e.g., sampling)
-            session.handleResponse(resp)
-
-          case errResp: JsonRpcErrorResponse =>
-            // Error response to a server-initiated request
-            session.handleErrorResponse(errResp)
-
-          case req: JsonRpcRequest =>
-            // Client request - dispatch and maybe capture client capabilities.
-            // Dispatch runs in its own fiber so the receive pipe stays free: a tool
-            // handler may await a server-initiated round trip (sampling/elicitation)
-            // whose response arrives as a later frame on this same connection.
-            dispatcherRef.get.flatMap {
-              case Some(dispatcher) =>
-                session.maybeExtractClientCaps(req) *>
-                  supervisor
-                    .supervise(
-                      dispatcher
-                        .dispatch(req)
-                        .flatMap {
-                          case Some(response) =>
-                            outQueue.offer(WebSocketFrame.Text(response.asJson.noSpaces))
-                          case None =>
-                            Async[F].unit
-                        }
-                    )
-                    .void
-              case None =>
-                // Dispatcher not yet initialized - this shouldn't happen
-                val error =
-                  JsonRpcErrorResponse(req.id, JsonRpcError.internalError("Server not ready"))
-                outQueue.offer(WebSocketFrame.Text(error.asJson.noSpaces))
-            }
-
-          case notif: JsonRpcNotification =>
-            // Client notification
-            dispatcherRef.get.flatMap {
-              case Some(dispatcher) => dispatcher.dispatch(notif).void
-              case None             => Async[F].unit
-            }
-
+        supervisor.supervise(session.handle(message).flatMap(_.traverse_(send))).void
       case Left(err) =>
-        // Send parse error response
-        val error = JsonRpcErrorResponse(
-          RequestId.NullId,
-          JsonRpcError.parseError(err.getMessage)
-        )
-        outQueue.offer(WebSocketFrame.Text(error.asJson.noSpaces))
-
-private object WebSocketSession:
-  def apply[F[_]: Async](
-      server: Server[F],
-      tracer: Tracer[F],
-      config: WebSocketConfig = WebSocketConfig.default
-  ): F[WebSocketSession[F]] =
-    given Tracer[F] = tracer
-    for
-      dispatcherRef <- Ref.of[F, Option[Dispatcher[F]]](None)
-      outQueueRef   <- Ref.of[F, Option[Queue[F, WebSocketFrame]]](None)
-
-      // Outbound delivery: frame the message and offer it to the connection's queue (if open).
-      sendMessage = (message: JsonRpcMessage) =>
-        outQueueRef.get.flatMap {
-          case Some(queue) => queue.offer(WebSocketFrame.Text(message.asJson.noSpaces))
-          case None        => Async[F].unit
-        }
-
-      shared <- ServerSession.create[F](sendMessage, config.requestTimeout, tracer)
-      session = new WebSocketSession(dispatcherRef, shared, outQueueRef)
-
-      // Create context factory with full capabilities: sampling, elicitation, progress, logging
-      contextFactory = (reqId: RequestId, progressToken: Option[RequestId]) =>
-        ToolContext[F](
-          shared.samplingRequester,
-          shared.elicitationRequester,
-          reqId,
-          progressToken,
-          shared.sendProgressNotification,
-          shared.sendLoggingNotification
-        )
-      // Create dispatcher with context factory
-      dispatcher <- Dispatcher.withContext[F](server, contextFactory)
-      // Set the dispatcher
-      _ <- session.setDispatcher(dispatcher)
-    yield session
+        send(JsonRpcErrorResponse(RequestId.NullId, JsonRpcError.parseError(err.getMessage)))

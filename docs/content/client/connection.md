@@ -57,6 +57,8 @@ conn.listAllResources                // IO[List[Resource]]
 conn.listAllResourceTemplates        // IO[List[ResourceTemplate]]
 conn.readResource("uri")             // IO[ResourceContent]
 conn.readResourceIfSupported(ResourceUri("uri"))  // IO[Option[ResourceContent]]
+conn.subscribeResource("uri")        // IO[Unit] — updates reach the client's notification handler
+conn.unsubscribeResource("uri")      // IO[Unit]
 ```
 
 ## Prompts
@@ -80,9 +82,47 @@ server reports them (over HTTP/SSE or WebSocket):
 conn.callTool("index", args, p => IO.println(s"${p.progress}/${p.total.getOrElse("?")}"))
 ```
 
+## Notifications
+
+Server-pushed notifications (subscribed resource updates, list changes, log messages, task status)
+go to the handler registered on the client:
+
+```scala
+import mcp4s.client.Notifications
+import mcp4s.protocol.{ClientInfo, ServerNotification}
+
+val listening = McpClientBuilder[IO](ClientInfo("my-client", "1.0.0"))
+  .withNotifications(Notifications[IO] {
+    case ServerNotification.ResourceUpdated(uri) => IO.println(s"$uri changed")
+    case ServerNotification.Log(msg)             => IO.println(msg.data.noSpaces)
+  })
+```
+
+`conn.setLogLevel(LogLevel.Warning)` asks the server to send only messages at or above that level.
+
+## Tasks
+
+```scala
+conn.callToolTask("export", args)     // IO[Task] — returns immediately
+conn.getTask("task-id")               // IO[Task]
+conn.taskResult("task-id")            // IO[ToolResult] — answered once the task is terminal
+conn.cancelTask("task-id")            // IO[Task]
+conn.listTasks()                      // IO[(List[Task], Option[String])]
+```
+
+## Completions
+
+```scala
+conn.complete(CompleteParams(CompletionRef.PromptRef("greeting"), CompletionArgument("name", "A")))
+```
+
+Prompts built from a typed input complete enum-valued arguments automatically.
+
 ## Lifecycle
 
 ```scala
+conn.protocolVersion                  // String — negotiated at initialize
+conn.instructions                     // Option[String] — server hints for the model
 conn.ping                             // IO[Unit]
 conn.shutdown                         // IO[Unit]
 conn.cancel(RequestId.NumberId(42))   // IO[Unit]

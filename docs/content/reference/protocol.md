@@ -98,6 +98,36 @@ case class CreateMessageResult(role: Role, content: SamplingContent, model: Stri
 
 ## Tasks
 
-The spec defines an async-task protocol; mcp4s currently declares only the capability types
-(`ServerTasksCapability`, `ClientTasksCapability`) — see
-[Long-Running Tools](../advanced/tasks.md) for what to use today.
+Task-augmented requests (SEP-1686) return a `Task` immediately; the result is fetched later:
+
+<!-- doc-snippet: skip -->
+```scala
+enum TaskStatus { case Working, InputRequired, Completed, Failed, Cancelled }
+case class Task(taskId: String, status: TaskStatus, createdAt: String, lastUpdatedAt: String,
+                ttl: Option[Long], statusMessage: Option[String], pollInterval: Option[Long])
+case class CreateTaskResult(task: Task)
+```
+
+See [Long-Running Tools](../advanced/tasks.md) for the server and client APIs.
+
+## Server Notifications
+
+Notifications a server pushes outside any request are classified into `ServerNotification` and
+delivered to the client's notification handler:
+
+<!-- doc-snippet: skip -->
+```scala
+enum ServerNotification:
+  case ResourceUpdated(uri: String)
+  case ResourcesListChanged, ToolsListChanged, PromptsListChanged
+  case Log(message: LogMessage)
+  case TaskStatusChanged(task: Task)
+  case Other(method: String, params: Option[Json])
+```
+
+## Versions
+
+`McpVersion.Current` is `2025-11-25`; `McpVersion.Supported` lists every revision the
+implementation negotiates (`2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`). A server echoes
+a supported requested version and otherwise answers with the latest; a client disconnects if the
+server picks a version it does not support.

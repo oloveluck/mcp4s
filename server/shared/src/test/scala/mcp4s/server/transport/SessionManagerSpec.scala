@@ -121,12 +121,12 @@ class SessionManagerSpec extends CatsEffectSuite:
     yield ()
   }
 
-  test("HttpSession queue size is tracked") {
+  test("HttpSession starts without a standalone stream") {
     for
-      manager <- SessionManager[IO](testServer)
-      session <- manager.create
-      size    <- session.queueSize
-      _ = assertEquals(size, 0)
+      manager  <- SessionManager[IO](testServer)
+      session  <- manager.create
+      attached <- session.hasStandaloneStream
+      _ = assertEquals(attached, false)
     yield ()
   }
 

@@ -19,6 +19,7 @@ package mcp4s.server
 import cats.Semigroup
 import cats.effect.Concurrent
 import cats.syntax.all.*
+import fs2.Stream
 import io.circe.Json
 import mcp4s.protocol.*
 
@@ -34,6 +35,9 @@ trait Server[F[_]]:
 
   /** Server capabilities */
   def capabilities: ServerCapabilities
+
+  /** Usage hints for the client's model, returned as `instructions` in the initialize result. */
+  def instructions: Option[String] = None
 
   // === Tool Methods ===
 
@@ -72,6 +76,20 @@ trait Server[F[_]]:
   /** Get a prompt with the given arguments */
   def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult]
 
+  // === Optional Features ===
+
+  /** URIs of resources whose content changed. Each session forwards the changes its client
+    * subscribed to (via `resources/subscribe`) as `notifications/resources/updated`. Empty for
+    * servers without subscribable resources.
+    */
+  def resourceChanges: Stream[F, String] = Stream.empty
+
+  /** Argument completion (`completion/complete`). Default: no suggestions. */
+  def complete(@scala.annotation.unused params: CompleteParams)(using
+      F: cats.Applicative[F]
+  ): F[Completion] =
+    F.pure(Completion.empty)
+
 object Server:
 
   /** Create a server declaratively from composed parts.
@@ -98,16 +116,17 @@ object Server:
       info: ServerInfo,
       tools: Tools[F],
       resources: Resources[F],
-      prompts: Prompts[F]
+      prompts: Prompts[F],
+      instructions: Option[String] = None
   ): Server[F] =
-    DeclarativeServer(info, tools, resources, prompts)
+    DeclarativeServer(info, tools, resources, prompts, instructions)
 
   /** Create a server with only tool routes */
   def fromTools[F[_]: Concurrent](
       info: ServerInfo,
       tools: Tools[F]
   ): Server[F] =
-    DeclarativeServer(info, tools, Resources.empty[F], Prompts.empty[F])
+    DeclarativeServer(info, tools, Resources.empty[F], Prompts.empty[F], None)
 
   /** Semigroup instance for composing MCP servers.
     *
@@ -169,6 +188,8 @@ final private class ComposedServer[F[_]: Concurrent](
 
   val capabilities: ServerCapabilities = mergeCapabilities(left.capabilities, right.capabilities)
 
+  override val instructions: Option[String] = left.instructions.orElse(right.instructions)
+
   def listTools: F[List[Tool]] =
     for
       leftTools  <- left.listTools
@@ -212,6 +233,14 @@ final private class ComposedServer[F[_]: Concurrent](
       right.getPrompt(name, arguments)
     }
 
+  override def resourceChanges: Stream[F, String] =
+    left.resourceChanges.merge(right.resourceChanges)
+
+  override def complete(params: CompleteParams)(using cats.Applicative[F]): F[Completion] =
+    left.complete(params).flatMap { c =>
+      if c.values.nonEmpty then c.pure[F] else right.complete(params)
+    }
+
   private def mergeCapabilities(l: ServerCapabilities, r: ServerCapabilities): ServerCapabilities =
     ServerCapabilities(
       tools = l.tools.orElse(r.tools),
@@ -235,12 +264,14 @@ final private class DeclarativeServer[F[_]: Concurrent](
     val info: ServerInfo,
     private val tools: Tools[F],
     private val resources: Resources[F],
-    private val prompts: Prompts[F]
+    private val prompts: Prompts[F],
+    override val instructions: Option[String]
 ) extends Server[F]:
 
   val capabilities: ServerCapabilities =
     // Derived from what is actually registered: empty routes advertise no capability,
-    // and resources.subscribe reflects whether any resource is subscribable.
+    // resources.subscribe reflects whether any resource is subscribable, and tasks are
+    // advertised only when some tool declares task support.
     ServerCapabilities(
       tools = if tools.isEmpty then None else Some(ToolsCapability()),
       resources =
@@ -248,7 +279,11 @@ final private class DeclarativeServer[F[_]: Concurrent](
         else Some(ResourcesCapability(subscribe = Some(resources.supportsSubscribe))),
       prompts = if prompts.isEmpty then None else Some(PromptsCapability()),
       logging = Some(LoggingCapability()),
-      completions = Some(CompletionsCapability())
+      completions = Some(CompletionsCapability()),
+      tasks =
+        if tools.definitions.exists(_.taskSupport != TaskSupport.Forbidden) then
+          Some(ServerTasksCapability.toolCalls)
+        else None
     )
 
   def listTools: F[List[Tool]] = tools.list
@@ -291,3 +326,11 @@ final private class DeclarativeServer[F[_]: Concurrent](
       .getOrElseF(
         Concurrent[F].raiseError(McpError.PromptNotFound(name))
       )
+
+  override def resourceChanges: Stream[F, String] = resources.changes
+
+  override def complete(params: CompleteParams)(using cats.Applicative[F]): F[Completion] =
+    params.ref match
+      case CompletionRef.PromptRef(name) =>
+        prompts.complete(name, params.argument, params.context.getOrElse(Map.empty))
+      case CompletionRef.ResourceRef(_) => Completion.empty.pure[F]

@@ -38,6 +38,12 @@ trait McpChannel[F[_]]:
   /** All messages arriving from the peer. Terminates when the connection closes. */
   def incoming: Stream[F, JsonRpcMessage]
 
+  /** Called once the initialize handshake has negotiated `protocolVersion`. Transports that carry
+    * the version out of band (Streamable HTTP's `MCP-Protocol-Version` header) record it here;
+    * others ignore it.
+    */
+  def negotiated(protocolVersion: String): F[Unit]
+
 /** Timeouts shared by every transport.
   *
   * @param request

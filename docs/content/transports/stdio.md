@@ -25,7 +25,24 @@ object MyServer extends IOApp.Simple:
   def run = server.stdio.run
 ```
 
-`stdio.run` runs until stdin closes.
+`stdio.run` runs until stdin closes. The transport is fully bidirectional: context-aware tools
+(`handleWith`) can report progress, log, sample the client's model and elicit input over the same
+pipe, and the client's answers are correlated back to the waiting tool. Requests are dispatched
+concurrently so a `notifications/cancelled` line can interrupt a running call.
+
+To run the server over something other than the process's stdin/stdout — a socket, or in-memory
+pipes in a test — use `StdioTransport.runWith` with your own byte streams:
+
+```scala
+import mcp4s.server.transport.{StdioConfig, StdioTransport}
+import scala.concurrent.duration.*
+
+def input: Stream[IO, Byte]              = ???   // newline-delimited JSON-RPC from the client
+def output: fs2.Pipe[IO, Byte, Unit]     = ???   // where the server's lines go
+given Tracer[IO]                         = Tracer.noop[IO]
+
+StdioTransport.runWith[IO](server, input, output, StdioConfig(requestTimeout = 1.minute))
+```
 
 ## Client
 

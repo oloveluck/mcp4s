@@ -18,7 +18,9 @@ package mcp4s.examples
 
 import cats.effect.{IO, IOApp}
 import cats.syntax.all.*
+import io.circe.syntax.*
 import mcp4s.protocol.*
+import mcp4s.protocol.Codecs.given
 import mcp4s.schema.Schema
 import mcp4s.server.*
 import mcp4s.server.transport.*
@@ -29,9 +31,10 @@ import org.typelevel.otel4s.trace.Tracer
   * Implements all tools, resources, and prompts required by the official MCP Conformance Test
   * Framework.
   *
-  * Run with: mill examples.runMain mcp4s.examples.ConformanceServer
+  * Run with: sbt "examples/runMain mcp4s.examples.ConformanceServer"
   *
-  * Then run conformance tests: mill conformance --url http://localhost:3000/mcp
+  * Then run conformance tests: sbt conformance (or `sbt "conformance --url http://host:port/mcp"`
+  * against a server started elsewhere)
   */
 object ConformanceServer extends IOApp.Simple:
 
@@ -338,11 +341,24 @@ object ConformanceServer extends IOApp.Simple:
       mcp4s.protocol.Tool(
         "json_schema_2020_12_tool",
         Some("Tool with JSON Schema 2020-12 features for conformance testing"),
-        JsonSchema.obj(
-          "name"   -> JsonSchema.string("Name field"),
-          "street" -> JsonSchema.string("Street address"),
-          "city"   -> JsonSchema.string("City name")
-        )
+        // SEP-1613: declares the 2020-12 dialect, a `$defs` entry referenced with `$ref`,
+        // and a closed object — all of which must reach the client untouched.
+        JsonSchema
+          .obj(
+            "name"    -> JsonSchema.string("Name field"),
+            "address" -> JsonSchema.ref("address", Some("Postal address"))
+          )
+          .withDialect
+          .withDefs(
+            "address" -> JsonSchema
+              .obj(
+                "street" -> JsonSchema.string("Street address"),
+                "city"   -> JsonSchema.string("City name")
+              )
+              .required("street", "city")
+              .asJson
+          )
+          .closed
       )
     ) { json =>
       ok(s"JSON Schema 2020-12 tool called with: ${json.noSpaces}").pure[IO]

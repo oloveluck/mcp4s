@@ -19,6 +19,7 @@ package mcp4s.schema
 import io.circe.Json
 import io.circe.syntax.*
 import mcp4s.protocol.{Codecs, JsonSchema, JsonSchemaProperty}
+import mcp4s.protocol.Codecs.given
 
 import scala.collection.immutable.VectorMap
 
@@ -84,7 +85,7 @@ private[mcp4s] object JsonSchemaRenderer:
         JsonSchemaProperty(
           Some("object"),
           desc,
-          additionalProperties = Some(renderProperty(value))
+          additionalProperties = Some(renderProperty(value).asJson)
         )
 
       case Enumeration(_, values, desc) =>

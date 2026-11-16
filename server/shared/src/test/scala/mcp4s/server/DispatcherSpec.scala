@@ -486,13 +486,15 @@ class DispatcherSpec extends CatsEffectSuite:
     for
       captured <- Ref.of[IO, List[(RequestId, Double, Option[Double])]](Nil)
       contextFactory = (reqId: RequestId, progressToken: Option[RequestId]) =>
-        ToolContext[IO](
-          SamplingRequester.unsupported[IO],
-          ElicitationRequester.unsupported[IO],
-          reqId,
-          progressToken,
-          (token, prog, total) => captured.update(_ :+ (token, prog, total)),
-          (_, _, _) => IO.unit
+        IO.pure(
+          ToolContext[IO](
+            SamplingRequester.unsupported[IO],
+            ElicitationRequester.unsupported[IO],
+            reqId,
+            progressToken,
+            (token, prog, total) => captured.update(_ :+ (token, prog, total)),
+            (_, _, _) => IO.unit
+          )
         )
       dispatcher <- Dispatcher.withContext[IO](progressServer, contextFactory)
       _          <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
@@ -517,13 +519,15 @@ class DispatcherSpec extends CatsEffectSuite:
     for
       captured <- Ref.of[IO, List[(RequestId, Double, Option[Double])]](Nil)
       contextFactory = (reqId: RequestId, progressToken: Option[RequestId]) =>
-        ToolContext[IO](
-          SamplingRequester.unsupported[IO],
-          ElicitationRequester.unsupported[IO],
-          reqId,
-          progressToken,
-          (token, prog, total) => captured.update(_ :+ (token, prog, total)),
-          (_, _, _) => IO.unit
+        IO.pure(
+          ToolContext[IO](
+            SamplingRequester.unsupported[IO],
+            ElicitationRequester.unsupported[IO],
+            reqId,
+            progressToken,
+            (token, prog, total) => captured.update(_ :+ (token, prog, total)),
+            (_, _, _) => IO.unit
+          )
         )
       dispatcher <- Dispatcher.withContext[IO](progressServer, contextFactory)
       _          <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
@@ -546,13 +550,15 @@ class DispatcherSpec extends CatsEffectSuite:
     for
       captured <- Ref.of[IO, List[(RequestId, Double, Option[Double])]](Nil)
       contextFactory = (reqId: RequestId, progressToken: Option[RequestId]) =>
-        ToolContext[IO](
-          SamplingRequester.unsupported[IO],
-          ElicitationRequester.unsupported[IO],
-          reqId,
-          progressToken,
-          (token, prog, total) => captured.update(_ :+ (token, prog, total)),
-          (_, _, _) => IO.unit
+        IO.pure(
+          ToolContext[IO](
+            SamplingRequester.unsupported[IO],
+            ElicitationRequester.unsupported[IO],
+            reqId,
+            progressToken,
+            (token, prog, total) => captured.update(_ :+ (token, prog, total)),
+            (_, _, _) => IO.unit
+          )
         )
       dispatcher <- Dispatcher.withContext[IO](progressServer, contextFactory)
       _          <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)

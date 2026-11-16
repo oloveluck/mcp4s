@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Flaky CI: HTTP progress notifications.** The Streamable HTTP server shared one outbound queue across every in-flight request on a session and juggled "foreign" progress events between SSE pollers with re-offers and 1 ms sleeps; under concurrency a notification could surface on the wrong stream and be dropped, failing `[http] progress notifications are delivered to the callback` on `main`. Every request answered with an SSE stream now owns its own queue: the messages a tool emits while handling a request (progress, logging, sampling, elicitation) go to that request's stream and nowhere else, as the spec requires. No polling, no re-offers.
+- Server-initiated requests made from a request that has no SSE stream (JSON-mode POST without a GET stream) now fail immediately instead of waiting out the 5-minute request timeout.
+- `SamplingRequester.supportsSampling` / `ElicitationRequester.supportsElicitation` now reflect the client's advertised capabilities instead of always returning `true`.
+- `initialize` performs version negotiation: a supported requested version (`2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`) is echoed back; anything else gets the latest. The client disconnects (`McpError.ProtocolVersionMismatch`) if the server picks a version it cannot speak.
+
+### Added
+
+- **Streamable HTTP, complete** (spec 2025-11-25): standalone `GET` SSE stream per session for unsolicited server messages (`409` for a second one, `406` without `Accept: text/event-stream`); `DELETE` terminates a session; `404` for unknown/expired session ids, `400` for a missing id or an unsupported `MCP-Protocol-Version`, `202 Accepted` (no body) for notifications and client responses, `403` for a foreign `Origin` as well as `Host` on localhost bindings (`HttpConfig.allowedOrigins`); SSE priming events with ids and periodic keep-alive comments (`HttpConfig.keepAliveInterval`); invalid JSON/JSON-RPC bodies are `400`. The stateless mode (`enableSessions = false`) is now the same code path with a single shared session that accepts `initialize` repeatedly.
+- **Client:** sends the negotiated `MCP-Protocol-Version` on every request, opens the standalone `GET` stream after initialization (`HttpTransportConfig.listen`, reconnecting when it drops), tolerates priming events and comments, forgets the session on `404`, and `DELETE`s the session when the connection is released.
+- **Tasks (SEP-1686, experimental in 2025-11-25).** `ToolEndpoint.withTaskSupport(TaskSupport.Optional | Required)` marks a tool task-capable and the server derives the `tasks` capability. The dispatcher runs task-augmented `tools/call`s in the background and implements `tasks/get`, `tasks/result`, `tasks/cancel`, `tasks/list` with TTL-based retention (`Dispatcher.Config.tasks`); `required` tools refuse plain calls and `forbidden` tools refuse task calls with `-32601`. Client: `callToolTask`, `getTask`, `taskResult`, `cancelTask`, `listTasks`, `supportsToolTasks`. New protocol types `Task`, `TaskStatus`, `TaskMetadata`, `CreateTaskResult`, `ListTasksResult`.
+- **Resource subscriptions delivered.** `resources/subscribe` / `unsubscribe` are tracked per session and `Server.resourceChanges` (the merged change stream of subscribable resources) is forwarded as `notifications/resources/updated` to subscribed clients over HTTP (GET stream), WebSocket and stdio. Client: `conn.subscribeResource` / `unsubscribeResource`.
+- **Server notification handler on the client.** `McpClientBuilder.withNotifications(Notifications[F] { ... })` receives a typed `ServerNotification` (`ResourceUpdated`, `ResourcesListChanged`, `ToolsListChanged`, `PromptsListChanged`, `Log`, `TaskStatusChanged`, `Other`); `McpClient.onNotification` is the underlying hook.
+- **Logging level.** `logging/setLevel` is honoured: `ctx.log` messages below the session's level are not sent. Client: `conn.setLogLevel`.
+- **Completions.** `completion/complete` is implemented: prompts built from a typed input complete enum (and boolean) arguments automatically (`Prompts.complete`, `Server.complete`, `PromptCodec.candidates`); client: `conn.complete`. New types `CompleteParams`, `CompletionRef`, `CompletionArgument`, `Completion`, `CompleteResult`.
+- **Stdio is bidirectional.** The stdio server runs on the same session engine as HTTP and WebSocket: tools get a full `ToolContext` (progress, logging, sampling, elicitation) and client responses are correlated back. `StdioTransport.runWith(server, input, output)` runs the protocol over arbitrary byte streams (sockets, in-memory pipes in tests); `StdioConfig` sets the request timeout and concurrency.
+- `instructions` at initialize: `McpServer.withInstructions(...)` / `Server.from(..., instructions = ...)`; `conn.instructions` and `conn.protocolVersion` on the client. `ToolEndpoint.withTitle`.
+- `McpVersion.Supported`, `McpVersion.negotiate`, `Tool.taskSupport`, `ServerTasksCapability.toolCalls`.
+- **JSON Schema 2020-12 keywords (SEP-1613).** `JsonSchema` gains `$defs`, `JsonSchemaProperty` gains `$ref` (`JsonSchema.ref("name")`), and `additionalProperties` is now raw `Json` on both so `additionalProperties: false` can be expressed; helpers `.closed`, `.withDialect` (`JsonSchema.Dialect2020_12`) and `.withDefs(...)`. The conformance server's `json_schema_2020_12_tool` now passes the upstream keyword-preservation scenario.
+
+### Changed
+
+- `Dispatcher` is now explicitly the per-session protocol state machine: it exposes `protocolVersion`, `clientCapabilities`, `logLevel`, `subscriptions` and `close`, and takes a `Dispatcher.Config` (re-initialization policy for stateless HTTP, task settings). `Dispatcher.withContext`'s factory is effectful (`(RequestId, Option[RequestId]) => F[ToolContext[F]]`) and `Dispatcher` requires `Temporal` rather than `Concurrent`.
+- `McpChannel` gains `negotiated(protocolVersion)`, called by the connection runner after the handshake.
+- `McpConnection.progressHandlers` is no longer part of the public trait (the runner owns the registry); `McpConnection.apply` takes the `InitializeResult`.
+- `HttpSession` no longer exposes `outQueue` / `activeProgressTokens` / `queueSize`; it owns per-request streams and the standalone stream (`hasStandaloneStream`).
+- `JsonSchema.additionalProperties` / `JsonSchemaProperty.additionalProperties` are `Option[Json]` instead of `Option[JsonSchemaProperty]` (JSON Schema allows a boolean there too); derived `Map[String, V]` schemas render the same JSON as before.
+
 ### Build
 
 - **Dependency updates** — Scala 3.8.4 → 3.9.0, cats-effect 3.7.0 → 3.7.1, fs2 3.13.0 → 3.14.0, circe 0.14.15 → 0.14.16, otel4s 1.0.1 → 1.1.0, munit-scalacheck 1.3.0 → 1.3.1, weaver 0.10.1 → 0.13.0; sbt-typelevel 0.8.6 → 0.8.7, sbt-jmh 0.4.7 → 0.4.8. All three platforms (JVM/JS/Native) compile and the full test + MCP conformance suites pass.

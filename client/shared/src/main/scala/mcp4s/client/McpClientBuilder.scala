@@ -56,27 +56,34 @@ final class McpClientBuilder[F[_]: Concurrent] private (
     info: ClientInfo,
     roots: Option[Roots[F]],
     sampling: Option[Samplings[F]],
-    elicitation: Option[Elicitations[F]]
+    elicitation: Option[Elicitations[F]],
+    notifications: Option[Notifications[F]]
 ):
 
   /** Add roots (combined with any already added). Advertises the `roots` capability. */
   def withRoots(r: Roots[F]): McpClientBuilder[F] =
-    new McpClientBuilder(info, Some(roots.fold(r)(_ |+| r)), sampling, elicitation)
+    new McpClientBuilder(info, Some(roots.fold(r)(_ |+| r)), sampling, elicitation, notifications)
 
   /** Add a sampling handler (tried in order after any already added). Advertises `sampling`. */
   def withSampling(s: Samplings[F]): McpClientBuilder[F] =
-    new McpClientBuilder(info, roots, Some(sampling.fold(s)(_ |+| s)), elicitation)
+    new McpClientBuilder(info, roots, Some(sampling.fold(s)(_ |+| s)), elicitation, notifications)
 
   /** Add an elicitation handler (tried in order after any already added). Advertises `elicitation`.
     */
   def withElicitation(e: Elicitations[F]): McpClientBuilder[F] =
-    new McpClientBuilder(info, roots, sampling, Some(elicitation.fold(e)(_ |+| e)))
+    new McpClientBuilder(info, roots, sampling, Some(elicitation.fold(e)(_ |+| e)), notifications)
+
+  /** Add a handler for server-pushed notifications (resource updates, list changes, log messages,
+    * task status). Handlers added earlier run first.
+    */
+  def withNotifications(n: Notifications[F]): McpClientBuilder[F] =
+    new McpClientBuilder(info, roots, sampling, elicitation, Some(notifications.fold(n)(_ |+| n)))
 
   /** The assembled [[McpClient]] (handlers + derived capabilities), for use with a transport's
     * `connect` directly.
     */
   def toClient: McpClient[F] =
-    McpClient.from(info, roots, sampling, elicitation)
+    McpClient.from(info, roots, sampling, elicitation, notifications)
 
   /** Connect by spawning a subprocess and speaking JSON-RPC over its stdin/stdout. */
   def stdio(config: StdioTransportConfig)(using
@@ -110,7 +117,7 @@ object McpClientBuilder:
 
   /** Start assembling a client with the given identity. */
   def apply[F[_]: Concurrent](info: ClientInfo): McpClientBuilder[F] =
-    new McpClientBuilder(info, None, None, None)
+    new McpClientBuilder(info, None, None, None, None)
 
   /** Start assembling a client with the given name and version. */
   def apply[F[_]: Concurrent](name: String, version: String): McpClientBuilder[F] =

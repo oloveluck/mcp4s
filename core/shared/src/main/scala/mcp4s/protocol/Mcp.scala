@@ -53,6 +53,22 @@ object McpVersion:
   /** Current MCP protocol version */
   val Current: String = "2025-11-25"
 
+  /** Every protocol revision this implementation can speak, newest first. */
+  val Supported: List[String] = List(Current, "2025-06-18", "2025-03-26", "2024-11-05")
+
+  /** Version a Streamable HTTP server assumes when a request carries no `MCP-Protocol-Version`
+    * header (per spec, for backwards compatibility).
+    */
+  val HttpDefault: String = "2025-03-26"
+
+  def isSupported(version: String): Boolean = Supported.contains(version)
+
+  /** Version negotiation per the lifecycle spec: a server echoes the requested version when it
+    * supports it and otherwise answers with the latest version it does support.
+    */
+  def negotiate(requested: String): String =
+    if isSupported(requested) then requested else Current
+
 // === Common Types ===
 
 /** Icon for UI display Spec ref: schema.ts Icon interface
@@ -123,7 +139,19 @@ final case class ServerTasksCapability(
     list: Option[Json] = None,
     cancel: Option[Json] = None,
     requests: Option[ServerTaskRequests] = None
-)
+):
+  /** Whether task-augmented `tools/call` requests are accepted. */
+  def supportsToolCalls: Boolean = requests.exists(_.tools.exists(_.call.isDefined))
+
+object ServerTasksCapability:
+  /** Full server-side task support: `tasks/list`, `tasks/cancel`, and task-augmented `tools/call`.
+    */
+  val toolCalls: ServerTasksCapability =
+    ServerTasksCapability(
+      list = Some(Json.obj()),
+      cancel = Some(Json.obj()),
+      requests = Some(ServerTaskRequests(tools = Some(ToolTaskRequests(call = Some(Json.obj())))))
+    )
 
 final case class ServerTaskRequests(
     tools: Option[ToolTaskRequests] = None
@@ -204,7 +232,11 @@ final case class SamplingCapability(
 // === Tools ===
 // Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
 
-/** JSON Schema for tool input/output */
+/** JSON Schema for tool input/output (dialect 2020-12 per SEP-1613).
+  *
+  * `additionalProperties` is raw JSON because JSON Schema allows either a boolean (`false` closes
+  * the object) or a schema; `$defs` holds reusable definitions referenced via `$ref`.
+  */
 final case class JsonSchema(
     `type`: String,
     properties: Option[Map[String, JsonSchemaProperty]] = None,
@@ -214,7 +246,8 @@ final case class JsonSchema(
     `enum`: Option[List[String]] = None,
     oneOf: Option[List[Json]] = None,
     items: Option[JsonSchemaProperty] = None,
-    additionalProperties: Option[JsonSchemaProperty] = None
+    additionalProperties: Option[Json] = None,
+    `$defs`: Option[Map[String, Json]] = None
 )
 
 final case class JsonSchemaProperty(
@@ -232,7 +265,9 @@ final case class JsonSchemaProperty(
     // Nested object schemas
     properties: Option[Map[String, JsonSchemaProperty]] = None,
     required: Option[List[String]] = None,
-    additionalProperties: Option[JsonSchemaProperty] = None
+    additionalProperties: Option[Json] = None,
+    /** Reference to a definition, e.g. `#/$defs/address`. */
+    `$ref`: Option[String] = None
 )
 
 object JsonSchemaProperty:
@@ -252,8 +287,15 @@ object JsonSchemaProperty:
     JsonSchemaProperty(Some(`type`), description, `enum`, default, oneOf, enumNames, items, anyOf)
 
 object JsonSchema:
+  /** The JSON Schema dialect MCP schemas default to (SEP-1613). */
+  val Dialect2020_12: String = "https://json-schema.org/draft/2020-12/schema"
+
   /** Empty schema that accepts any input */
   val empty: JsonSchema = JsonSchema("object", None, None)
+
+  /** A property that references a definition in the enclosing schema's `$defs`. */
+  def ref(definition: String, description: Option[String] = None): JsonSchemaProperty =
+    JsonSchemaProperty(None, description, `$ref` = Some(s"#/$$defs/$definition"))
 
   /** Create an object schema from a map of properties */
   def obj(
@@ -379,6 +421,16 @@ object JsonSchema:
     def required(fields: String*): JsonSchema =
       schema.copy(required = Some(fields.toList))
 
+    /** Reject properties not listed in `properties` (`additionalProperties: false`). */
+    def closed: JsonSchema = schema.copy(additionalProperties = Some(Json.False))
+
+    /** Declare the 2020-12 dialect explicitly via `$schema`. */
+    def withDialect: JsonSchema = schema.copy(`$schema` = Some(Dialect2020_12))
+
+    /** Add reusable definitions, referenced from properties with [[JsonSchema.ref]]. */
+    def withDefs(defs: (String, Json)*): JsonSchema =
+      schema.copy(`$defs` = Some(schema.`$defs`.getOrElse(Map.empty) ++ defs))
+
 /** Tool annotations for AI safety hints Spec ref: schema.ts ToolAnnotations CRITICAL for AI safety
   * \- describes tool behavior to LLMs
   */
@@ -428,7 +480,10 @@ final case class Tool(
     annotations: Option[ToolAnnotations] = None,
     icons: Option[List[Icon]] = None,
     _meta: Option[Json] = None
-)
+):
+  /** Declared task support; absent means [[TaskSupport.Forbidden]] per spec. */
+  def taskSupport: TaskSupport =
+    execution.flatMap(_.taskSupport).getOrElse(TaskSupport.Forbidden)
 
 /** Tool call result content types Spec ref: schema.ts ContentBlock union
   */
@@ -792,6 +847,86 @@ final case class ProgressParams(
     progress: Double,
     total: Option[Double] = None
 )
+
+// === Tasks (SEP-1686, experimental in 2025-11-25) ===
+// Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks
+
+/** Lifecycle state of a task. Spec ref: schema.ts TaskStatus */
+enum TaskStatus:
+  case Working, InputRequired, Completed, Failed, Cancelled
+
+  /** Terminal states never transition again. */
+  def isTerminal: Boolean = this match
+    case Completed | Failed | Cancelled => true
+    case Working | InputRequired        => false
+
+/** Task state as returned by `tasks/get`, `tasks/list`, and in `CreateTaskResult`. Spec ref:
+  * schema.ts Task
+  *
+  * @param ttl
+  *   retention from creation in milliseconds; `None` means unlimited (encoded as JSON `null`)
+  * @param pollInterval
+  *   suggested polling interval in milliseconds
+  */
+final case class Task(
+    taskId: String,
+    status: TaskStatus,
+    createdAt: String,
+    lastUpdatedAt: String,
+    ttl: Option[Long],
+    statusMessage: Option[String] = None,
+    pollInterval: Option[Long] = None
+)
+
+/** The `task` field of a task-augmented request. Spec ref: schema.ts TaskMetadata */
+final case class TaskMetadata(ttl: Option[Long] = None)
+
+/** Immediate response to a task-augmented request. Spec ref: schema.ts CreateTaskResult */
+final case class CreateTaskResult(task: Task)
+
+/** Result of `tasks/list`. Spec ref: schema.ts ListTasksResult */
+final case class ListTasksResult(tasks: List[Task], nextCursor: Option[String] = None)
+
+// === Completions ===
+// Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/completion
+
+/** What a `completion/complete` request is completing an argument for. */
+enum CompletionRef:
+  /** `ref/prompt`: an argument of the named prompt. */
+  case PromptRef(name: String)
+
+  /** `ref/resource`: a variable of the given resource URI template. */
+  case ResourceRef(uri: String)
+
+/** The argument being completed and the text typed so far. */
+final case class CompletionArgument(name: String, value: String)
+
+/** Parameters of `completion/complete`. `context.arguments` carries already-resolved arguments. */
+final case class CompleteParams(
+    ref: CompletionRef,
+    argument: CompletionArgument,
+    context: Option[Map[String, String]] = None
+)
+
+/** Completion suggestions. At most 100 values; `total` may exceed `values.size`. */
+final case class Completion(
+    values: List[String],
+    total: Option[Int] = None,
+    hasMore: Option[Boolean] = None
+)
+
+object Completion:
+  val empty: Completion = Completion(Nil, Some(0), Some(false))
+
+  /** Build a completion from candidate values, keeping those that start with `prefix` (case
+    * insensitively) and capping at the spec's 100-value limit.
+    */
+  def matching(candidates: List[String], prefix: String): Completion =
+    val matches = candidates.filter(_.toLowerCase.startsWith(prefix.toLowerCase))
+    Completion(matches.take(100), Some(matches.size), Some(matches.size > 100))
+
+/** Result of `completion/complete`. */
+final case class CompleteResult(completion: Completion)
 
 // === Roots (Client Feature) ===
 // Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/client/roots

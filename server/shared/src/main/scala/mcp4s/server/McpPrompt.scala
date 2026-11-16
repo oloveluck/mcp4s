@@ -46,6 +46,17 @@ trait Prompts[F[_]]:
   /** True when no prompts are registered. Used to derive server capabilities. */
   def isEmpty: Boolean = false
 
+  /** Suggest values for one argument of the named prompt (`completion/complete`). Routes built from
+    * a typed input complete enum-valued fields automatically; everything else yields no
+    * suggestions.
+    */
+  def complete(
+      @scala.annotation.unused name: String,
+      @scala.annotation.unused argument: CompletionArgument,
+      @scala.annotation.unused context: Map[String, String]
+  )(using F: Applicative[F]): F[Completion] =
+    F.pure(Completion.empty)
+
   /** Name-indexed handlers when statically known; `None` for dynamic implementations. Lets
     * [[Prompts.combine]] dispatch by Map lookup instead of scanning the composition chain.
     */
@@ -85,6 +96,15 @@ object Prompts:
         handlers match
           case Some(table) => OptionT(table.get(name).traverse(h => h(arguments)))
           case None        => x.get(name, arguments).orElse(y.get(name, arguments))
+
+      override def complete(
+          name: String,
+          argument: CompletionArgument,
+          context: Map[String, String]
+      )(using Applicative[F]): F[Completion] =
+        x.complete(name, argument, context).flatMap { c =>
+          if c.values.nonEmpty then c.pure[F] else y.complete(name, argument, context)
+        }
 
   /** Semigroup instance for Prompts composition via |+| */
   given [F[_]: Concurrent]: Semigroup[Prompts[F]] with

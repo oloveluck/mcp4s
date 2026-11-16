@@ -9,7 +9,7 @@ Most protocols are one-directional: clients request, servers respond. MCP is dif
 
 This means a tool can *think* (by requesting an LLM completion) and *ask* (by prompting the user) during execution.
 
-Bidirectional communication works over **both network transports**: on Streamable HTTP, server-initiated requests ride the SSE response stream and the client answers them on the same connection; on WebSocket they use the duplex socket directly — the same shared connection runner drives both. Only **stdio** remains plain request/response.
+Bidirectional communication works over **every transport**: on Streamable HTTP, server-initiated requests ride the SSE response stream of the tool call and the client answers them with a POST; on WebSocket and stdio they travel over the duplex connection directly. The same session engine drives all three on the server, and the same connection runner on the client.
 
 ## Sampling
 

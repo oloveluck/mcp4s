@@ -56,23 +56,28 @@ final class McpServer[F[_]: Concurrent] private (
     info: ServerInfo,
     tools: Tools[F],
     resources: Resources[F],
-    prompts: Prompts[F]
+    prompts: Prompts[F],
+    instructions: Option[String]
 ):
 
   /** Add tool routes (combined with any already added; first match wins). */
   def withTools(t: Tools[F]): McpServer[F] =
-    new McpServer(info, Tools.combine(tools, t), resources, prompts)
+    new McpServer(info, Tools.combine(tools, t), resources, prompts, instructions)
 
   /** Add resource routes. */
   def withResources(r: Resources[F]): McpServer[F] =
-    new McpServer(info, tools, Resources.combine(resources, r), prompts)
+    new McpServer(info, tools, Resources.combine(resources, r), prompts, instructions)
 
   /** Add prompt routes. */
   def withPrompts(p: Prompts[F]): McpServer[F] =
-    new McpServer(info, tools, resources, Prompts.combine(prompts, p))
+    new McpServer(info, tools, resources, Prompts.combine(prompts, p), instructions)
+
+  /** Set the `instructions` returned at initialize: usage hints for the client's model. */
+  def withInstructions(text: String): McpServer[F] =
+    new McpServer(info, tools, resources, prompts, Some(text))
 
   /** The assembled [[Server]], for direct use or composition via `|+|`. */
-  def toServer: Server[F] = Server.from(info, tools, resources, prompts)
+  def toServer: Server[F] = Server.from(info, tools, resources, prompts, instructions)
 
   /** Bind to the stdio transport (newline-delimited JSON-RPC over stdin/stdout). */
   def stdio: McpServer.StdioBinding[F] = McpServer.StdioBinding(toServer)
@@ -89,7 +94,7 @@ object McpServer:
 
   /** Start assembling a server with the given identity. */
   def apply[F[_]: Concurrent](info: ServerInfo): McpServer[F] =
-    new McpServer(info, Tools.empty[F], Resources.empty[F], Prompts.empty[F])
+    new McpServer(info, Tools.empty[F], Resources.empty[F], Prompts.empty[F], None)
 
   /** Start assembling a server with the given name and version. */
   def apply[F[_]: Concurrent](name: String, version: String): McpServer[F] =
