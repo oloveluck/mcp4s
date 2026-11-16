@@ -473,12 +473,3 @@ class CodecsSpec extends FunSuite:
     assertEquals(LogLevel.Error.asJson, Json.fromString("error"))
     assertEquals(Json.fromString("warning").as[LogLevel], Right(LogLevel.Warning))
   }
-
-  // === Cursor Tests ===
-
-  test("Cursor roundtrip") {
-    val cursor = Cursor("abc123")
-    val json   = cursor.asJson
-    assertEquals(json, Json.fromString("abc123"))
-    assertEquals(json.as[Cursor], Right(cursor))
-  }

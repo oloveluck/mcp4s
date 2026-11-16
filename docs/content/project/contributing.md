@@ -38,10 +38,11 @@ The output will be in `docs/target/site/`. Open `index.html` in a browser.
 
 ### Keep Doc Snippets Compiling
 
-Every ```` ```scala ```` block in `docs/content` is extracted automatically at compile
-time (by `project/DocSnippets.scala`, wired as a source generator for the `examples`
-module) and compiled against the real API — so CI fails if the documentation drifts
-from the published API. After editing documentation, verify with:
+Every ```` ```scala ```` block in `docs/content` is extracted at compile time
+(`project/DocSnippets.scala`, a source generator for the `examples` module) and compiled
+against the real API, so CI fails if the documentation drifts. The docs are written for people:
+they explain the architecture and the decisions, and leave signatures to the Scaladoc. After
+editing them, verify with:
 
 ```bash
 sbt examples/Test/compile
@@ -93,7 +94,7 @@ mcp4s/
 ├── benchmarks/    # JMH microbenchmarks (JVM-only, unpublished)
 ├── examples/      # Example servers and clients (JVM-only)
 ├── conformance/   # MCP protocol conformance suite (git submodule)
-├── docs/          # Documentation site (Laika, JVM-only)
+├── docs/          # Documentation site: docs/content (Laika, JVM-only)
 └── build.sbt      # Build definition (sbt + sbt-typelevel)
 ```
 

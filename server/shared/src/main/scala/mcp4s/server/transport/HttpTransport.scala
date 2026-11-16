@@ -16,13 +16,12 @@
 
 package mcp4s.server.transport
 
-import cats.effect.{Async, Deferred, Outcome, Resource as CatsResource}
+import cats.data.EitherT
+import cats.effect.{Async, Resource as CatsResource}
 import cats.effect.syntax.spawn.*
+import cats.syntax.all.*
 import fs2.Stream
 import fs2.io.net.Network
-import cats.syntax.all.*
-
-import scala.concurrent.duration.*
 import com.comcast.ip4s.{host, port, Host, Port}
 import io.circe.*
 import io.circe.syntax.*
@@ -35,33 +34,54 @@ import org.http4s.server.{Router, Server as Http4sServer}
 import org.typelevel.ci.CIString
 import org.typelevel.otel4s.Attribute
 import org.typelevel.otel4s.context.propagation.TextMapGetter
-import org.typelevel.otel4s.trace.Tracer
+import org.typelevel.otel4s.trace.{Span, Tracer}
 import mcp4s.protocol.*
 import mcp4s.protocol.Codecs.given
 import mcp4s.server.*
 
-/** Streamable HTTP transport configuration */
-final case class HttpConfig[F[_]](
+import scala.concurrent.duration.*
+
+/** Streamable HTTP transport configuration.
+  *
+  * @param enableSessions
+  *   issue an `Mcp-Session-Id` per client and keep per-client protocol state. When false the
+  *   transport is stateless: one dispatcher serves every client and no session header is used.
+  * @param allowedOrigins
+  *   `Origin` values accepted in addition to the localhost origins that are always accepted on a
+  *   localhost binding. Requests with any other `Origin` are refused with 403.
+  * @param keepAliveInterval
+  *   how often an SSE comment is written to idle streams so intermediaries keep them open
+  */
+final case class HttpConfig(
     host: Host = host"0.0.0.0",
     port: Port = port"3000",
     path: String = "mcp",
     enableSessions: Boolean = true,
     /** Session configuration for timeout, queue sizes, etc. */
-    sessionConfig: SessionConfig = SessionConfig.default
+    sessionConfig: SessionConfig = SessionConfig.default,
+    allowedOrigins: Set[String] = Set.empty,
+    keepAliveInterval: FiniteDuration = 30.seconds
 )
 
 object HttpConfig:
-  def default[F[_]]: HttpConfig[F] = HttpConfig[F]()
+  val default: HttpConfig = HttpConfig()
 
-/** Streamable HTTP transport for MCP servers.
+/** Streamable HTTP transport for MCP servers (spec 2025-11-25).
   *
-  * Implements the MCP Streamable HTTP transport (spec 2025-11-25):
-  *   - POST /{path}: Receives JSON-RPC requests, returns JSON-RPC responses
-  *     - When client accepts SSE (text/event-stream): Returns SSE stream with notifications,
-  *       server-initiated requests, and final response
-  *     - Otherwise: Returns single JSON response
-  *   - GET /{path}: Returns 405 (server-initiated notifications not supported)
-  *   - GET /health: Health check endpoint
+  *   - `POST /{path}`: one JSON-RPC message per request. Requests are answered with an SSE stream
+  *     when the client accepts `text/event-stream` (carrying related notifications and
+  *     server-initiated requests before the response) and with a single JSON object otherwise.
+  *     Notifications and responses are acknowledged with `202 Accepted`.
+  *   - `GET /{path}`: opens the session's standalone SSE stream for server-to-client messages
+  *     unrelated to any request (subscribed resource updates, task-related messages after their
+  *     request completed). One per session; a second concurrent GET is refused with 409.
+  *   - `DELETE /{path}`: terminates the session.
+  *   - `GET /health`: health check.
+  *
+  * Requests with an unknown `Mcp-Session-Id` get 404 (clients then re-initialize); requests other
+  * than `initialize` without a session id get 400. An unsupported `MCP-Protocol-Version` header is
+  * refused with 400, and `Origin`/`Host` headers are validated against the binding to defeat DNS
+  * rebinding (403).
   */
 object HttpTransport:
 
@@ -72,8 +92,8 @@ object HttpTransport:
     def keys(carrier: Headers): Iterable[String] =
       carrier.headers.map(_.name.toString)
 
-  /** Session header name (case-insensitive per MCP spec) */
-  private val SessionHeaderName = CIString("Mcp-Session-Id")
+  private val SessionHeaderName         = CIString("Mcp-Session-Id")
+  private val ProtocolVersionHeaderName = CIString("MCP-Protocol-Version")
 
   /** JSON-RPC error code for invalid session */
   private val InvalidSessionErrorCode = -32000
@@ -81,7 +101,6 @@ object HttpTransport:
   /** Valid localhost patterns for DNS rebinding protection */
   private val LocalhostPatterns = Set("localhost", "127.0.0.1", "[::1]", "::1")
 
-  /** SSE media type */
   private val SseMediaType = MediaType.`text/event-stream`
 
   /** Check if a host configuration indicates localhost binding */
@@ -89,18 +108,34 @@ object HttpTransport:
     val hostStr = host.toString
     hostStr == "localhost" || hostStr == "127.0.0.1" || hostStr == "::1" || hostStr == "[::1]" || hostStr == "0.0.0.0"
 
-  /** Validate Host header for DNS rebinding protection. When server is bound to localhost, reject
-    * requests with non-localhost Host headers.
+  private def hostnameOf(hostHeader: String): String =
+    // "[::1]:3000" keeps its brackets; "localhost:3000" drops the port.
+    if hostHeader.startsWith("[") then hostHeader.takeWhile(_ != ']') + "]"
+    else hostHeader.split(":").head.toLowerCase
+
+  /** DNS rebinding protection: on a localhost binding the `Host` header must name localhost. */
+  private def isValidHostHeader[F[_]](req: Request[F], config: HttpConfig): Boolean =
+    !isLocalhostBinding(config.host) ||
+      req.headers.get(CIString("Host")).map(_.head.value).forall { h =>
+        LocalhostPatterns.contains(hostnameOf(h))
+      }
+
+  /** Origin validation (spec: MUST validate; invalid Origin → 403). Explicitly allowed origins
+    * always pass; on a localhost binding, localhost origins pass too; elsewhere, without an
+    * allowlist, any Origin passes (the deployment is expected to front this with its own policy).
     */
-  private def isValidHostHeader[F[_]](req: Request[F], configHost: Host): Boolean =
-    if !isLocalhostBinding(configHost) then true
-    else
-      req.headers.get(CIString("Host")).map(_.head.value) match
-        case None             => true // No host header, allow (unusual but not a rebinding attack)
-        case Some(hostHeader) =>
-          // Extract hostname without port
-          val hostname = hostHeader.split(":").head.toLowerCase
-          LocalhostPatterns.contains(hostname)
+  private def isValidOrigin[F[_]](req: Request[F], config: HttpConfig): Boolean =
+    req.headers.get(CIString("Origin")).map(_.head.value).forall { origin =>
+      config.allowedOrigins.contains(origin) || {
+        val originHost = Uri
+          .fromString(origin)
+          .toOption
+          .flatMap(_.host)
+          .map(h => hostnameOf(h.value.toLowerCase))
+        if isLocalhostBinding(config.host) then originHost.exists(LocalhostPatterns.contains)
+        else config.allowedOrigins.isEmpty
+      }
+    }
 
   /** Check if request accepts SSE responses */
   private def acceptsSSE[F[_]](req: Request[F]): Boolean =
@@ -120,16 +155,22 @@ object HttpTransport:
     */
   def routes[F[_]: Async](
       server: Server[F],
-      config: HttpConfig[F] = HttpConfig.default[F]
+      config: HttpConfig = HttpConfig.default
   )(using Tracer[F]): CatsResource[F, HttpRoutes[F]] =
-    if config.enableSessions then
-      SessionManager.withCleanup[F](server, config.sessionConfig).map { sessionManager =>
-        createSessionRoutes(sessionManager, config.path, config.host, summon[Tracer[F]])
-      }
-    else
-      CatsResource.eval(mcp4s.server.Dispatcher[F](server)).map { dispatcher =>
-        createLegacyRoutes(dispatcher, config.path, config.host, summon[Tracer[F]])
-      }
+    val sessions: CatsResource[F, Sessions[F]] =
+      if config.enableSessions then
+        SessionManager.withCleanup[F](server, config.sessionConfig).map(Sessions.stateful(_))
+      else
+        CatsResource
+          .make(
+            HttpSession.create[F](
+              server,
+              config.sessionConfig,
+              Dispatcher.Config(allowReinitialize = true)
+            )
+          )(_.shutdown)
+          .map(Sessions.stateless(_))
+    sessions.map(new Routes[F](_, config, summon[Tracer[F]]).routes)
 
   /** Start an HTTP server for the given MCP server.
     *
@@ -140,7 +181,7 @@ object HttpTransport:
     */
   def serve[F[_]: Async: Network](
       server: Server[F],
-      config: HttpConfig[F] = HttpConfig.default[F]
+      config: HttpConfig = HttpConfig.default
   )(using Tracer[F]): CatsResource[F, Http4sServer] =
     for
       mcpRoutes  <- routes(server, config)
@@ -153,315 +194,267 @@ object HttpTransport:
         .build
     yield httpServer
 
-  /** Create routes with session management (MCP compliant) */
-  private def createSessionRoutes[F[_]: Async](
-      sessionManager: SessionManager[F],
-      path: String,
-      configHost: Host,
-      tracer: Tracer[F]
-  ): HttpRoutes[F] =
-    given dsl: Http4sDsl[F] = new Http4sDsl[F] {}
-    import dsl.*
-
-    HttpRoutes.of[F] {
-      case req @ POST -> Root / `path` =>
-        // DNS rebinding protection
-        if !isValidHostHeader(req, configHost) then
-          Forbidden("DNS rebinding protection: invalid Host header")
-        else
-          // Extract trace context from incoming request headers for distributed tracing
-          tracer.joinOrRoot(req.headers) {
-            tracer
-              .span(
-                "http.server.request",
-                Attribute("http.method", "POST"),
-                Attribute("http.route", s"/$path")
-              )
-              .use { span =>
-                req.as[Json].flatMap { json =>
-                  json.as[JsonRpcMessage] match
-                    case Right(message) =>
-                      handleSessionRequest(req, message, sessionManager, span, acceptsSSE(req))
-                    case Left(err) =>
-                      val error = JsonRpcErrorResponse(
-                        RequestId.NullId,
-                        JsonRpcError.parseError(err.getMessage)
-                      )
-                      span.addAttribute(Attribute("http.status_code", 200L)) *>
-                        Ok(error.asJson, `Content-Type`(MediaType.application.json))
-                }
-              }
-          }
-
-      case GET -> Root / `path` =>
-        // Server-initiated notifications not supported yet - return 405 per spec
-        MethodNotAllowed(Allow(Method.POST))
-
-      case GET -> Root / "health" =>
-        Ok(Json.obj("status" -> Json.fromString("ok")))
-    }
-
-  /** Handle a request with session management */
-  private def handleSessionRequest[F[_]: Async](
-      req: Request[F],
-      message: JsonRpcMessage,
-      sessionManager: SessionManager[F],
-      span: org.typelevel.otel4s.trace.Span[F],
-      useSSE: Boolean
-  )(using Http4sDsl[F]): F[Response[F]] =
-    val sessionIdOpt = req.headers.get(SessionHeaderName).map(h => SessionId(h.head.value))
-    val isInitialize = message match
-      case r: JsonRpcRequest => r.method == McpMethod.Initialize
-      case _                 => false
-
-    (sessionIdOpt, isInitialize) match
-      // Case 1: No session + initialize → create new session
-      case (None, true) =>
-        sessionManager.create.flatMap { session =>
-          dispatchWithSession(session, message, span, useSSE).map { response =>
-            response.putHeaders(Header.Raw(SessionHeaderName, session.id.value))
-          }
-        }
-
-      // Case 2: Has session ID → lookup and dispatch
-      case (Some(sessionId), _) =>
-        sessionManager.get(sessionId).flatMap {
-          case Some(session) =>
-            dispatchWithSession(session, message, span, useSSE).map { response =>
-              response.putHeaders(Header.Raw(SessionHeaderName, session.id.value))
-            }
-          case None =>
-            // Invalid session ID
-            invalidSessionResponse(message)
-        }
-
-      // Case 3: No session + not initialize → error
-      case (None, false) =>
-        invalidSessionResponse(message)
-
-  /** Dispatch a message using the session's dispatcher */
-  private def dispatchWithSession[F[_]: Async](
-      session: HttpSession[F],
-      message: JsonRpcMessage,
-      span: org.typelevel.otel4s.trace.Span[F],
-      useSSE: Boolean
-  )(using dsl: Http4sDsl[F]): F[Response[F]] =
-    import dsl.*
-
-    // Check if this is a response to a server-initiated request
-    message match
-      case resp: JsonRpcResponse =>
-        // Client is responding to our sampling/elicitation request
-        session.handleResponse(resp) *>
-          span.addAttribute(Attribute("http.status_code", 204L)) *>
-          NoContent()
-
-      case errResp: JsonRpcErrorResponse =>
-        // Client is sending an error response to our request
-        session.handleErrorResponse(errResp) *>
-          span.addAttribute(Attribute("http.status_code", 204L)) *>
-          NoContent()
-
-      case _ =>
-        // Extract client capabilities from initialize request
-        session.maybeExtractClientCaps(message) *> {
-          if useSSE then handleStreamingRequest(session, message, span)
-          else handleSimpleRequest(session, message, span)
-        }
-
-  /** Handle a request with SSE streaming response.
-    *
-    * Returns an SSE stream that:
-    *   1. Runs dispatch in a background fiber 2. Blocks on the outQueue for notifications
-    *      (progress, logging, server requests) and emits SSE events, until dispatch completes 3.
-    *      When dispatch completes, drains any remaining queue messages and emits the final response
-    *
-    * The live phase blocks on `outQueue.take` interrupted by the dispatch Deferred rather than
-    * polling with sleeps. Interrupting a `take` cannot lose an element (cats-effect's Queue
-    * restores a delivered element on cancellation), and all notifications are enqueued before the
-    * handler returns, so the final drain after interruption captures any stragglers.
-    *
-    * The out-queue is shared by every in-flight request on the session, so a progress notification
-    * belonging to a *different* concurrent request may surface here. Emitting it on this stream
-    * would lose it if this stream is closed early (e.g. the owning call was cancelled), so progress
-    * events whose token belongs to another active stream are re-offered for that stream's poller to
-    * pick up.
+  /** How requests map onto sessions: per-client sessions keyed by `Mcp-Session-Id`, or one shared
+    * session for a stateless deployment.
     */
-  private def handleStreamingRequest[F[_]: Async](
-      session: HttpSession[F],
-      message: JsonRpcMessage,
-      span: org.typelevel.otel4s.trace.Span[F]
-  )(using dsl: Http4sDsl[F]): F[Response[F]] =
+  private trait Sessions[F[_]]:
+    def stateful: Boolean
+    def create: F[HttpSession[F]]
+    def get(id: SessionId): F[Option[HttpSession[F]]]
+    def remove(id: SessionId): F[Unit]
+
+  private object Sessions:
+    def stateful[F[_]](manager: SessionManager[F]): Sessions[F] =
+      new Sessions[F]:
+        val stateful: Boolean                             = true
+        def create: F[HttpSession[F]]                     = manager.create
+        def get(id: SessionId): F[Option[HttpSession[F]]] = manager.get(id)
+        def remove(id: SessionId): F[Unit]                = manager.remove(id)
+
+    def stateless[F[_]: Async](single: HttpSession[F]): Sessions[F] =
+      new Sessions[F]:
+        val stateful: Boolean                             = false
+        def create: F[HttpSession[F]]                     = Async[F].pure(single)
+        def get(id: SessionId): F[Option[HttpSession[F]]] = Async[F].pure(Some(single))
+        def remove(id: SessionId): F[Unit]                = Async[F].unit
+
+  private class Routes[F[_]](sessions: Sessions[F], config: HttpConfig, tracer: Tracer[F])(using
+      F: Async[F]
+  ):
+    private val dsl = new Http4sDsl[F] {}
     import dsl.*
 
-    def toSSE(msg: JsonRpcMessage): ServerSentEvent =
-      ServerSentEvent(data = Some(msg.asJson.noSpaces), eventType = Some("message"))
+    private val path = config.path
 
-    // The progress token this stream owns: _meta.progressToken if the client set one,
-    // otherwise the request id (the McpConnection client uses its request id as token).
-    val myToken: Option[RequestId] = message match
-      case req: JsonRpcRequest =>
-        val metaToken = req.params
-          .flatMap(_.hcursor.downField("_meta").downField("progressToken").as[RequestId].toOption)
-        metaToken.orElse(Some(req.id))
-      case _ => None
+    def routes: HttpRoutes[F] =
+      HttpRoutes.of[F] {
+        case req @ POST -> Root / `path` =>
+          guarded(req, "POST")(span => handlePost(req, span))
 
-    // A progress event for another ACTIVE stream must not be emitted here; hand it back.
-    def foreignToken(msg: JsonRpcMessage): F[Boolean] =
-      msg match
-        case JsonRpcNotification(McpMethod.Progress, Some(params)) =>
-          params.as[ProgressParams].toOption.map(_.progressToken) match
-            case Some(token) if !myToken.contains(token) =>
-              session.activeProgressTokens.get.map(_.contains(token))
-            case _ => Async[F].pure(false)
-        case _ => Async[F].pure(false)
+        case req @ GET -> Root / `path` =>
+          guarded(req, "GET")(_ => handleGet(req))
 
-    def register: F[Unit]   = myToken.traverse_(t => session.activeProgressTokens.update(_ + t))
-    def deregister: F[Unit] = myToken.traverse_(t => session.activeProgressTokens.update(_ - t))
+        case req @ DELETE -> Root / `path` =>
+          guarded(req, "DELETE")(_ => handleDelete(req))
 
-    Deferred[F, Either[Throwable, Option[JsonRpcMessage]]].flatMap { dispatchResult =>
-      val sseStream: Stream[F, ServerSentEvent] =
-        // Start dispatch in a background fiber; result (or error) completes the Deferred
-        Stream.bracket(
-          register *>
-            session.dispatcher.dispatch(message).attempt.flatMap(dispatchResult.complete).void.start
-        )(fiber => deregister *> fiber.cancel) >> {
-          def emitOrReoffer(msg: JsonRpcMessage): Stream[F, ServerSentEvent] =
-            Stream.eval(foreignToken(msg)).flatMap {
-              case true =>
-                // Another live stream owns this event; put it back and yield briefly so
-                // we don't immediately re-take our own re-offer in a hot loop.
-                Stream.exec(session.outQueue.offer(msg) *> Async[F].sleep(1.milli))
-              case false => Stream.emit(toSSE(msg))
+        case GET -> Root / "health" =>
+          Ok(Json.obj("status" -> Json.fromString("ok")))
+      }
+
+    /** Shared per-request checks: DNS rebinding (Host/Origin), the protocol version header, and a
+      * traced span joined to any incoming trace context.
+      */
+    private def guarded(req: Request[F], method: String)(
+        handle: Span[F] => F[Response[F]]
+    ): F[Response[F]] =
+      if !isValidHostHeader(req, config) || !isValidOrigin(req, config) then
+        Forbidden(
+          JsonRpcErrorResponse(
+            RequestId.NullId,
+            JsonRpcError.invalidRequest("DNS rebinding protection: invalid Host or Origin header")
+          ).asJson
+        )
+      else
+        req.headers.get(ProtocolVersionHeaderName).map(_.head.value) match
+          case Some(version) if !McpVersion.isSupported(version) =>
+            BadRequest(
+              JsonRpcErrorResponse(
+                RequestId.NullId,
+                JsonRpcError.invalidRequest(
+                  s"Unsupported MCP-Protocol-Version: $version (supported: " +
+                    s"${McpVersion.Supported.mkString(", ")})"
+                )
+              ).asJson
+            )
+          case _ =>
+            tracer.joinOrRoot(req.headers) {
+              tracer
+                .span(
+                  "http.server.request",
+                  Attribute("http.method", method),
+                  Attribute("http.route", s"/$path")
+                )
+                .use(handle)
             }
 
-          // Live phase: block on the queue racing dispatch completion (no polling).
-          // This must be racePair, not race: a plain race discards a completed loser,
-          // so a `take` that already dequeued an element when the Deferred wins would
-          // silently drop that element. With racePair we inspect the take fiber after
-          // cancelling it — if it completed with an element, we emit it before moving
-          // on. (Queue.take itself never loses elements on cancellation; only the
-          // race combinator's result-discarding does.)
-          val nextEvent: F[Either[Option[JsonRpcMessage], JsonRpcMessage]] =
-            Async[F].racePair(dispatchResult.get, session.outQueue.take).flatMap {
-              case Left((_, takeFiber)) =>
-                takeFiber.cancel *> takeFiber.join.flatMap {
-                  case Outcome.Succeeded(msg) => msg.map(m => Left(Some(m)))
-                  case _                      => Async[F].pure(Left(None))
-                }
-              case Right((getFiber, takeOutcome)) =>
-                getFiber.cancel *> takeOutcome.embed(Async[F].never).map(Right(_))
-            }
+    // === POST ===
 
-          def live: Stream[F, ServerSentEvent] =
-            Stream.eval(nextEvent).flatMap {
-              case Right(msg)            => emitOrReoffer(msg) ++ live
-              case Left(Some(straggler)) => emitOrReoffer(straggler)
-              case Left(None)            => Stream.empty
-            }
+    private def handlePost(req: Request[F], span: Span[F]): F[Response[F]] =
+      req.as[Json].attempt.flatMap {
+        case Left(err) =>
+          BadRequest(errorBody(RequestId.NullId, JsonRpcError.parseError(err.getMessage)))
+        case Right(json) =>
+          json.as[JsonRpcMessage] match
+            case Left(err) =>
+              BadRequest(errorBody(RequestId.NullId, JsonRpcError.invalidRequest(err.getMessage)))
+            case Right(message) =>
+              resolveSession(req, message).flatMap {
+                case Left(response) => response.pure[F]
+                case Right(session) =>
+                  dispatch(req, session, message, span).map(withSessionHeader(session))
+              }
+      }
 
-          // Dispatch completed: drain stragglers, then emit the response (or propagate).
-          val finale: Stream[F, ServerSentEvent] =
-            Stream.eval(dispatchResult.get).flatMap { result =>
-              Stream.eval(session.outQueue.tryTakeN(None)).flatMap { remaining =>
-                Stream.emits(remaining).flatMap(emitOrReoffer)
-              } ++ (result match
-                case Right(Some(response)) => Stream.emit(toSSE(response))
-                case Right(None)           => Stream.empty
-                case Left(error)           => Stream.raiseError[F](error))
-            }
+    /** Find (or, for `initialize`, create) the session a POST belongs to. */
+    private def resolveSession(
+        req: Request[F],
+        message: JsonRpcMessage
+    ): F[Either[Response[F], HttpSession[F]]] =
+      val isInitialize = message match
+        case r: JsonRpcRequest => r.method == McpMethod.Initialize
+        case _                 => false
+      if !sessions.stateful then sessions.create.map(Right(_))
+      else
+        (sessionId(req), isInitialize) match
+          case (None, true)  => sessions.create.map(Right(_))
+          case (Some(id), _) => lookupSession(id)
+          case (None, false) =>
+            BadRequest(
+              errorBody(requestIdOf(message), invalidSession("Missing Mcp-Session-Id header"))
+            ).map(Left(_))
 
-          live ++ finale
+    private def dispatch(
+        req: Request[F],
+        session: HttpSession[F],
+        message: JsonRpcMessage,
+        span: Span[F]
+    ): F[Response[F]] =
+      message match
+        case request: JsonRpcRequest if acceptsSSE(req) =>
+          span.addAttribute(Attribute("http.status_code", 200L)) *>
+            streamingResponse(session, request)
+        case request: JsonRpcRequest =>
+          session.handle(request).flatMap {
+            case Some(response) =>
+              span.addAttribute(Attribute("http.status_code", 200L)) *>
+                Ok(response.asJson, `Content-Type`(MediaType.application.json))
+            case None =>
+              span.addAttribute(Attribute("http.status_code", 202L)) *> Accepted()
+          }
+        case other =>
+          // Notifications and client responses carry no reply: 202 Accepted, no body.
+          session.handle(other) *>
+            span.addAttribute(Attribute("http.status_code", 202L)) *> Accepted()
+
+    /** Answer a request with an SSE stream: a priming event, then every message the handler emits
+      * for this request, then the response, after which the stream ends. Dispatch runs in a fiber
+      * tied to the stream, so a client that disconnects cancels the handler.
+      */
+    private def streamingResponse(
+        session: HttpSession[F],
+        request: JsonRpcRequest
+    ): F[Response[F]] =
+      val body: Stream[F, ServerSentEvent] =
+        Stream.resource(session.requestStream(request.id)).flatMap { stream =>
+          val run =
+            session
+              .handle(request)
+              .attempt
+              .flatMap {
+                case Right(Some(response)) => stream.send(response)
+                case Right(None)           => F.unit
+                case Left(err)             =>
+                  stream.send(
+                    JsonRpcErrorResponse(request.id, JsonRpcError.internalError(err.getMessage))
+                  )
+              } *> stream.close
+          Stream.bracket(run.start)(_.cancel) >> events(stream)
+        }
+      Ok(body, `Content-Type`(SseMediaType))
+
+    // === GET (standalone stream) ===
+
+    private def handleGet(req: Request[F]): F[Response[F]] =
+      if !acceptsSSE(req) then
+        NotAcceptable(
+          errorBody(
+            RequestId.NullId,
+            JsonRpcError.invalidRequest("GET requires Accept: text/event-stream")
+          )
+        )
+      else
+        withSession(req) { session =>
+          // Resumption via Last-Event-ID is not supported: the stream always starts fresh.
+          session.standaloneStream.allocated.flatMap {
+            case (None, release) =>
+              release *> Conflict(
+                errorBody(
+                  RequestId.NullId,
+                  JsonRpcError.invalidRequest("Only one standalone SSE stream per session")
+                )
+              )
+            case (Some(stream), release) =>
+              val body = Stream.bracket(F.unit)(_ => release) >> events(stream)
+              Ok(body, `Content-Type`(SseMediaType)).map(withSessionHeader(session))
+          }
         }
 
-      span.addAttribute(Attribute("http.status_code", 200L)) *>
-        Ok(sseStream, `Content-Type`(SseMediaType))
-    }
+    // === DELETE (session termination) ===
 
-  /** Handle a simple (non-streaming) request */
-  private def handleSimpleRequest[F[_]: Async](
-      session: HttpSession[F],
-      message: JsonRpcMessage,
-      span: org.typelevel.otel4s.trace.Span[F]
-  )(using dsl: Http4sDsl[F]): F[Response[F]] =
-    import dsl.*
+    private def handleDelete(req: Request[F]): F[Response[F]] =
+      if !sessions.stateful then MethodNotAllowed(Allow(Method.POST, Method.GET))
+      else withSession(req)(session => sessions.remove(session.id) *> Ok())
 
-    session.dispatcher.dispatch(message).flatMap {
-      case Some(response) =>
-        span.addAttribute(Attribute("http.status_code", 200L)) *>
-          Ok(response.asJson, `Content-Type`(MediaType.application.json))
-      case None =>
-        span.addAttribute(Attribute("http.status_code", 204L)) *>
-          NoContent()
-    }
+    // === Helpers ===
 
-  /** Return HTTP 400 with JSON-RPC error for invalid/missing session */
-  private def invalidSessionResponse[F[_]: Async](message: JsonRpcMessage)(using
-      dsl: Http4sDsl[F]
-  ): F[Response[F]] =
-    import dsl.*
+    /** Render one stream as SSE: a priming event (empty data, carrying the stream's first event id
+      * so clients can learn the id scheme), then one `message` event per JSON-RPC message, with
+      * periodic keep-alive comments while idle.
+      */
+    private def events(stream: HttpSession.Stream[F]): Stream[F, ServerSentEvent] =
+      val eventId  = (n: Long) => ServerSentEvent.EventId(s"${stream.id}-$n")
+      val priming  = ServerSentEvent(data = Some(""), id = Some(eventId(0)))
+      val messages = Stream
+        .fromQueueNoneTerminated(stream.queue)
+        .zipWithIndex
+        .map { (msg, i) =>
+          ServerSentEvent(
+            data = Some(msg.asJson.noSpaces),
+            eventType = Some("message"),
+            id = Some(eventId(i + 1))
+          )
+        }
+      val keepAlive = Stream
+        .awakeEvery[F](config.keepAliveInterval)
+        .as(ServerSentEvent(comment = Some("keep-alive")))
+      Stream.emit(priming) ++ messages.mergeHaltL(keepAlive)
 
-    val requestId = message match
-      case r: JsonRpcRequest => r.id
-      case _                 => RequestId.NullId
+    private def sessionId(req: Request[F]): Option[SessionId] =
+      req.headers.get(SessionHeaderName).map(h => SessionId(h.head.value))
 
-    val error = JsonRpcErrorResponse(
-      requestId,
-      JsonRpcError(InvalidSessionErrorCode, "Invalid or missing session", None)
-    )
-    BadRequest(error.asJson, `Content-Type`(MediaType.application.json))
+    private def lookupSession(id: SessionId): F[Either[Response[F], HttpSession[F]]] =
+      sessions.get(id).flatMap {
+        case Some(session) => session.asRight[Response[F]].pure[F]
+        case None          =>
+          NotFound(errorBody(RequestId.NullId, invalidSession("Session not found")))
+            .map(Left(_))
+      }
 
-  /** Create legacy routes without session management (not MCP compliant) */
-  private def createLegacyRoutes[F[_]: Async](
-      dispatcher: mcp4s.server.Dispatcher[F],
-      path: String,
-      configHost: Host,
-      tracer: Tracer[F]
-  ): HttpRoutes[F] =
-    val dsl = new Http4sDsl[F] {}
-    import dsl.*
-
-    HttpRoutes.of[F] {
-      case req @ POST -> Root / `path` =>
-        // DNS rebinding protection
-        if !isValidHostHeader(req, configHost) then
-          Forbidden("DNS rebinding protection: invalid Host header")
+    /** Run `f` with the request's session; in stateless mode that is the shared session. */
+    private def withSession(req: Request[F])(f: HttpSession[F] => F[Response[F]]): F[Response[F]] =
+      EitherT(
+        if !sessions.stateful then sessions.create.map(_.asRight[Response[F]])
         else
-          // Extract trace context from incoming request headers for distributed tracing
-          tracer.joinOrRoot(req.headers) {
-            tracer
-              .span(
-                "http.server.request",
-                Attribute("http.method", "POST"),
-                Attribute("http.route", s"/$path")
+          sessionId(req) match
+            case Some(id) => lookupSession(id)
+            case None     =>
+              BadRequest(
+                errorBody(RequestId.NullId, invalidSession("Missing Mcp-Session-Id header"))
               )
-              .use { span =>
-                req.as[Json].flatMap { json =>
-                  json.as[JsonRpcMessage] match
-                    case Right(message) =>
-                      dispatcher.dispatch(message).flatMap {
-                        case Some(response) =>
-                          span.addAttribute(Attribute("http.status_code", 200L)) *>
-                            Ok(response.asJson, `Content-Type`(MediaType.application.json))
-                        case None =>
-                          span.addAttribute(Attribute("http.status_code", 204L)) *>
-                            NoContent()
-                      }
-                    case Left(err) =>
-                      val error = JsonRpcErrorResponse(
-                        RequestId.NullId,
-                        JsonRpcError.parseError(err.getMessage)
-                      )
-                      span.addAttribute(Attribute("http.status_code", 200L)) *>
-                        Ok(error.asJson, `Content-Type`(MediaType.application.json))
-                }
-              }
-          }
+                .map(Left(_))
+      ).semiflatMap(f).merge
 
-      case GET -> Root / `path` =>
-        // Server-initiated notifications not supported yet - return 405 per spec
-        MethodNotAllowed(Allow(Method.POST))
+    private def withSessionHeader(session: HttpSession[F])(response: Response[F]): Response[F] =
+      if sessions.stateful then response.putHeaders(Header.Raw(SessionHeaderName, session.id.value))
+      else response
 
-      case GET -> Root / "health" =>
-        Ok(Json.obj("status" -> Json.fromString("ok")))
-    }
+    private def requestIdOf(message: JsonRpcMessage): RequestId =
+      message match
+        case r: JsonRpcRequest => r.id
+        case _                 => RequestId.NullId
+
+    private def invalidSession(detail: String): JsonRpcError =
+      JsonRpcError(InvalidSessionErrorCode, detail, None)
+
+    private def errorBody(id: RequestId, error: JsonRpcError): Json =
+      JsonRpcErrorResponse(id, error).asJson

@@ -75,6 +75,11 @@ trait McpClient[F[_]]:
     */
   def onElicitationComplete(params: ElicitationCompleteParams): F[Unit]
 
+  /** Handle a notification the server pushed outside any request (resource updates, list changes,
+    * log messages, task status). Default: ignored.
+    */
+  def onNotification(notification: ServerNotification): F[Unit]
+
 object McpClient:
 
   /** Create a client from composed handlers.
@@ -102,7 +107,8 @@ object McpClient:
       info: ClientInfo,
       roots: Option[Roots[F]] = None,
       sampling: Option[Samplings[F]] = None,
-      elicitation: Option[Elicitations[F]] = None
+      elicitation: Option[Elicitations[F]] = None,
+      notifications: Option[Notifications[F]] = None
   ): McpClient[F] =
     val caps = ClientCapabilities(
       roots = roots.map(_ => RootsCapability(Some(true))),
@@ -116,7 +122,8 @@ object McpClient:
       Nil,
       roots,
       sampling,
-      elicitation
+      elicitation,
+      notifications
     )
 
   /** Start assembling a client fluently — the mirror of `McpServer` on the server side. */
@@ -150,7 +157,8 @@ final private[client] class ComposedMcpClient[F[_]: Concurrent](
     private val staticRoots: List[Root],
     private val mcpRoots: Option[Roots[F]],
     private val samplingHandler: Option[Samplings[F]],
-    private val elicitationHandler: Option[Elicitations[F]]
+    private val elicitationHandler: Option[Elicitations[F]],
+    private val notificationHandler: Option[Notifications[F]]
 ) extends McpClient[F]:
 
   def listRoots: F[ListRootsResult] =
@@ -180,4 +188,9 @@ final private[client] class ComposedMcpClient[F[_]: Concurrent](
   def onElicitationComplete(params: ElicitationCompleteParams): F[Unit] =
     elicitationHandler match
       case Some(handler) => handler.onComplete(params)
+      case None          => Concurrent[F].unit
+
+  def onNotification(notification: ServerNotification): F[Unit] =
+    notificationHandler match
+      case Some(handler) => handler.handle(notification)
       case None          => Concurrent[F].unit

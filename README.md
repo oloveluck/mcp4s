@@ -25,7 +25,7 @@ the JVM, Scala.js (Node), and Scala Native. (Use `%%` for a JVM-only project.)
 
 ## Quick Start
 
-See the [documentation site](https://oloveluck.github.io/mcp4s/getting-started/) for server and client examples.
+See the [documentation site](https://oloveluck.github.io/mcp4s/getting-started.html) for server and client examples.
 
 ## Modules
 

@@ -123,12 +123,6 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
         conn.ping.as(())
   }
 
-  test("Protocol: shutdown completes gracefully") {
-    httpServerResource(simpleServer).use: server =>
-      httpConnection(simpleClient, server.address.getPort).use: conn =>
-        conn.shutdown.as(())
-  }
-
   test("Protocol: multiple pings succeed") {
     httpServerResource(simpleServer).use: server =>
       httpConnection(simpleClient, server.address.getPort).use: conn =>
@@ -619,34 +613,6 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
   // ============================================================================
   // CATEGORY 7: ADDITIONAL PROTOCOL COMPLIANCE
   // ============================================================================
-
-  test("Protocol: callToolIfSupported returns Some for supported tool") {
-    httpServerResource(simpleServer).use: server =>
-      httpConnection(simpleClient, server.address.getPort).use: conn =>
-        for result <- conn.callToolIfSupported(
-            ToolName("add"),
-            Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))
-          )
-        yield
-          assert(result.isDefined)
-          assertEquals(result.get.isError.getOrElse(false), false)
-  }
-
-  test("Protocol: readResourceIfSupported returns Some for supported resource") {
-    httpServerResource(simpleServer).use: server =>
-      httpConnection(simpleClient, server.address.getPort).use: conn =>
-        for result <- conn.readResourceIfSupported(ResourceUri("file:///test.txt"))
-        yield
-          assert(result.isDefined)
-          assertEquals(result.get.uri, "file:///test.txt")
-  }
-
-  test("Protocol: getPromptIfSupported returns Some for supported prompt") {
-    httpServerResource(simpleServer).use: server =>
-      httpConnection(simpleClient, server.address.getPort).use: conn =>
-        for result <- conn.getPromptIfSupported(PromptName("greeting"), Map("name" -> "Test"))
-        yield assert(result.isDefined)
-  }
 
   test("Protocol: capability checks are accurate") {
     httpServerResource(simpleServer).use: server =>

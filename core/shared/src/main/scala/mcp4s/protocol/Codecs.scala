@@ -47,17 +47,6 @@ object Codecs:
       .orElse(cursor.as[Long].map(RequestId.NumberId(_)))
       .orElse(cursor.as[Option[Unit]].map(_ => RequestId.NullId))
 
-  // === Opaque Types ===
-
-  given Encoder[ToolName] = Encoder.encodeString.contramap(_.value)
-  given Decoder[ToolName] = Decoder.decodeString.map(ToolName(_))
-
-  given Encoder[ResourceUri] = Encoder.encodeString.contramap(_.value)
-  given Decoder[ResourceUri] = Decoder.decodeString.map(ResourceUri(_))
-
-  given Encoder[PromptName] = Encoder.encodeString.contramap(_.value)
-  given Decoder[PromptName] = Decoder.decodeString.map(PromptName(_))
-
   // === JsonRpcError ===
 
   given Encoder[JsonRpcError] = derivedEncoder[JsonRpcError]
@@ -462,11 +451,6 @@ object Codecs:
   given Encoder[LogMessage] = derivedEncoder[LogMessage]
   given Decoder[LogMessage] = deriveDecoder
 
-  // === Pagination ===
-
-  given Encoder[Cursor] = Encoder.encodeString.contramap(_.value)
-  given Decoder[Cursor] = Decoder.decodeString.map(Cursor(_))
-
   // === Notifications ===
 
   given Encoder[CancelledParams] = derivedEncoder[CancelledParams]
@@ -474,6 +458,101 @@ object Codecs:
 
   given Encoder[ProgressParams] = derivedEncoder[ProgressParams]
   given Decoder[ProgressParams] = deriveDecoder
+
+  // === Tasks ===
+
+  given Encoder[TaskStatus] = Encoder.encodeString.contramap:
+    case TaskStatus.Working       => "working"
+    case TaskStatus.InputRequired => "input_required"
+    case TaskStatus.Completed     => "completed"
+    case TaskStatus.Failed        => "failed"
+    case TaskStatus.Cancelled     => "cancelled"
+
+  given Decoder[TaskStatus] = Decoder.decodeString.emap:
+    case "working"        => Right(TaskStatus.Working)
+    case "input_required" => Right(TaskStatus.InputRequired)
+    case "completed"      => Right(TaskStatus.Completed)
+    case "failed"         => Right(TaskStatus.Failed)
+    case "cancelled"      => Right(TaskStatus.Cancelled)
+    case other            => Left(s"Unknown task status: $other")
+
+  // `ttl` is required on the wire and `null` means unlimited, so it must survive the
+  // null-dropping applied to the other optional fields.
+  given Encoder[Task] = Encoder.instance: t =>
+    Json
+      .obj(
+        "taskId"        -> Json.fromString(t.taskId),
+        "status"        -> t.status.asJson,
+        "statusMessage" -> t.statusMessage.asJson,
+        "createdAt"     -> Json.fromString(t.createdAt),
+        "lastUpdatedAt" -> Json.fromString(t.lastUpdatedAt),
+        "pollInterval"  -> t.pollInterval.asJson
+      )
+      .dropNullValues
+      .deepMerge(Json.obj("ttl" -> t.ttl.asJson))
+
+  given Decoder[Task] = Decoder.instance: cursor =>
+    for
+      taskId        <- cursor.get[String]("taskId")
+      status        <- cursor.get[TaskStatus]("status")
+      createdAt     <- cursor.get[String]("createdAt")
+      lastUpdatedAt <- cursor.get[String]("lastUpdatedAt")
+      ttl           <- cursor.get[Option[Long]]("ttl")
+      statusMessage <- cursor.get[Option[String]]("statusMessage")
+      pollInterval  <- cursor.get[Option[Long]]("pollInterval")
+    yield Task(taskId, status, createdAt, lastUpdatedAt, ttl, statusMessage, pollInterval)
+
+  given Encoder[TaskMetadata] = derivedEncoder[TaskMetadata]
+  given Decoder[TaskMetadata] = deriveDecoder
+
+  given Encoder[CreateTaskResult] = derivedEncoder[CreateTaskResult]
+  given Decoder[CreateTaskResult] = deriveDecoder
+
+  given Encoder[ListTasksResult] = derivedEncoder[ListTasksResult]
+  given Decoder[ListTasksResult] = deriveDecoder
+
+  // === Completions ===
+
+  given Encoder[CompletionRef] = Encoder.instance:
+    case CompletionRef.PromptRef(name) =>
+      Json.obj("type" -> Json.fromString("ref/prompt"), "name" -> Json.fromString(name))
+    case CompletionRef.ResourceRef(uri) =>
+      Json.obj("type" -> Json.fromString("ref/resource"), "uri" -> Json.fromString(uri))
+
+  given Decoder[CompletionRef] = Decoder.instance: cursor =>
+    cursor
+      .get[String]("type")
+      .flatMap:
+        case "ref/prompt"   => cursor.get[String]("name").map(CompletionRef.PromptRef(_))
+        case "ref/resource" => cursor.get[String]("uri").map(CompletionRef.ResourceRef(_))
+        case other => Left(DecodingFailure(s"Unknown completion ref type: $other", cursor.history))
+
+  given Encoder[CompletionArgument] = derivedEncoder[CompletionArgument]
+  given Decoder[CompletionArgument] = deriveDecoder
+
+  given Encoder[CompleteParams] = Encoder.instance: p =>
+    Json
+      .obj(
+        "ref"      -> p.ref.asJson,
+        "argument" -> p.argument.asJson,
+        "context"  -> p.context.map(args => Json.obj("arguments" -> args.asJson)).asJson
+      )
+      .dropNullValues
+
+  given Decoder[CompleteParams] = Decoder.instance: cursor =>
+    for
+      ref      <- cursor.get[CompletionRef]("ref")
+      argument <- cursor.get[CompletionArgument]("argument")
+      context  <- cursor.downField("context").get[Option[Map[String, String]]]("arguments") match
+        case Right(args) => Right(args)
+        case Left(_)     => Right(None)
+    yield CompleteParams(ref, argument, context)
+
+  given Encoder[Completion] = derivedEncoder[Completion]
+  given Decoder[Completion] = deriveDecoder
+
+  given Encoder[CompleteResult] = derivedEncoder[CompleteResult]
+  given Decoder[CompleteResult] = deriveDecoder
 
   // === Roots (Client Feature) ===
 

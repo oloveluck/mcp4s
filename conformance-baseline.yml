@@ -11,5 +11,5 @@
 #   client:
 #     - client-scenario-1
 
-# All 31 server scenarios currently pass!
+# All 40 server scenarios currently pass!
 server: []

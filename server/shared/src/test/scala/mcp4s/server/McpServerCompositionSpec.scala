@@ -331,3 +331,21 @@ class ServerCompositionSpec extends CatsEffectSuite:
     for result <- combined.callTool("add", Json.obj("a" -> 2.asJson, "b" -> 3.asJson))
     yield assertEquals(result.textContent, "5")
   }
+
+  // === Context propagation ===
+
+  test("combine forwards the tool context to whichever side owns the tool") {
+    val contextual = Server.fromTools[IO](
+      ServerInfo("ctx", "1.0.0"),
+      Tools.singleWithContext[IO](subtractTool)((_, ctx) =>
+        IO.pure(ToolResult.text(ctx.requestId.toString))
+      )
+    )
+    val ctx = ToolContext.minimal[IO](SamplingRequester.unsupported[IO], RequestId.NumberId(7))
+    for
+      viaRight <- (serverWithAdd |+| contextual).callToolWithContext("subtract", Json.obj(), ctx)
+      viaLeft  <- (contextual |+| serverWithAdd).callToolWithContext("subtract", Json.obj(), ctx)
+    yield
+      assertEquals(viaRight.textContent, "NumberId(7)")
+      assertEquals(viaLeft.textContent, "NumberId(7)")
+  }

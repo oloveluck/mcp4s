@@ -33,8 +33,9 @@ import mcp4s.transport.{McpChannel, Timeouts}
   *   - routes responses to the [[RequestCorrelator]] (with a uniform request timeout),
   *   - dispatches server-initiated requests (sampling, elicitation, roots list, ping) to the
   *     [[ClientDispatcher]] and sends the answers back — on every transport, not just WebSocket,
-  *   - routes progress notifications to per-request progress handlers,
-  *   - performs the one initialize handshake, and
+  *   - routes progress notifications to per-request progress handlers and every other notification
+  *     to the client's [[McpClient.onNotification]],
+  *   - performs the one initialize handshake (verifying the negotiated version), and
   *   - fails all in-flight requests when the connection closes.
   */
 private[client] object ConnectionRunner:
@@ -46,18 +47,18 @@ private[client] object ConnectionRunner:
       tracer: Tracer[F]
   ): Resource[F, McpConnection[F]] =
     for
-      channel             <- transport.open
-      correlator          <- Resource.eval(RequestCorrelator[F])
-      dispatcher          <- Resource.eval(ClientDispatcher[F](client))
-      progressHandlersRef <- Resource.eval(
-        Ref.of[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]](None)
+      channel          <- transport.open
+      correlator       <- Resource.eval(RequestCorrelator[F])
+      dispatcher       <- Resource.eval(ClientDispatcher[F](client))
+      progressHandlers <- Resource.eval(
+        Ref.of[F, Map[RequestId, ProgressParams => F[Unit]]](Map.empty)
       )
 
       cleanup = correlator.cancelAll(JsonRpcError(-32000, "Connection closed", None))
 
       // Drain the channel for the lifetime of the connection.
       _ <- channel.incoming
-        .evalMap(route(_, channel, correlator, dispatcher, progressHandlersRef))
+        .evalMap(route(_, channel, correlator, dispatcher, progressHandlers))
         .compile
         .drain
         .guarantee(cleanup)
@@ -72,10 +73,11 @@ private[client] object ConnectionRunner:
           .timeoutTo(
             handshake(
               client,
+              channel,
               correlator.nextId,
               sendRequest,
               sendNotification,
-              progressHandlersRef,
+              progressHandlers,
               tracer
             ),
             timeouts.init,
@@ -92,36 +94,31 @@ private[client] object ConnectionRunner:
       channel: McpChannel[F],
       correlator: RequestCorrelator[F],
       dispatcher: ClientDispatcher[F],
-      progressHandlersRef: Ref[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]]
+      progressHandlers: Ref[F, Map[RequestId, ProgressParams => F[Unit]]]
   ): F[Unit] =
     message match
       case JsonRpcResponse(id, result) => correlator.complete(id, result)
 
       case JsonRpcErrorResponse(id, error) => correlator.fail(id, error)
 
-      case JsonRpcNotification(method, params) if method == McpMethod.Progress =>
-        val pp = params.flatMap(_.as[ProgressParams].toOption)
-        pp.traverse_ { p =>
-          progressHandlersRef.get.flatMap(_.traverse_ { handlers =>
-            handlers.get.flatMap(_.get(p.progressToken).traverse_(_(p)))
-          })
+      case JsonRpcNotification(McpMethod.Progress, params) =>
+        params.flatMap(_.as[ProgressParams].toOption).traverse_ { p =>
+          progressHandlers.get.flatMap(_.get(p.progressToken).traverse_(_(p)))
         }
 
       case notif: JsonRpcNotification =>
         dispatcher.dispatch(notif).void
 
       case req: JsonRpcRequest =>
-        dispatcher.dispatch(req).flatMap {
-          case Some(response) => channel.send(response)
-          case None           => Async[F].unit
-        }
+        dispatcher.dispatch(req).flatMap(_.traverse_(channel.send))
 
   private def handshake[F[_]: Async](
       client: McpClient[F],
+      channel: McpChannel[F],
       nextId: F[RequestId],
       sendRequest: JsonRpcRequest => F[io.circe.Json],
       sendNotification: JsonRpcNotification => F[Unit],
-      progressHandlersRef: Ref[F, Option[Ref[F, Map[RequestId, ProgressParams => F[Unit]]]]],
+      progressHandlers: Ref[F, Map[RequestId, ProgressParams => F[Unit]]],
       tracer: Tracer[F]
   ): F[McpConnection[F]] =
     for
@@ -139,14 +136,24 @@ private[client] object ConnectionRunner:
       )
       initJson   <- sendRequest(initRequest)
       initResult <- initJson.as[InitializeResult].liftTo[F]
+      // Spec: a client that does not support the server's chosen version SHOULD disconnect.
+      _ <-
+        if McpVersion.isSupported(initResult.protocolVersion) then Async[F].unit
+        else
+          Async[F].raiseError(
+            McpError.ProtocolVersionMismatch(
+              initResult.protocolVersion,
+              McpVersion.Supported.mkString(", ")
+            )
+          )
+      _          <- channel.negotiated(initResult.protocolVersion)
       _          <- sendNotification(JsonRpcNotification(McpMethod.Initialized, None))
       connection <- McpConnection[F](
-        initResult.serverInfo,
-        initResult.capabilities,
+        initResult,
         nextId,
         sendRequest,
         sendNotification,
+        progressHandlers,
         tracer
       )
-      _ <- progressHandlersRef.set(Some(connection.progressHandlers))
     yield connection

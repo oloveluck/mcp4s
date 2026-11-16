@@ -54,6 +54,23 @@ private[mcp4s] object PromptCodec:
         }.toList
       case None => Nil
 
+  /** Completion candidates for one argument: the labels of an enum-valued field (also through
+    * `Option`, bijections and deferred schemas), or booleans' `true`/`false`. Free-form fields have
+    * no finite candidate set and yield `Nil`.
+    */
+  def candidates[A](schema: Schema[A], argument: String): List[String] =
+    def valuesOf(s: Schema[?]): List[String] =
+      s match
+        case Enumeration(_, values, _)           => values.map(_.label).toList
+        case Primitive(PrimitiveTag.PBoolean, _) => List("true", "false")
+        case Optional(underlying, _)             => valuesOf(underlying)
+        case Bijection(underlying, _, _)         => valuesOf(underlying)
+        case lz: Lazily[?]                       => valuesOf(lz.underlying)
+        case _                                   => Nil
+    structOf(schema).toList.flatMap(
+      _.fields.filter(_.label == argument).flatMap(f => valuesOf(f.schema))
+    )
+
   /** Decode prompt arguments (a string map) into `A`. */
   def decode[A](schema: Schema[A], args: Map[String, String]): Either[String, A] =
     schema match

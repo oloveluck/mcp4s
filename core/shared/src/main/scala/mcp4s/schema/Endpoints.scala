@@ -16,7 +16,15 @@
 
 package mcp4s.schema
 
-import mcp4s.protocol.{JsonSchema, PromptArgument, ToolAnnotations, ToolOutput, ToolResult}
+import mcp4s.protocol.{
+  JsonSchema,
+  PromptArgument,
+  TaskSupport,
+  ToolAnnotations,
+  ToolExecution,
+  ToolOutput,
+  ToolResult
+}
 
 /** How a tool handler's return value becomes a [[mcp4s.protocol.ToolResult]]. */
 sealed trait ToolOutputEncoder[O]:
@@ -60,11 +68,20 @@ final case class ToolEndpoint[I, O](
     description: Option[String],
     inputSchema: Schema[I],
     outputEncoder: ToolOutputEncoder[O],
-    annotations: Option[ToolAnnotations]
+    annotations: Option[ToolAnnotations],
+    title: Option[String] = None,
+    taskSupport: Option[TaskSupport] = None
 ):
   def withName(n: String): ToolEndpoint[I, O]                 = copy(name = n)
+  def withTitle(t: String): ToolEndpoint[I, O]                = copy(title = Some(t))
   def withDescription(d: String): ToolEndpoint[I, O]          = copy(description = Some(d))
   def withAnnotations(a: ToolAnnotations): ToolEndpoint[I, O] = copy(annotations = Some(a))
+
+  /** Declare whether this tool may (or must) be invoked as a task-augmented request
+    * (`execution.taskSupport`). A server that registers a tool with `Optional` or `Required`
+    * support advertises the `tasks` capability automatically.
+    */
+  def withTaskSupport(s: TaskSupport): ToolEndpoint[I, O] = copy(taskSupport = Some(s))
 
   /** The wire representation advertised in `tools/list`. */
   def toTool: mcp4s.protocol.Tool =
@@ -72,7 +89,9 @@ final case class ToolEndpoint[I, O](
       name = name,
       description = description,
       inputSchema = inputSchema.jsonSchema,
+      title = title,
       outputSchema = outputEncoder.outputSchema,
+      execution = taskSupport.map(s => ToolExecution(Some(s))),
       annotations = annotations
     )
 
@@ -87,7 +106,9 @@ object ToolEndpoint:
         e.description.orElse(SchemaMacros.classDescription[I2]),
         s,
         e.outputEncoder,
-        e.annotations
+        e.annotations,
+        e.title,
+        e.taskSupport
       )
 
     /** Set a typed output, advertised as `outputSchema` and encoded as `structuredContent`. */
@@ -97,7 +118,9 @@ object ToolEndpoint:
         e.description,
         e.inputSchema,
         ToolOutputEncoder.Structured(s),
-        e.annotations
+        e.annotations,
+        e.title,
+        e.taskSupport
       )
 
 /** Constructors for [[ToolEndpoint]]. */

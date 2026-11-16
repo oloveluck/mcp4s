@@ -192,7 +192,10 @@ class SchemaSpec extends FunSuite:
   test("Map[String, V] renders additionalProperties and round-trips") {
     val prop = Schema[WithMap].jsonSchema.properties.get("labels")
     assertEquals(prop.`type`, Some("object"))
-    assertEquals(prop.additionalProperties.get.`type`, Some("integer"))
+    assertEquals(
+      prop.additionalProperties.get.hcursor.get[String]("type"),
+      Right("integer")
+    )
 
     val value = WithMap(Map("a" -> 1, "b" -> 2))
     val json  = Schema[WithMap].encoder(value)

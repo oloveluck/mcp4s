@@ -1,67 +1,44 @@
-# Error Handling
+# Errors
 
-MCP uses JSON-RPC error codes to communicate failures. Errors are structured values — you can pattern match on them or handle them per-tool.
+There are three kinds of failure, and they travel in different channels on purpose.
 
-> For the full protocol specification, see [modelcontextprotocol.io](https://modelcontextprotocol.io/specification/2025-11-25/).
+**Tool errors** are results. A tool that cannot do what was asked returns `error("…")`, an
+`isError` result the model can read and react to (retry with better arguments, ask the user).
+The spec asks that input validation failures be reported this way rather than as protocol
+errors, so the model can self-correct.
 
-## McpError
+**Protocol errors** are `McpError` values: an unknown tool, invalid arguments that failed schema
+decoding, a method the server does not support, a request cancelled or timed out. On the server
+they become JSON-RPC error responses with the standard codes; on the client they are raised.
 
-`McpError` is an `enum` of the protocol failure modes; each case carries a human-readable
-`message`. Map one to a JSON-RPC code with `McpError.toJsonRpcError(e).code`.
+| Code | Meaning | Typical `McpError` |
+|---|---|---|
+| -32700 | parse error | malformed JSON |
+| -32600 | invalid request | `NotInitialized`, `ProtocolVersionMismatch`, `SamplingNotSupported` |
+| -32601 | method not found | `MethodNotFound`, `ToolNotFound`, task support violations |
+| -32602 | invalid params | `InvalidToolArguments`, `ResourceNotFound`, `PromptNotFound`, unknown task |
+| -32603 | internal error | `InternalError`, uncaught exceptions from handlers |
+| -32800 | request cancelled | `RequestCancelled` |
 
-<!-- doc-snippet: skip -->
-```scala
-enum McpError(val message: String) extends Exception(message):
-  case ToolNotFound(name: String)
-  case ResourceNotFound(uri: String)
-  case InvalidToolArguments(name: String, reason: String)
-  case ToolExecutionError(name: String, detail: String)
-  case MethodNotSupported(method: String)
-  case NotInitialized
-  // … and more
-```
+**Transport errors** are whatever the transport raised: a refused connection, a closed socket,
+an HTTP status with no JSON-RPC body. They are not `McpError`s.
 
-## Standard Codes
-
-These are the JSON-RPC standard error codes used by MCP:
-
-| Code | Name | Meaning |
-|------|------|---------|
-| -32700 | Parse error | Invalid JSON |
-| -32600 | Invalid request | Malformed JSON-RPC |
-| -32601 | Method not found | Unknown method |
-| -32602 | Invalid params | Wrong arguments |
-| -32603 | Internal error | Server-side failure |
-
-## Server-Side
-
-Return errors from tools using `attempt`:
+On the client this gives a natural pattern:
 
 ```scala
-import mcp4s.server.dsl.*
+import io.circe.Json
+import mcp4s.protocol.McpError
 
-case class RiskyArgs(input: String) derives Schema
-def doWork(args: RiskyArgs): IO[String] = ???
-
-val risky = Tool("risky").withDescription("May fail").input[RiskyArgs].handle[IO] { args =>
-  doWork(args).attempt.map:
-    case Right(r) => ok(r)
-    case Left(e)  => error(e.getMessage)
-}
-```
-
-## Client-Side
-
-```scala
 conn.callTool("tool", Json.obj()).attempt.flatMap:
-  case Right(result) if result.isError.getOrElse(false) => IO.println("Tool error")
-  case Right(result)     => IO.println(s"Success: $result")
-  case Left(e: McpError) => IO.println(s"Protocol error: ${e.message}")
-  case Left(e)           => IO.println(s"Connection error: ${e.getMessage}")
+  case Right(r) if r.isError.contains(true) => IO.println(s"tool said no: ${r.textContent}")
+  case Right(r)                             => IO.println(s"ok: ${r.textContent}")
+  case Left(e: McpError)                    => IO.println(s"protocol: ${e.message}")
+  case Left(e)                              => IO.println(s"transport: ${e.getMessage}")
 ```
 
-Typed calls (`conn.call(endpoint)(input)` via `TypedClient`) never return an `isError` result silently — they raise `McpError.ToolExecutionError(name, detail)` instead, so tool failures surface in the same channel as protocol errors.
+Typed calls (`conn.call(endpoint)(input)`) collapse the first two cases: an `isError` result is
+raised as `McpError.ToolExecutionError`, so a typed call either returns the decoded value or
+fails.
 
-## Retry and Timeouts
-
-For HTTP, compose standard http4s retry middleware on the `Client[F]` you pass to the transport — see [HTTP transport: Retry](../transports/http.md#retry). Request and initialization timeouts are built into every transport config via `timeouts = Timeouts(request = 5.minutes, init = 30.seconds)` (`mcp4s.transport.Timeouts`).
+Timeouts are configured per transport with `Timeouts(request, init)`; retry is left to http4s
+middleware on the client you supply, or to re-acquiring the connection `Resource`.

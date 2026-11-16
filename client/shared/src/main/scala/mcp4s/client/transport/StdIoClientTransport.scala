@@ -87,6 +87,8 @@ object StdioClientTransport:
           def send(message: JsonRpcMessage): F[Unit] =
             outQueue.offer(message.asJson.noSpaces)
 
+          def negotiated(protocolVersion: String): F[Unit] = Async[F].unit
+
           def incoming: Stream[F, JsonRpcMessage] =
             process.stdout
               .through(fs2.text.utf8.decode)

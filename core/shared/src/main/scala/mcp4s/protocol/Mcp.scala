@@ -20,38 +20,28 @@ import io.circe.{Encoder, Json}
 import io.circe.syntax.*
 import scodec.bits.ByteVector
 
-// === Opaque Types for Type Safety ===
-
-/** Type-safe tool name */
-opaque type ToolName = String
-
-object ToolName:
-  def apply(value: String): ToolName = value
-
-  extension (name: ToolName) def value: String = name
-
-/** Type-safe resource URI */
-opaque type ResourceUri = String
-
-object ResourceUri:
-  def apply(value: String): ResourceUri = value
-
-  extension (uri: ResourceUri) def value: String = uri
-
-/** Type-safe prompt name */
-opaque type PromptName = String
-
-object PromptName:
-  def apply(value: String): PromptName = value
-
-  extension (name: PromptName) def value: String = name
-
 /** MCP Protocol version Spec ref:
   * https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle
   */
 object McpVersion:
   /** Current MCP protocol version */
   val Current: String = "2025-11-25"
+
+  /** Every protocol revision this implementation can speak, newest first. */
+  val Supported: List[String] = List(Current, "2025-06-18", "2025-03-26", "2024-11-05")
+
+  /** Version a Streamable HTTP server assumes when a request carries no `MCP-Protocol-Version`
+    * header (per spec, for backwards compatibility).
+    */
+  val HttpDefault: String = "2025-03-26"
+
+  def isSupported(version: String): Boolean = Supported.contains(version)
+
+  /** Version negotiation per the lifecycle spec: a server echoes the requested version when it
+    * supports it and otherwise answers with the latest version it does support.
+    */
+  def negotiate(requested: String): String =
+    if isSupported(requested) then requested else Current
 
 // === Common Types ===
 
@@ -123,7 +113,19 @@ final case class ServerTasksCapability(
     list: Option[Json] = None,
     cancel: Option[Json] = None,
     requests: Option[ServerTaskRequests] = None
-)
+):
+  /** Whether task-augmented `tools/call` requests are accepted. */
+  def supportsToolCalls: Boolean = requests.exists(_.tools.exists(_.call.isDefined))
+
+object ServerTasksCapability:
+  /** Full server-side task support: `tasks/list`, `tasks/cancel`, and task-augmented `tools/call`.
+    */
+  val toolCalls: ServerTasksCapability =
+    ServerTasksCapability(
+      list = Some(Json.obj()),
+      cancel = Some(Json.obj()),
+      requests = Some(ServerTaskRequests(tools = Some(ToolTaskRequests(call = Some(Json.obj())))))
+    )
 
 final case class ServerTaskRequests(
     tools: Option[ToolTaskRequests] = None
@@ -204,7 +206,11 @@ final case class SamplingCapability(
 // === Tools ===
 // Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
 
-/** JSON Schema for tool input/output */
+/** JSON Schema for tool input/output (dialect 2020-12 per SEP-1613).
+  *
+  * `additionalProperties` is raw JSON because JSON Schema allows either a boolean (`false` closes
+  * the object) or a schema; `$defs` holds reusable definitions referenced via `$ref`.
+  */
 final case class JsonSchema(
     `type`: String,
     properties: Option[Map[String, JsonSchemaProperty]] = None,
@@ -214,7 +220,8 @@ final case class JsonSchema(
     `enum`: Option[List[String]] = None,
     oneOf: Option[List[Json]] = None,
     items: Option[JsonSchemaProperty] = None,
-    additionalProperties: Option[JsonSchemaProperty] = None
+    additionalProperties: Option[Json] = None,
+    `$defs`: Option[Map[String, Json]] = None
 )
 
 final case class JsonSchemaProperty(
@@ -232,7 +239,9 @@ final case class JsonSchemaProperty(
     // Nested object schemas
     properties: Option[Map[String, JsonSchemaProperty]] = None,
     required: Option[List[String]] = None,
-    additionalProperties: Option[JsonSchemaProperty] = None
+    additionalProperties: Option[Json] = None,
+    /** Reference to a definition, e.g. `#/$defs/address`. */
+    `$ref`: Option[String] = None
 )
 
 object JsonSchemaProperty:
@@ -252,8 +261,15 @@ object JsonSchemaProperty:
     JsonSchemaProperty(Some(`type`), description, `enum`, default, oneOf, enumNames, items, anyOf)
 
 object JsonSchema:
+  /** The JSON Schema dialect MCP schemas default to (SEP-1613). */
+  val Dialect2020_12: String = "https://json-schema.org/draft/2020-12/schema"
+
   /** Empty schema that accepts any input */
   val empty: JsonSchema = JsonSchema("object", None, None)
+
+  /** A property that references a definition in the enclosing schema's `$defs`. */
+  def ref(definition: String, description: Option[String] = None): JsonSchemaProperty =
+    JsonSchemaProperty(None, description, `$ref` = Some(s"#/$$defs/$definition"))
 
   /** Create an object schema from a map of properties */
   def obj(
@@ -324,7 +340,7 @@ object JsonSchema:
     val oneOfList = values.map { case (value, title) =>
       Json.obj("const" -> Json.fromString(value), "title" -> Json.fromString(title))
     }
-    JsonSchemaProperty.make("string", description, None, None, Some(oneOfList))
+    JsonSchemaProperty.make("string", description, oneOf = Some(oneOfList))
 
   /** Create a titled enum property using oneOf with const/title pairs (convenience overload) */
   def titledEnum(description: String, values: (String, String)*): JsonSchemaProperty =
@@ -332,7 +348,7 @@ object JsonSchema:
 
   /** Create an array property with items schema */
   def array(items: JsonSchemaProperty, description: Option[String] = None): JsonSchemaProperty =
-    JsonSchemaProperty.make("array", description, None, None, None, None, Some(items))
+    JsonSchemaProperty.make("array", description, items = Some(items))
 
   /** Create an array property with items schema (convenience overload) */
   def array(description: String, items: JsonSchemaProperty): JsonSchemaProperty =
@@ -352,7 +368,7 @@ object JsonSchema:
       names: List[String],
       description: Option[String] = None
   ): JsonSchemaProperty =
-    JsonSchemaProperty.make("string", description, Some(values), None, None, Some(names))
+    JsonSchemaProperty.make("string", description, Some(values), enumNames = Some(names))
 
   /** Create an array with titled multi-select using anyOf */
   def titledMultiSelect(
@@ -365,11 +381,7 @@ object JsonSchema:
     JsonSchemaProperty.make(
       "array",
       description,
-      None,
-      None,
-      None,
-      None,
-      Some(JsonSchemaProperty.make("string", None, None, None, None, None, None, Some(anyOfList)))
+      items = Some(JsonSchemaProperty.make("string", anyOf = Some(anyOfList)))
     )
 
   // === Extension for fluent required fields ===
@@ -378,6 +390,16 @@ object JsonSchema:
     /** Add required fields to a schema */
     def required(fields: String*): JsonSchema =
       schema.copy(required = Some(fields.toList))
+
+    /** Reject properties not listed in `properties` (`additionalProperties: false`). */
+    def closed: JsonSchema = schema.copy(additionalProperties = Some(Json.False))
+
+    /** Declare the 2020-12 dialect explicitly via `$schema`. */
+    def withDialect: JsonSchema = schema.copy(`$schema` = Some(Dialect2020_12))
+
+    /** Add reusable definitions, referenced from properties with [[JsonSchema.ref]]. */
+    def withDefs(defs: (String, Json)*): JsonSchema =
+      schema.copy(`$defs` = Some(schema.`$defs`.getOrElse(Map.empty) ++ defs))
 
 /** Tool annotations for AI safety hints Spec ref: schema.ts ToolAnnotations CRITICAL for AI safety
   * \- describes tool behavior to LLMs
@@ -428,7 +450,10 @@ final case class Tool(
     annotations: Option[ToolAnnotations] = None,
     icons: Option[List[Icon]] = None,
     _meta: Option[Json] = None
-)
+):
+  /** Declared task support; absent means [[TaskSupport.Forbidden]] per spec. */
+  def taskSupport: TaskSupport =
+    execution.flatMap(_.taskSupport).getOrElse(TaskSupport.Forbidden)
 
 /** Tool call result content types Spec ref: schema.ts ContentBlock union
   */
@@ -633,108 +658,6 @@ final case class GetPromptResult(
     messages: List[PromptMessage]
 )
 
-/** Builder DSL for creating prompt results concisely.
-  *
-  * Example:
-  * {{{
-  * // Without description
-  * PromptResult(PromptResult.user("Hello"), PromptResult.assistant("Hi there"))
-  *
-  * // With description
-  * PromptResult("A greeting prompt")(PromptResult.user("Hello"))
-  * }}}
-  */
-object PromptResult:
-  /** Create a prompt result without description */
-  def apply(messages: PromptMessage*): GetPromptResult =
-    GetPromptResult(None, messages.toList)
-
-  /** Create a prompt result with description */
-  def apply(description: String)(messages: PromptMessage*): GetPromptResult =
-    GetPromptResult(Some(description), messages.toList)
-
-  /** Create a user message with text content */
-  def user(text: String): PromptMessage =
-    PromptMessage(Role.User, TextContent(text))
-
-  /** Create an assistant message with text content */
-  def assistant(text: String): PromptMessage =
-    PromptMessage(Role.Assistant, TextContent(text))
-
-  /** Create a user message with any content */
-  def userContent(content: Content): PromptMessage =
-    PromptMessage(Role.User, content)
-
-  /** Create an assistant message with any content */
-  def assistantContent(content: Content): PromptMessage =
-    PromptMessage(Role.Assistant, content)
-
-/** Unified namespace for creating MCP results across tools, resources, and prompts.
-  *
-  * Provides a consistent API for creating results regardless of the operation type.
-  *
-  * Example:
-  * {{{
-  * // Tool result
-  * McpResult.tool("Success!")
-  *
-  * // Resource content
-  * McpResult.resource("file:///readme", "Hello world")
-  *
-  * // Prompt result
-  * McpResult.prompt(McpResult.user("Hello"), McpResult.assistant("Hi"))
-  * }}}
-  */
-object McpResult:
-  // === Tool Results ===
-
-  /** Create a text tool result */
-  def tool(text: String): ToolResult = ToolResult.text(text)
-
-  /** Create an error tool result */
-  def toolError(message: String): ToolResult = ToolResult.error(message)
-
-  /** Create a JSON tool result */
-  def toolJson[A: Encoder](value: A): ToolResult = ToolResult.json(value)
-
-  // === Resource Content ===
-
-  /** Create a text resource */
-  def resource(uri: String, text: String): ResourceContent =
-    ResourceContent.text(uri, text)
-
-  /** Create a JSON resource */
-  def resourceJson[A: Encoder](uri: String, value: A): ResourceContent =
-    ResourceContent.json(uri, value)
-
-  /** Create a binary resource */
-  def resourceBinary(uri: String, data: Array[Byte], mimeType: String): ResourceContent =
-    ResourceContent.binary(uri, data, mimeType)
-
-  // === Prompt Results (delegates to PromptResult) ===
-
-  /** Create a prompt result without description */
-  def prompt(messages: PromptMessage*): GetPromptResult =
-    PromptResult(messages*)
-
-  /** Create a prompt result with description */
-  def prompt(description: String)(messages: PromptMessage*): GetPromptResult =
-    PromptResult(description)(messages*)
-
-  /** Create a user message */
-  def user(text: String): PromptMessage = PromptResult.user(text)
-
-  /** Create an assistant message */
-  def assistant(text: String): PromptMessage = PromptResult.assistant(text)
-
-/** String extension methods for creating MCP content types. */
-extension (s: String)
-  /** Convert string to a text resource at the given URI */
-  def asResource(uri: String): ResourceContent = ResourceContent.text(uri, s)
-
-  /** Convert string to a text tool result */
-  def asToolResult: ToolResult = ToolResult.text(s)
-
 // === Lifecycle ===
 // Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle
 
@@ -766,16 +689,6 @@ final case class LogMessage(
     data: Json
 )
 
-// === Pagination ===
-
-/** Type-safe pagination cursor */
-opaque type Cursor = String
-
-object Cursor:
-  def apply(value: String): Cursor = value
-
-  extension (cursor: Cursor) def value: String = cursor
-
 // === Notifications ===
 
 /** Parameters for cancellation notification Spec ref: schema.ts CancelledNotification
@@ -792,6 +705,86 @@ final case class ProgressParams(
     progress: Double,
     total: Option[Double] = None
 )
+
+// === Tasks (SEP-1686, experimental in 2025-11-25) ===
+// Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks
+
+/** Lifecycle state of a task. Spec ref: schema.ts TaskStatus */
+enum TaskStatus:
+  case Working, InputRequired, Completed, Failed, Cancelled
+
+  /** Terminal states never transition again. */
+  def isTerminal: Boolean = this match
+    case Completed | Failed | Cancelled => true
+    case Working | InputRequired        => false
+
+/** Task state as returned by `tasks/get`, `tasks/list`, and in `CreateTaskResult`. Spec ref:
+  * schema.ts Task
+  *
+  * @param ttl
+  *   retention from creation in milliseconds; `None` means unlimited (encoded as JSON `null`)
+  * @param pollInterval
+  *   suggested polling interval in milliseconds
+  */
+final case class Task(
+    taskId: String,
+    status: TaskStatus,
+    createdAt: String,
+    lastUpdatedAt: String,
+    ttl: Option[Long],
+    statusMessage: Option[String] = None,
+    pollInterval: Option[Long] = None
+)
+
+/** The `task` field of a task-augmented request. Spec ref: schema.ts TaskMetadata */
+final case class TaskMetadata(ttl: Option[Long] = None)
+
+/** Immediate response to a task-augmented request. Spec ref: schema.ts CreateTaskResult */
+final case class CreateTaskResult(task: Task)
+
+/** Result of `tasks/list`. Spec ref: schema.ts ListTasksResult */
+final case class ListTasksResult(tasks: List[Task], nextCursor: Option[String] = None)
+
+// === Completions ===
+// Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/completion
+
+/** What a `completion/complete` request is completing an argument for. */
+enum CompletionRef:
+  /** `ref/prompt`: an argument of the named prompt. */
+  case PromptRef(name: String)
+
+  /** `ref/resource`: a variable of the given resource URI template. */
+  case ResourceRef(uri: String)
+
+/** The argument being completed and the text typed so far. */
+final case class CompletionArgument(name: String, value: String)
+
+/** Parameters of `completion/complete`. `context.arguments` carries already-resolved arguments. */
+final case class CompleteParams(
+    ref: CompletionRef,
+    argument: CompletionArgument,
+    context: Option[Map[String, String]] = None
+)
+
+/** Completion suggestions. At most 100 values; `total` may exceed `values.size`. */
+final case class Completion(
+    values: List[String],
+    total: Option[Int] = None,
+    hasMore: Option[Boolean] = None
+)
+
+object Completion:
+  val empty: Completion = Completion(Nil, Some(0), Some(false))
+
+  /** Build a completion from candidate values, keeping those that start with `prefix` (case
+    * insensitively) and capping at the spec's 100-value limit.
+    */
+  def matching(candidates: List[String], prefix: String): Completion =
+    val matches = candidates.filter(_.toLowerCase.startsWith(prefix.toLowerCase))
+    Completion(matches.take(100), Some(matches.size), Some(matches.size > 100))
+
+/** Result of `completion/complete`. */
+final case class CompleteResult(completion: Completion)
 
 // === Roots (Client Feature) ===
 // Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/client/roots
@@ -817,7 +810,6 @@ object McpMethod:
   // Lifecycle
   val Initialize: String  = "initialize"
   val Initialized: String = "notifications/initialized"
-  val Shutdown: String    = "shutdown"
   val Ping: String        = "ping"
 
   // Tools
