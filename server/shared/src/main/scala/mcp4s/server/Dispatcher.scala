@@ -134,7 +134,6 @@ object Dispatcher:
   private enum State:
     case Uninitialized
     case Initialized(protocolVersion: String, clientCapabilities: ClientCapabilities)
-    case ShuttingDown
 
   private class Impl[F[_]](
       server: Server[F],
@@ -326,9 +325,6 @@ object Dispatcher:
           requireInitialized *> requireTasks *>
             tasks.list(params.hcursor.get[String]("cursor").toOption).map(_.asJson)
 
-        case McpMethod.Shutdown =>
-          stateRef.set(State.ShuttingDown).as(Json.obj())
-
         case other =>
           McpError.MethodNotFound(other).raiseError[F, Json]
 
@@ -367,8 +363,6 @@ object Dispatcher:
       stateRef.get.flatMap:
         case State.Initialized(_, _) => F.unit
         case State.Uninitialized     => McpError.NotInitialized.raiseError[F, Unit]
-        case State.ShuttingDown      =>
-          McpError.InternalError("Server is shutting down").raiseError[F, Unit]
 
     // === Tools ===
 

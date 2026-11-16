@@ -123,12 +123,6 @@ class NetworkIntegrationSpec extends CatsEffectSuite:
         conn.ping.as(())
   }
 
-  test("Protocol: shutdown completes gracefully") {
-    httpServerResource(simpleServer).use: server =>
-      httpConnection(simpleClient, server.address.getPort).use: conn =>
-        conn.shutdown.as(())
-  }
-
   test("Protocol: multiple pings succeed") {
     httpServerResource(simpleServer).use: server =>
       httpConnection(simpleClient, server.address.getPort).use: conn =>

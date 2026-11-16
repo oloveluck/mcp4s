@@ -143,8 +143,6 @@ object CalculatorClient extends IOApp.Simple:
 
                 _ <- IO.println("")
                 _ <- IO.println("All tests completed!")
-
-                _ <- conn.shutdown
               yield ()
 
   private def formatResult(result: ToolResult): String =

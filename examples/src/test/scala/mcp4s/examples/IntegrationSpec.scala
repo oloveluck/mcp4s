@@ -234,14 +234,6 @@ class IntegrationSpec extends CatsEffectSuite:
         yield ()
   }
 
-  test("client shuts down gracefully") {
-    serverResource.use: server =>
-      val port = server.address.getPort
-      connectedClient(port).use: conn =>
-        for _ <- conn.shutdown
-        yield ()
-  }
-
   test("multiple concurrent tool calls") {
     serverResource.use: server =>
       val port = server.address.getPort

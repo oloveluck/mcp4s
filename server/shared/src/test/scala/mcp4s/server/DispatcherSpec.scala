@@ -176,18 +176,6 @@ class DispatcherSpec extends CatsEffectSuite:
       case _ => fail("Expected error response")
   }
 
-  test("shutdown returns empty result") {
-    for
-      dispatcher <- createDispatcher
-      _          <- sendRequest(dispatcher, McpMethod.Initialize, validInitParams)
-      _          <- sendNotification(dispatcher, McpMethod.Initialized)
-      response   <- sendRequest(dispatcher, McpMethod.Shutdown)
-    yield response match
-      case JsonRpcResponse(_, result) =>
-        assertEquals(result, Json.obj())
-      case _ => fail("Expected response")
-  }
-
   // === Tool Tests ===
 
   test("tools/list returns registered tools") {

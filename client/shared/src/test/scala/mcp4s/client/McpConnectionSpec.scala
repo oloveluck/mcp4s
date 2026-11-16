@@ -291,18 +291,6 @@ class McpConnectionSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === Shutdown Tests ===
-
-  test("shutdown sends request") {
-    var shutdownCalled = false
-    for
-      conn <- createConnection: req =>
-        if req.method == McpMethod.Shutdown then shutdownCalled = true
-        IO.pure(Json.obj())
-      _ <- conn.shutdown
-    yield assert(shutdownCalled)
-  }
-
   // === Request ID Generation Tests ===
 
   test("request IDs are incremented") {

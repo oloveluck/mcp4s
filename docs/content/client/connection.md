@@ -124,7 +124,6 @@ Prompts built from a typed input complete enum-valued arguments automatically.
 conn.protocolVersion                  // String — negotiated at initialize
 conn.instructions                     // Option[String] — server hints for the model
 conn.ping                             // IO[Unit]
-conn.shutdown                         // IO[Unit]
 conn.cancel(RequestId.NumberId(42))   // IO[Unit]
 ```
 

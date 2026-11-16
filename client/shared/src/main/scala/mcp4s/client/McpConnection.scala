@@ -245,9 +245,6 @@ trait McpConnection[F[_]]:
   /** Ping the server to check connectivity */
   def ping: F[Unit]
 
-  /** Shutdown the connection */
-  def shutdown: F[Unit]
-
   /** Cancel a pending request by ID.
     *
     * This cancels the local fiber waiting for the response (if any) and sends a cancellation
@@ -574,9 +571,6 @@ object McpConnection:
 
     def ping: F[Unit] =
       requestJson(McpMethod.Ping).void
-
-    def shutdown: F[Unit] =
-      requestJson(McpMethod.Shutdown).void
 
     def cancel(requestId: RequestId, reason: Option[String] = None): F[Unit] =
       for

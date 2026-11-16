@@ -846,7 +846,6 @@ object McpMethod:
   // Lifecycle
   val Initialize: String  = "initialize"
   val Initialized: String = "notifications/initialized"
-  val Shutdown: String    = "shutdown"
   val Ping: String        = "ping"
 
   // Tools
