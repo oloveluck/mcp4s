@@ -16,94 +16,12 @@
 
 package mcp4s.server
 
-import cats.Applicative
 import cats.effect.{Concurrent, Resource as CatsResource}
 import cats.syntax.all.*
-import mcp4s.protocol.*
 
-/** Lifecycle trait for tools and resources that need initialization/cleanup.
-  *
-  * Tools and resources can implement this trait to declare resource requirements that need to be
-  * managed during the server lifecycle.
-  *
-  * Example:
-  * {{{
-  * import mcp4s.server.dsl.*
-  *
-  * // Use McpLifecycleTool for tools that need managed resources:
-  * val dbTool = McpLifecycleTool(
-  *   Tool.from[QueryArgs].withDescription("Run SQL query"),
-  *   acquire = Database.connection(config)
-  * ) { (args, conn) =>
-  *   conn.execute(args.sql).map(ToolResult.text)
-  * }
-  * }}}
+/** Tools backed by a managed resource (a connection pool, an HTTP client, ...): the resource is
+  * acquired when the returned `Resource[F, Tools[F]]` is used and released with it.
   */
-trait McpLifecycle[F[_]: Applicative]:
-  /** Resource to acquire before the server starts */
-  def initialize: CatsResource[F, Unit] = CatsResource.unit
-
-  /** Finalization to run when the server shuts down */
-  def shutdown: F[Unit] = Applicative[F].unit
-
-object McpLifecycle:
-  /** Create a lifecycle from an initialize resource */
-  def fromResource[F[_]: Applicative](resource: CatsResource[F, Unit]): McpLifecycle[F] =
-    new McpLifecycle[F]:
-      override def initialize: CatsResource[F, Unit] = resource
-
-  /** Create an empty lifecycle (no-op) */
-  def empty[F[_]: Applicative]: McpLifecycle[F] = new McpLifecycle[F] {}
-
-/** Extension methods for Server to support lifecycle management */
-extension [F[_]](server: Server[F])
-  /** Wrap the server in a Resource that manages lifecycle.
-    *
-    * When the resource is acquired, the server is ready for use. When released, any cleanup is
-    * performed.
-    *
-    * This is useful when tools or resources need managed connections (database pools, HTTP clients,
-    * etc.) that should be cleaned up on shutdown.
-    */
-  def asResource: CatsResource[F, Server[F]] =
-    CatsResource.pure(server)
-
-/** Extension methods for Server with lifecycle-managed tools */
-object ServerLifecycle:
-
-  /** Create a server with lifecycle-managed tools.
-    *
-    * The returned Resource will:
-    *   1. Acquire all tool resources when used 2. Release all resources when the Resource is
-    *      released
-    *
-    * @param info
-    *   Server information
-    * @param tools
-    *   Tools with their lifecycle resources
-    * @param resources
-    *   Server resources
-    * @param prompts
-    *   Server prompts
-    */
-  def withLifecycle[F[_]: Concurrent](
-      info: ServerInfo,
-      tools: CatsResource[F, Tools[F]],
-      resources: Resources[F],
-      prompts: Prompts[F]
-  ): CatsResource[F, Server[F]] =
-    tools.map: managedTools =>
-      Server.from[F](info, managedTools, resources, prompts)
-
-  /** Create a server with lifecycle-managed tools and empty resources/prompts. */
-  def withLifecycleToolsOnly[F[_]: Concurrent](
-      info: ServerInfo,
-      tools: CatsResource[F, Tools[F]]
-  ): CatsResource[F, Server[F]] =
-    tools.map: managedTools =>
-      Server.from[F](info, managedTools, Resources.empty[F], Prompts.empty[F])
-
-/** Namespace for lifecycle-aware tool creation */
 object McpLifecycleTool:
   import dsl.{handle, handleWith}
   import mcp4s.schema.ToolEndpoint

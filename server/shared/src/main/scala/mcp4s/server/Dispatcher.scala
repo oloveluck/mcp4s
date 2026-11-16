@@ -16,7 +16,7 @@
 
 package mcp4s.server
 
-import cats.effect.{Deferred, Fiber, Ref, Temporal}
+import cats.effect.{Deferred, Ref, Temporal}
 import cats.effect.syntax.all.*
 import cats.syntax.all.*
 import io.circe.*
@@ -115,8 +115,8 @@ object Dispatcher:
       listCacheRef <- Ref.of[F, Map[String, (AnyRef, Json)]](Map.empty)
       logLevelRef  <- Ref.of[F, Option[LogLevel]](None)
       subsRef      <- Ref.of[F, Set[String]](Set.empty)
-      tasksRef     <- Ref.of[F, Map[String, TaskEntry[F]]](Map.empty)
-      taskCounter  <- Ref.of[F, Long](0L)
+      supportRef   <- Ref.of[F, Option[(List[Tool], Map[String, TaskSupport])]](None)
+      tasks        <- TaskRegistry[F](config.tasks)
     yield new Impl(
       server,
       config,
@@ -126,8 +126,8 @@ object Dispatcher:
       listCacheRef,
       logLevelRef,
       subsRef,
-      tasksRef,
-      taskCounter,
+      supportRef,
+      tasks,
       tracer
     )
 
@@ -135,14 +135,6 @@ object Dispatcher:
     case Uninitialized
     case Initialized(protocolVersion: String, clientCapabilities: ClientCapabilities)
     case ShuttingDown
-
-  /** A task-augmented request in flight or retained for result retrieval. */
-  final private case class TaskEntry[F[_]](
-      task: Task,
-      createdAtMillis: Long,
-      outcome: Deferred[F, Either[JsonRpcError, Json]],
-      fiber: Option[Fiber[F, Throwable, Unit]]
-  )
 
   private class Impl[F[_]](
       server: Server[F],
@@ -153,8 +145,8 @@ object Dispatcher:
       listCache: Ref[F, Map[String, (AnyRef, Json)]],
       logLevelRef: Ref[F, Option[LogLevel]],
       subscriptionsRef: Ref[F, Set[String]],
-      tasksRef: Ref[F, Map[String, TaskEntry[F]]],
-      taskCounter: Ref[F, Long],
+      taskSupportIndex: Ref[F, Option[(List[Tool], Map[String, TaskSupport])]],
+      tasks: TaskRegistry[F],
       tracer: Tracer[F]
   )(using F: Temporal[F])
       extends Dispatcher[F]:
@@ -173,13 +165,7 @@ object Dispatcher:
 
     def subscriptions: F[Set[String]] = subscriptionsRef.get
 
-    def close: F[Unit] =
-      tasksRef.getAndSet(Map.empty).flatMap { entries =>
-        entries.values.toList.traverse_ { e =>
-          e.fiber.traverse_(_.cancel) *>
-            e.outcome.complete(Left(JsonRpcError.internalError("Session closed"))).void
-        }
-      }
+    def close: F[Unit] = tasks.close
 
     def dispatch(message: JsonRpcMessage): F[Option[JsonRpcMessage]] =
       message match
@@ -326,18 +312,19 @@ object Dispatcher:
             .map(c => CompleteResult(c).asJson)
 
         case McpMethod.TasksGet =>
-          requireInitialized *> requireTasks *> taskIdParam(params).flatMap(id =>
-            findTask(id).map(_.task.asJson)
-          )
+          requireInitialized *> requireTasks *> taskIdParam(params).flatMap(tasks.get).map(_.asJson)
 
         case McpMethod.TasksResult =>
-          requireInitialized *> requireTasks *> taskIdParam(params).flatMap(handleTaskResult)
+          requireInitialized *> requireTasks *> taskIdParam(params).flatMap(tasks.result)
 
         case McpMethod.TasksCancel =>
-          requireInitialized *> requireTasks *> taskIdParam(params).flatMap(handleTaskCancel)
+          requireInitialized *> requireTasks *> taskIdParam(params)
+            .flatMap(tasks.cancel)
+            .map(_.asJson)
 
         case McpMethod.TasksList =>
-          requireInitialized *> requireTasks *> handleTasksList(params)
+          requireInitialized *> requireTasks *>
+            tasks.list(params.hcursor.get[String]("cursor").toOption).map(_.asJson)
 
         case McpMethod.Shutdown =>
           stateRef.set(State.ShuttingDown).as(Json.obj())
@@ -431,21 +418,29 @@ object Dispatcher:
       server.capabilities.tasks.exists(_.supportsToolCalls)
 
     private def requireTasks: F[Unit] =
-      if tasksEnabled then F.unit
-      else McpError.MethodNotSupported("tasks").raiseError[F, Unit]
+      F.raiseUnless(tasksEnabled)(McpError.MethodNotSupported("tasks"))
 
+    /** Declared task support per tool. The tool list is static between `list_changed` events, so
+      * the index is rebuilt only when the list changes (value equality, like the list cache).
+      */
     private def taskSupportOf(name: String): F[Option[TaskSupport]] =
-      server.listTools.map(_.find(_.name == name).map(_.taskSupport))
+      server.listTools.flatMap { tools =>
+        taskSupportIndex.get.flatMap {
+          case Some((prev, index)) if prev == tools => index.get(name).pure[F]
+          case _                                    =>
+            val index = tools.map(t => t.name -> t.taskSupport).toMap
+            taskSupportIndex.set(Some((tools, index))).as(index.get(name))
+        }
+      }
 
     private def requireTaskSupportSatisfied(name: String, asTask: Boolean): F[Unit] =
       if !tasksEnabled || asTask then F.unit
       else
-        taskSupportOf(name).flatMap:
-          case Some(TaskSupport.Required) =>
-            McpError
-              .MethodNotSupported(s"tools/call: tool '$name' must be invoked as a task")
-              .raiseError[F, Unit]
-          case _ => F.unit
+        taskSupportOf(name).flatMap { support =>
+          F.raiseWhen(support.contains(TaskSupport.Required))(
+            McpError.MethodNotSupported(s"tools/call: tool '$name' must be invoked as a task")
+          )
+        }
 
     private def createTask(
         reqId: RequestId,
@@ -456,156 +451,23 @@ object Dispatcher:
     ): F[Json] =
       taskSupportOf(name).flatMap:
         case Some(TaskSupport.Optional) | Some(TaskSupport.Required) =>
-          for
-            now <- F.realTime
-            _   <- pruneExpiredTasks(now)
-            n   <- taskCounter.updateAndGet(_ + 1)
-            id      = s"${now.toMillis.toHexString}-$n"
-            ttl     = meta.ttl.orElse(config.tasks.defaultTtl.map(_.toMillis))
-            created = Iso8601.format(now.toMillis)
-            task    = Task(
-              taskId = id,
-              status = TaskStatus.Working,
-              createdAt = created,
-              lastUpdatedAt = created,
-              ttl = ttl,
-              pollInterval = Some(config.tasks.pollInterval.toMillis)
-            )
-            outcome  <- Deferred[F, Either[JsonRpcError, Json]]
-            admitted <- tasksRef.modify { tasks =>
-              if tasks.size >= config.tasks.maxTasks then (tasks, false)
-              else (tasks + (id -> TaskEntry(task, now.toMillis, outcome, None)), true)
-            }
-            _ <-
-              if admitted then F.unit
-              else
-                McpError
-                  .InternalError(s"Task limit (${config.tasks.maxTasks}) reached")
-                  .raiseError[F, Unit]
-            fiber <- callTool(reqId, name, args, progressToken).attempt
-              .flatMap(finishTask(id, _))
-              .start
-            _ <- tasksRef.update(tasks =>
-              tasks.get(id).fold(tasks)(e => tasks.updated(id, e.copy(fiber = Some(fiber))))
-            )
-          yield CreateTaskResult(task).asJson
+          val ttl = meta.ttl.orElse(config.tasks.defaultTtl.map(_.toMillis))
+          tasks
+            .create(ttl)(callTool(reqId, name, args, progressToken).attempt.map(settle))
+            .map(CreateTaskResult(_).asJson)
         case Some(TaskSupport.Forbidden) =>
           McpError
             .MethodNotSupported(s"tools/call: tool '$name' does not support tasks")
             .raiseError[F, Json]
         case None => McpError.ToolNotFound(name).raiseError[F, Json]
 
-    private def finishTask(id: String, result: Either[Throwable, ToolResult]): F[Unit] =
-      result match
-        case Right(toolResult) =>
-          // 2025-11-25: a tool result with isError is reported as a failed task.
-          val status =
-            if toolResult.isError.contains(true) then TaskStatus.Failed else TaskStatus.Completed
-          transitionTask(id, status, None).flatMap(_.traverse_ { entry =>
-            entry.outcome.complete(Right(toolResult.asJson)).void
-          })
-        case Left(err) =>
-          transitionTask(id, TaskStatus.Failed, Some(err.getMessage)).flatMap(_.traverse_ { entry =>
-            entry.outcome.complete(Left(toRpcError(err))).void
-          })
-
-    /** Move a task to `status` unless it is already terminal; returns the updated entry if the
-      * transition happened.
+    /** 2025-11-25 semantics: a tool result with `isError` is a failed task whose result is still
+      * retrievable; a thrown error is a failed task with no result.
       */
-    private def transitionTask(
-        id: String,
-        status: TaskStatus,
-        statusMessage: Option[String]
-    ): F[Option[TaskEntry[F]]] =
-      F.realTime.flatMap { now =>
-        tasksRef.modify { tasks =>
-          tasks.get(id) match
-            case Some(entry) if !entry.task.status.isTerminal =>
-              val updated = entry.copy(task =
-                entry.task.copy(
-                  status = status,
-                  lastUpdatedAt = Iso8601.format(now.toMillis),
-                  statusMessage = statusMessage
-                )
-              )
-              (tasks.updated(id, updated), Some(updated))
-            case _ => (tasks, None)
-        }
-      }
-
-    private def findTask(id: String): F[TaskEntry[F]] =
-      F.realTime.flatMap(pruneExpiredTasks) *> tasksRef.get
-        .map(_.get(id))
-        .flatMap:
-          case Some(entry) => entry.pure[F]
-          case None => McpError.InvalidParams(s"Task not found: $id").raiseError[F, TaskEntry[F]]
-
-    private def handleTaskResult(id: String): F[Json] =
-      findTask(id)
-        .flatMap(_.outcome.get)
-        .flatMap:
-          case Right(json) => json.pure[F]
-          case Left(err)   => McpError.fromJsonRpcError(err).raiseError[F, Json]
-
-    private def handleTaskCancel(id: String): F[Json] =
-      findTask(id).flatMap { entry =>
-        if entry.task.status.isTerminal then
-          McpError
-            .InvalidParams(s"Task $id is already ${entry.task.status.toString.toLowerCase}")
-            .raiseError[F, Json]
-        else
-          for
-            _       <- entry.fiber.traverse_(_.cancel)
-            updated <- transitionTask(id, TaskStatus.Cancelled, Some("Cancelled by client"))
-            _       <- entry.outcome
-              .complete(
-                Left(JsonRpcError(JsonRpcErrorCode.RequestCancelled, "Task cancelled", None))
-              )
-              .void
-          yield updated.map(_.task).getOrElse(entry.task).asJson
-      }
-
-    private def handleTasksList(params: Json): F[Json] =
-      val offset = params.hcursor.get[String]("cursor").toOption.flatMap(_.toIntOption).getOrElse(0)
-      F.realTime.flatMap(pruneExpiredTasks) *> tasksRef.get.map { tasks =>
-        val all  = tasks.values.toList.sortBy(_.createdAtMillis).map(_.task)
-        val page = all.slice(offset, offset + config.tasks.pageSize)
-        val next = Option.when(offset + config.tasks.pageSize < all.size)(
-          (offset + config.tasks.pageSize).toString
-        )
-        ListTasksResult(page, next).asJson
-      }
-
-    private def pruneExpiredTasks(now: FiniteDuration): F[Unit] =
-      tasksRef
-        .modify { tasks =>
-          val (expired, live) = tasks.partition { (_, e) =>
-            e.task.ttl.exists(ttl => now.toMillis - e.createdAtMillis > ttl)
-          }
-          (live, expired.values.toList)
-        }
-        .flatMap(_.traverse_(e => e.fiber.traverse_(_.cancel)))
-
-/** Minimal ISO 8601 (UTC, millisecond precision) formatting without `java.time`, which is not
-  * available on every platform mcp4s targets.
-  */
-private[server] object Iso8601:
-  def format(epochMillis: Long): String =
-    val days    = Math.floorDiv(epochMillis, 86400000L)
-    val msOfDay = Math.floorMod(epochMillis, 86400000L)
-    // Civil-from-days (Howard Hinnant's algorithm).
-    val z    = days + 719468
-    val era  = Math.floorDiv(z, 146097L)
-    val doe  = z - era * 146097
-    val yoe  = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
-    val y    = yoe + era * 400
-    val doy  = doe - (365 * yoe + yoe / 4 - yoe / 100)
-    val mp   = (5 * doy + 2) / 153
-    val d    = doy - (153 * mp + 2) / 5 + 1
-    val m    = if mp < 10 then mp + 3 else mp - 9
-    val year = if m <= 2 then y + 1 else y
-    val hh   = msOfDay / 3600000
-    val mm   = (msOfDay / 60000) % 60
-    val ss   = (msOfDay / 1000)  % 60
-    val ms   = msOfDay           % 1000
-    f"$year%04d-$m%02d-$d%02dT$hh%02d:$mm%02d:$ss%02d.$ms%03dZ"
+    private def settle(result: Either[Throwable, ToolResult]): TaskRegistry.Settled =
+      result match
+        case Right(r) if r.isError.contains(true) =>
+          TaskRegistry.Settled(TaskStatus.Failed, Right(r.asJson))
+        case Right(r)  => TaskRegistry.Settled(TaskStatus.Completed, Right(r.asJson))
+        case Left(err) =>
+          TaskRegistry.Settled(TaskStatus.Failed, Left(toRpcError(err)), Some(err.getMessage))

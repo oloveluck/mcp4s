@@ -366,7 +366,7 @@ object JsonSchema:
     val oneOfList = values.map { case (value, title) =>
       Json.obj("const" -> Json.fromString(value), "title" -> Json.fromString(title))
     }
-    JsonSchemaProperty.make("string", description, None, None, Some(oneOfList))
+    JsonSchemaProperty.make("string", description, oneOf = Some(oneOfList))
 
   /** Create a titled enum property using oneOf with const/title pairs (convenience overload) */
   def titledEnum(description: String, values: (String, String)*): JsonSchemaProperty =
@@ -374,7 +374,7 @@ object JsonSchema:
 
   /** Create an array property with items schema */
   def array(items: JsonSchemaProperty, description: Option[String] = None): JsonSchemaProperty =
-    JsonSchemaProperty.make("array", description, None, None, None, None, Some(items))
+    JsonSchemaProperty.make("array", description, items = Some(items))
 
   /** Create an array property with items schema (convenience overload) */
   def array(description: String, items: JsonSchemaProperty): JsonSchemaProperty =
@@ -394,7 +394,7 @@ object JsonSchema:
       names: List[String],
       description: Option[String] = None
   ): JsonSchemaProperty =
-    JsonSchemaProperty.make("string", description, Some(values), None, None, Some(names))
+    JsonSchemaProperty.make("string", description, Some(values), enumNames = Some(names))
 
   /** Create an array with titled multi-select using anyOf */
   def titledMultiSelect(
@@ -407,11 +407,7 @@ object JsonSchema:
     JsonSchemaProperty.make(
       "array",
       description,
-      None,
-      None,
-      None,
-      None,
-      Some(JsonSchemaProperty.make("string", None, None, None, None, None, None, Some(anyOfList)))
+      items = Some(JsonSchemaProperty.make("string", anyOf = Some(anyOfList)))
     )
 
   // === Extension for fluent required fields ===
@@ -687,108 +683,6 @@ final case class GetPromptResult(
     description: Option[String] = None,
     messages: List[PromptMessage]
 )
-
-/** Builder DSL for creating prompt results concisely.
-  *
-  * Example:
-  * {{{
-  * // Without description
-  * PromptResult(PromptResult.user("Hello"), PromptResult.assistant("Hi there"))
-  *
-  * // With description
-  * PromptResult("A greeting prompt")(PromptResult.user("Hello"))
-  * }}}
-  */
-object PromptResult:
-  /** Create a prompt result without description */
-  def apply(messages: PromptMessage*): GetPromptResult =
-    GetPromptResult(None, messages.toList)
-
-  /** Create a prompt result with description */
-  def apply(description: String)(messages: PromptMessage*): GetPromptResult =
-    GetPromptResult(Some(description), messages.toList)
-
-  /** Create a user message with text content */
-  def user(text: String): PromptMessage =
-    PromptMessage(Role.User, TextContent(text))
-
-  /** Create an assistant message with text content */
-  def assistant(text: String): PromptMessage =
-    PromptMessage(Role.Assistant, TextContent(text))
-
-  /** Create a user message with any content */
-  def userContent(content: Content): PromptMessage =
-    PromptMessage(Role.User, content)
-
-  /** Create an assistant message with any content */
-  def assistantContent(content: Content): PromptMessage =
-    PromptMessage(Role.Assistant, content)
-
-/** Unified namespace for creating MCP results across tools, resources, and prompts.
-  *
-  * Provides a consistent API for creating results regardless of the operation type.
-  *
-  * Example:
-  * {{{
-  * // Tool result
-  * McpResult.tool("Success!")
-  *
-  * // Resource content
-  * McpResult.resource("file:///readme", "Hello world")
-  *
-  * // Prompt result
-  * McpResult.prompt(McpResult.user("Hello"), McpResult.assistant("Hi"))
-  * }}}
-  */
-object McpResult:
-  // === Tool Results ===
-
-  /** Create a text tool result */
-  def tool(text: String): ToolResult = ToolResult.text(text)
-
-  /** Create an error tool result */
-  def toolError(message: String): ToolResult = ToolResult.error(message)
-
-  /** Create a JSON tool result */
-  def toolJson[A: Encoder](value: A): ToolResult = ToolResult.json(value)
-
-  // === Resource Content ===
-
-  /** Create a text resource */
-  def resource(uri: String, text: String): ResourceContent =
-    ResourceContent.text(uri, text)
-
-  /** Create a JSON resource */
-  def resourceJson[A: Encoder](uri: String, value: A): ResourceContent =
-    ResourceContent.json(uri, value)
-
-  /** Create a binary resource */
-  def resourceBinary(uri: String, data: Array[Byte], mimeType: String): ResourceContent =
-    ResourceContent.binary(uri, data, mimeType)
-
-  // === Prompt Results (delegates to PromptResult) ===
-
-  /** Create a prompt result without description */
-  def prompt(messages: PromptMessage*): GetPromptResult =
-    PromptResult(messages*)
-
-  /** Create a prompt result with description */
-  def prompt(description: String)(messages: PromptMessage*): GetPromptResult =
-    PromptResult(description)(messages*)
-
-  /** Create a user message */
-  def user(text: String): PromptMessage = PromptResult.user(text)
-
-  /** Create an assistant message */
-  def assistant(text: String): PromptMessage = PromptResult.assistant(text)
-
-/** String extension methods for creating MCP content types. */
-extension (s: String)
-  /** Convert string to a text resource at the given URI */
-  def asResource(uri: String): ResourceContent = ResourceContent.text(uri, s)
-
-  /** Convert string to a text tool result */
-  def asToolResult: ToolResult = ToolResult.text(s)
 
 // === Lifecycle ===
 // Spec ref: https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle

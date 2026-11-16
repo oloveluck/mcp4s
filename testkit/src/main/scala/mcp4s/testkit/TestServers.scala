@@ -54,10 +54,7 @@ object TestServers:
       .of[F, Int](0)
       .map: counterRef =>
         val server = new Server[F]:
-          val info: ServerInfo                 = base.info
-          val capabilities: ServerCapabilities = base.capabilities
-
-          def listTools: F[List[Tool]] = base.listTools
+          export base.{callTool as _, callToolWithContext as _, *}
 
           def callTool(name: String, arguments: Json): F[ToolResult] =
             counterRef
@@ -65,13 +62,6 @@ object TestServers:
               .flatMap: count =>
                 if count >= failAfter then Async[F].raiseError(new RuntimeException(errorMessage))
                 else base.callTool(name, arguments)
-
-          def listResources: F[List[McpResource]]              = base.listResources
-          def listResourceTemplates: F[List[ResourceTemplate]] = base.listResourceTemplates
-          def readResource(uri: String): F[ResourceContent]    = base.readResource(uri)
-          def listPrompts: F[List[Prompt]]                     = base.listPrompts
-          def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult] =
-            base.getPrompt(name, arguments)
 
         (server, counterRef.get)
 
@@ -92,8 +82,16 @@ object TestServers:
       listPromptsCount   <- Ref.of[F, Int](0)
     yield
       val server = new Server[F]:
-        val info: ServerInfo                 = base.info
-        val capabilities: ServerCapabilities = base.capabilities
+        export base.{
+          callTool as _,
+          callToolWithContext as _,
+          getPrompt as _,
+          listPrompts as _,
+          listResources as _,
+          listTools as _,
+          readResource as _,
+          *
+        }
 
         def listTools: F[List[Tool]] =
           listToolsCount.update(_ + 1) *> base.listTools
@@ -103,9 +101,6 @@ object TestServers:
 
         def listResources: F[List[McpResource]] =
           listResourcesCount.update(_ + 1) *> base.listResources
-
-        def listResourceTemplates: F[List[ResourceTemplate]] =
-          base.listResourceTemplates
 
         def readResource(uri: String): F[ResourceContent] =
           resourceReadCount.update(_ + 1) *> base.readResource(uri)
@@ -145,8 +140,17 @@ object TestServers:
       .scalaUtilRandom[F]
       .map(random =>
         new Server[F]:
-          val info: ServerInfo                 = base.info
-          val capabilities: ServerCapabilities = base.capabilities
+          export base.{
+            callTool as _,
+            callToolWithContext as _,
+            getPrompt as _,
+            listPrompts as _,
+            listResources as _,
+            listResourceTemplates as _,
+            listTools as _,
+            readResource as _,
+            *
+          }
 
           private def randomDelay: F[Unit] =
             val range = (maxDelay - minDelay).toMillis
@@ -323,39 +327,19 @@ object TestServers:
     * progress-callback compliance check end-to-end.
     */
   def withProgress[F[_]: Async: Temporal]: Server[F] =
-    val base      = simple[F]
-    val countTool = Tool(
-      name = "count",
-      description = Some("Counts to 3, emitting a progress notification each step"),
-      inputSchema = JsonSchema.obj(Map.empty, Nil)
-    )
-    new Server[F]:
-      val info: ServerInfo                 = base.info.copy(name = "test-progress-server")
-      val capabilities: ServerCapabilities = base.capabilities
-
-      def listTools: F[List[Tool]] = base.listTools.map(_ :+ countTool)
-
-      def callTool(name: String, arguments: Json): F[ToolResult] =
-        if name == "count" then Async[F].pure(ToolResult.text("done"))
-        else base.callTool(name, arguments)
-
-      override def callToolWithContext(
-          name: String,
-          arguments: Json,
-          context: ToolContext[F]
-      ): F[ToolResult] =
-        if name == "count" then
-          context.progress(1, Some(3)) *>
-            context.progress(2, Some(3)) *>
-            context.progress(3, Some(3)).as(ToolResult.text("done"))
-        else base.callTool(name, arguments)
-
-      def listResources: F[List[McpResource]]              = base.listResources
-      def listResourceTemplates: F[List[ResourceTemplate]] = base.listResourceTemplates
-      def readResource(uri: String): F[ResourceContent]    = base.readResource(uri)
-      def listPrompts: F[List[Prompt]]                     = base.listPrompts
-      def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult] =
-        base.getPrompt(name, arguments)
+    val count = Tools.singleWithContext[F](
+      Tool(
+        name = "count",
+        description = Some("Counts to 3, emitting a progress notification each step"),
+        inputSchema = JsonSchema.obj(Map.empty, Nil)
+      )
+    ) { (_, ctx) =>
+      ctx.progress(1, Some(3)) *>
+        ctx.progress(2, Some(3)) *>
+        ctx.progress(3, Some(3)).as(ToolResult.text("done"))
+    }
+    // The left server supplies the identity; the composed capabilities and tools are merged.
+    Server.fromTools(ServerInfo("test-progress-server", "1.0.0"), count) |+| simple[F]
 
 /** Call count statistics for a counting server. */
 final case class CallCounts(

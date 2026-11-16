@@ -73,7 +73,7 @@ private[mcp4s] object SchemaCodec:
 
       case Bijection(underlying, _, from) => underlying.encoder.contramap(from)
 
-      case Lazily(thunk) => Encoder.instance(a => thunk().encoder(a))
+      case lz: Lazily[A] => Encoder.instance(a => lz.underlying.encoder(a))
 
   def decoder[A](schema: Schema[A]): Decoder[A] =
     schema match
@@ -126,7 +126,7 @@ private[mcp4s] object SchemaCodec:
 
       case Bijection(underlying, to, _) => underlying.decoder.map(to)
 
-      case Lazily(thunk) => Decoder.instance(cursor => thunk().decoder(cursor))
+      case lz: Lazily[A] => Decoder.instance(cursor => lz.underlying.decoder(cursor))
 
   private def encodeField[S](field: Field[S, ?], value: S): Option[(String, Json)] =
     val fieldValue = field.get(value)

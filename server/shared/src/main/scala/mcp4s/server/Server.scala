@@ -202,6 +202,15 @@ final private class ComposedServer[F[_]: Concurrent](
       right.callTool(name, arguments)
     }
 
+  override def callToolWithContext(
+      name: String,
+      arguments: Json,
+      context: ToolContext[F]
+  ): F[ToolResult] =
+    left.callToolWithContext(name, arguments, context).recoverWith {
+      case McpError.ToolNotFound(_) => right.callToolWithContext(name, arguments, context)
+    }
+
   def listResources: F[List[Resource]] =
     for
       leftRes  <- left.listResources

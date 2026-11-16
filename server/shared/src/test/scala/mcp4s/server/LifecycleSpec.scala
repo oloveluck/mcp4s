@@ -20,7 +20,6 @@ import cats.effect.{IO, Ref, Resource as CatsResource}
 import io.circe.Json
 import io.circe.syntax.*
 import mcp4s.protocol.*
-import mcp4s.server.asResource
 import munit.CatsEffectSuite
 
 class LifecycleSpec extends CatsEffectSuite:
@@ -168,9 +167,9 @@ class LifecycleSpec extends CatsEffectSuite:
     yield ()
   }
 
-  // === ServerLifecycle Tests ===
+  // === Managed tools in a server resource ===
 
-  test("ServerLifecycle.withLifecycleToolsOnly creates server with managed tools") {
+  test("a Resource[F, Tools[F]] lifts into a Resource[F, Server[F]] with map") {
     for
       acquiredRef <- Ref.of[IO, Boolean](false)
       releasedRef <- Ref.of[IO, Boolean](false)
@@ -183,10 +182,7 @@ class LifecycleSpec extends CatsEffectSuite:
           )
       )(_ => releasedRef.set(true))
 
-      serverResource = ServerLifecycle.withLifecycleToolsOnly[IO](
-        ServerInfo("test", "1.0.0"),
-        toolResource
-      )
+      serverResource = toolResource.map(Server.fromTools[IO](ServerInfo("test", "1.0.0"), _))
 
       _ <- serverResource.use: server =>
         for
@@ -201,50 +197,4 @@ class LifecycleSpec extends CatsEffectSuite:
       released <- releasedRef.get
       _ = assert(released, "Tool resource should be released")
     yield ()
-  }
-
-  // === McpLifecycle Trait Tests ===
-
-  test("McpLifecycle.empty creates no-op lifecycle") {
-    val lifecycle = McpLifecycle.empty[IO]
-
-    lifecycle.initialize.use(_ => IO.unit) *>
-      lifecycle.shutdown
-  }
-
-  test("McpLifecycle.fromResource wraps a resource") {
-    for
-      executedRef <- Ref.of[IO, Boolean](false)
-      releasedRef <- Ref.of[IO, Boolean](false)
-
-      resource = CatsResource.make(
-        executedRef.set(true)
-      )(_ => releasedRef.set(true))
-
-      lifecycle = McpLifecycle.fromResource(resource)
-
-      _ <- lifecycle.initialize.use: _ =>
-        for
-          executed <- executedRef.get
-          _ = assert(executed, "Initialize should have run")
-        yield ()
-
-      released <- releasedRef.get
-      _ = assert(released, "Resource should be released")
-    yield ()
-  }
-
-  // === Server Extension Tests ===
-
-  test("Server can be wrapped in pure resource") {
-    val server = Server.fromTools[IO](
-      ServerInfo("test", "1.0.0"),
-      Tool("test").withDescription("Test").handle[IO](_ => IO.pure(ok("result")))
-    )
-
-    server.asResource.use: s =>
-      for
-        tools <- s.listTools
-        _ = assertEquals(tools.map(_.name), List("test"))
-      yield ()
   }

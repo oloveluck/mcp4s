@@ -6,6 +6,7 @@
 
 - **Flaky CI: HTTP progress notifications.** The Streamable HTTP server shared one outbound queue across every in-flight request on a session and juggled "foreign" progress events between SSE pollers with re-offers and 1 ms sleeps; under concurrency a notification could surface on the wrong stream and be dropped, failing `[http] progress notifications are delivered to the callback` on `main`. Every request answered with an SSE stream now owns its own queue: the messages a tool emits while handling a request (progress, logging, sampling, elicitation) go to that request's stream and nowhere else, as the spec requires. No polling, no re-offers.
 - Server-initiated requests made from a request that has no SSE stream (JSON-mode POST without a GET stream) now fail immediately instead of waiting out the 5-minute request timeout.
+- **Composed servers kept their tools' context.** `Server#combine` / `|+|` did not forward `callToolWithContext`, so a tool behind a composed server lost sampling, elicitation, progress and logging; `ComposedServer` now delegates with the context, left first.
 - `SamplingRequester.supportsSampling` / `ElicitationRequester.supportsElicitation` now reflect the client's advertised capabilities instead of always returning `true`.
 - `initialize` performs version negotiation: a supported requested version (`2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`) is echoed back; anything else gets the latest. The client disconnects (`McpError.ProtocolVersionMismatch`) if the server picks a version it cannot speak.
 
@@ -29,7 +30,8 @@
 - `McpChannel` gains `negotiated(protocolVersion)`, called by the connection runner after the handshake.
 - `McpConnection.progressHandlers` is no longer part of the public trait (the runner owns the registry); `McpConnection.apply` takes the `InitializeResult`.
 - `HttpSession` no longer exposes `outQueue` / `activeProgressTokens` / `queueSize`; it owns per-request streams and the standalone stream (`hasStandaloneStream`).
-- `JsonSchema.additionalProperties` / `JsonSchemaProperty.additionalProperties` are `Option[Json]` instead of `Option[JsonSchemaProperty]` (JSON Schema allows a boolean there too); derived `Map[String, V]` schemas render the same JSON as before.
+- **Removed redundant API surfaces** (pre-1.0 cleanup): `McpResult`, `PromptResult` and the `String#asResource` / `asToolResult` extensions (use `ToolResult.text`, `ResourceContent.text` and the `mcp4s.server.dsl` builders `ok`/`messages`/`user`/`assistant`); `McpLifecycle`, `Server#asResource` and `ServerLifecycle` (a `Resource[F, Tools[F]]` lifts with `.map(Server.fromTools(info, _))`; `McpLifecycleTool` stays); and `ResourceSubscriptionManager`, superseded by the per-session subscription delivery built into every transport.
+- `JsonSchema.additionalProperties` / `JsonSchemaProperty.additionalProperties` are `Option[Json]" instead of `Option[JsonSchemaProperty]` (JSON Schema allows a boolean there too); derived `Map[String, V]` schemas render the same JSON as before.
 
 ### Build
 
