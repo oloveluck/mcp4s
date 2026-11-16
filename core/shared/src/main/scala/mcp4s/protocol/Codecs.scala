@@ -47,17 +47,6 @@ object Codecs:
       .orElse(cursor.as[Long].map(RequestId.NumberId(_)))
       .orElse(cursor.as[Option[Unit]].map(_ => RequestId.NullId))
 
-  // === Opaque Types ===
-
-  given Encoder[ToolName] = Encoder.encodeString.contramap(_.value)
-  given Decoder[ToolName] = Decoder.decodeString.map(ToolName(_))
-
-  given Encoder[ResourceUri] = Encoder.encodeString.contramap(_.value)
-  given Decoder[ResourceUri] = Decoder.decodeString.map(ResourceUri(_))
-
-  given Encoder[PromptName] = Encoder.encodeString.contramap(_.value)
-  given Decoder[PromptName] = Decoder.decodeString.map(PromptName(_))
-
   // === JsonRpcError ===
 
   given Encoder[JsonRpcError] = derivedEncoder[JsonRpcError]
@@ -461,11 +450,6 @@ object Codecs:
 
   given Encoder[LogMessage] = derivedEncoder[LogMessage]
   given Decoder[LogMessage] = deriveDecoder
-
-  // === Pagination ===
-
-  given Encoder[Cursor] = Encoder.encodeString.contramap(_.value)
-  given Decoder[Cursor] = Decoder.decodeString.map(Cursor(_))
 
   // === Notifications ===
 

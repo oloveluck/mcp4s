@@ -374,7 +374,7 @@ object ConformanceServer extends IOApp.Simple:
 
   def run: IO[Unit] =
     given Tracer[IO] = Tracer.noop[IO]
-    val httpConfig   = HttpConfig[IO]()
+    val httpConfig   = HttpConfig()
     IO.println("Starting MCP Conformance Test Server on http://localhost:3000") *>
       IO.println("  - MCP endpoint: http://localhost:3000/mcp") *>
       IO.println("  - Health check: http://localhost:3000/health") *>

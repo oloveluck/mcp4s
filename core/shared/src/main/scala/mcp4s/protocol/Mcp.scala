@@ -20,32 +20,6 @@ import io.circe.{Encoder, Json}
 import io.circe.syntax.*
 import scodec.bits.ByteVector
 
-// === Opaque Types for Type Safety ===
-
-/** Type-safe tool name */
-opaque type ToolName = String
-
-object ToolName:
-  def apply(value: String): ToolName = value
-
-  extension (name: ToolName) def value: String = name
-
-/** Type-safe resource URI */
-opaque type ResourceUri = String
-
-object ResourceUri:
-  def apply(value: String): ResourceUri = value
-
-  extension (uri: ResourceUri) def value: String = uri
-
-/** Type-safe prompt name */
-opaque type PromptName = String
-
-object PromptName:
-  def apply(value: String): PromptName = value
-
-  extension (name: PromptName) def value: String = name
-
 /** MCP Protocol version Spec ref:
   * https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle
   */
@@ -714,16 +688,6 @@ final case class LogMessage(
     logger: Option[String] = None,
     data: Json
 )
-
-// === Pagination ===
-
-/** Type-safe pagination cursor */
-opaque type Cursor = String
-
-object Cursor:
-  def apply(value: String): Cursor = value
-
-  extension (cursor: Cursor) def value: String = cursor
 
 // === Notifications ===
 

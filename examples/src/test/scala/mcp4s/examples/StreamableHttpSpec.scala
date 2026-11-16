@@ -53,7 +53,7 @@ class StreamableHttpSpec extends CatsEffectSuite:
 
   // === Fixtures ===
 
-  def serve(server: Server[IO], config: HttpConfig[IO] = HttpConfig(port = port"0")) =
+  def serve(server: Server[IO], config: HttpConfig = HttpConfig(port = port"0")) =
     HttpTransport.serve[IO](server, config.copy(port = port"0"))
 
   val httpClient: CatsResource[IO, Client[IO]] = EmberClientBuilder.default[IO].build
@@ -94,7 +94,7 @@ class StreamableHttpSpec extends CatsEffectSuite:
         resp.bodyText.compile.drain.as(sessionOf(resp).getOrElse(fail("no session id")))
     }
 
-  def withServer[A](server: Server[IO], config: HttpConfig[IO] = HttpConfig(port = port"0"))(
+  def withServer[A](server: Server[IO], config: HttpConfig = HttpConfig(port = port"0"))(
       f: (Client[IO], Uri) => IO[A]
   ): IO[A] =
     (serve(server, config), httpClient).tupled.use((s, c) => f(c, mcpUri(s)))
@@ -187,7 +187,7 @@ class StreamableHttpSpec extends CatsEffectSuite:
   }
 
   test("stateless mode issues no session id, re-initializes freely, and has no DELETE") {
-    val stateless = HttpConfig[IO](port = port"0", enableSessions = false)
+    val stateless = HttpConfig(port = port"0", enableSessions = false)
     withServer(TestServers.simple[IO], stateless) { (client, uri) =>
       for
         first  <- post(client, uri, initBody).use(r => IO.pure((r.status, sessionOf(r))))

@@ -127,10 +127,6 @@ class PropertySpec extends ScalaCheckSuite:
 
   given Arbitrary[LogLevel] = Arbitrary(genLogLevel)
 
-  val genCursor: Gen[Cursor] = Gen.alphaNumStr.map(Cursor.apply)
-
-  given Arbitrary[Cursor] = Arbitrary(genCursor)
-
   // ============================================================================
   // Icon and Annotations Generators
   // ============================================================================
@@ -788,14 +784,6 @@ class PropertySpec extends ScalaCheckSuite:
       val json    = level.asJson
       val decoded = json.as[LogLevel]
       decoded == Right(level)
-    }
-  }
-
-  property("Cursor serialization roundtrip") {
-    forAll { (cursor: Cursor) =>
-      val json    = cursor.asJson
-      val decoded = json.as[Cursor]
-      decoded == Right(cursor)
     }
   }
 

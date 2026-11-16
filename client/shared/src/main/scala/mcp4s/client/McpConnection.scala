@@ -16,7 +16,6 @@
 
 package mcp4s.client
 
-import scala.annotation.targetName
 import scala.concurrent.duration.FiniteDuration
 import cats.effect.{Concurrent, Deferred, Ref}
 import cats.effect.syntax.monadCancel.*
@@ -89,10 +88,6 @@ trait McpConnection[F[_]]:
     * Requests are cancellable via fiber cancellation - the library automatically sends a
     * cancellation notification to the server when the fiber is cancelled.
     */
-  def callTool[A: Encoder](name: ToolName, arguments: A): F[ToolResult]
-
-  /** Call a tool with string name (convenience overload) */
-  @targetName("callToolString")
   def callTool[A: Encoder](name: String, arguments: A): F[ToolResult]
 
   /** Call a tool with progress reporting.
@@ -110,23 +105,10 @@ trait McpConnection[F[_]]:
     *   Called for each progress notification from the server
     */
   def callTool[A: Encoder](
-      name: ToolName,
-      arguments: A,
-      onProgress: ProgressParams => F[Unit]
-  ): F[ToolResult]
-
-  /** Call a tool with progress reporting (string name convenience overload) */
-  @targetName("callToolStringWithProgress")
-  def callTool[A: Encoder](
       name: String,
       arguments: A,
       onProgress: ProgressParams => F[Unit]
   ): F[ToolResult]
-
-  /** Call a tool only if the server supports tools capability. Returns None if tools are not
-    * supported.
-    */
-  def callToolIfSupported[A: Encoder](name: ToolName, arguments: A): F[Option[ToolResult]]
 
   // === Resource Operations ===
 
@@ -157,16 +139,7 @@ trait McpConnection[F[_]]:
     * Requests are cancellable via fiber cancellation - the library automatically sends a
     * cancellation notification to the server when the fiber is cancelled.
     */
-  def readResource(uri: ResourceUri): F[ResourceContent]
-
-  /** Read a resource with string URI (convenience overload) */
-  @targetName("readResourceString")
   def readResource(uri: String): F[ResourceContent]
-
-  /** Read a resource only if the server supports resources capability. Returns None if resources
-    * are not supported.
-    */
-  def readResourceIfSupported(uri: ResourceUri): F[Option[ResourceContent]]
 
   /** Subscribe to `notifications/resources/updated` for a resource. Updates are delivered to the
     * client's notification handler (see `McpClientBuilder.withNotifications`).
@@ -193,16 +166,7 @@ trait McpConnection[F[_]]:
     * Requests are cancellable via fiber cancellation - the library automatically sends a
     * cancellation notification to the server when the fiber is cancelled.
     */
-  def getPrompt[A: Encoder](name: PromptName, arguments: A): F[GetPromptResult]
-
-  /** Get a prompt with string name (convenience overload) */
-  @targetName("getPromptString")
   def getPrompt[A: Encoder](name: String, arguments: A): F[GetPromptResult]
-
-  /** Get a prompt only if the server supports prompts capability. Returns None if prompts are not
-    * supported.
-    */
-  def getPromptIfSupported[A: Encoder](name: PromptName, arguments: A): F[Option[GetPromptResult]]
 
   // === Utilities ===
 
@@ -407,40 +371,23 @@ object McpConnection:
 
     def listAllTools: F[List[Tool]] = paginate(listTools)
 
-    def callTool[A: Encoder](name: ToolName, arguments: A): F[ToolResult] =
-      request(
-        McpMethod.ToolsCall,
-        Json.obj("name" -> Json.fromString(name.value), "arguments" -> Encoder[A].apply(arguments)),
-        _.as[ToolResult].liftTo[F]
-      )
+    private def toolCallParams[A: Encoder](name: String, arguments: A): Json =
+      Json.obj("name" -> Json.fromString(name), "arguments" -> Encoder[A].apply(arguments))
 
-    @targetName("callToolString")
     def callTool[A: Encoder](name: String, arguments: A): F[ToolResult] =
-      callTool(ToolName(name), arguments)
+      request(McpMethod.ToolsCall, toolCallParams(name, arguments), _.as[ToolResult].liftTo[F])
 
-    def callTool[A: Encoder](
-        name: ToolName,
-        arguments: A,
-        onProgress: ProgressParams => F[Unit]
-    ): F[ToolResult] =
-      request(
-        McpMethod.ToolsCall,
-        Json.obj("name" -> Json.fromString(name.value), "arguments" -> Encoder[A].apply(arguments)),
-        _.as[ToolResult].liftTo[F],
-        Some(onProgress)
-      )
-
-    @targetName("callToolStringWithProgress")
     def callTool[A: Encoder](
         name: String,
         arguments: A,
         onProgress: ProgressParams => F[Unit]
     ): F[ToolResult] =
-      callTool(ToolName(name), arguments, onProgress)
-
-    def callToolIfSupported[A: Encoder](name: ToolName, arguments: A): F[Option[ToolResult]] =
-      if supportsTools then callTool(name, arguments).map(Some(_))
-      else Concurrent[F].pure(None)
+      request(
+        McpMethod.ToolsCall,
+        toolCallParams(name, arguments),
+        _.as[ToolResult].liftTo[F],
+        Some(onProgress)
+      )
 
     def listResources(cursor: Option[String] = None): F[(List[Resource], Option[String])] =
       request(
@@ -470,23 +417,15 @@ object McpConnection:
 
     def listAllResourceTemplates: F[List[ResourceTemplate]] = paginate(listResourceTemplates)
 
-    def readResource(uri: ResourceUri): F[ResourceContent] =
+    def readResource(uri: String): F[ResourceContent] =
       request(
         McpMethod.ResourcesRead,
-        Json.obj("uri" -> Json.fromString(uri.value)),
+        Json.obj("uri" -> Json.fromString(uri)),
         _.hcursor.get[List[ResourceContent]]("contents").liftTo[F].flatMap {
           case head :: _ => Concurrent[F].pure(head)
-          case Nil       => Concurrent[F].raiseError(McpError.ResourceNotFound(uri.value))
+          case Nil       => Concurrent[F].raiseError(McpError.ResourceNotFound(uri))
         }
       )
-
-    @targetName("readResourceString")
-    def readResource(uri: String): F[ResourceContent] =
-      readResource(ResourceUri(uri))
-
-    def readResourceIfSupported(uri: ResourceUri): F[Option[ResourceContent]] =
-      if supportsResources then readResource(uri).map(Some(_))
-      else Concurrent[F].pure(None)
 
     def subscribeResource(uri: String): F[Unit] =
       requestJson(McpMethod.ResourcesSubscribe, Json.obj("uri" -> Json.fromString(uri))).void
@@ -507,23 +446,12 @@ object McpConnection:
 
     def listAllPrompts: F[List[Prompt]] = paginate(listPrompts)
 
-    def getPrompt[A: Encoder](name: PromptName, arguments: A): F[GetPromptResult] =
+    def getPrompt[A: Encoder](name: String, arguments: A): F[GetPromptResult] =
       request(
         McpMethod.PromptsGet,
-        Json.obj("name" -> Json.fromString(name.value), "arguments" -> Encoder[A].apply(arguments)),
+        Json.obj("name" -> Json.fromString(name), "arguments" -> Encoder[A].apply(arguments)),
         _.as[GetPromptResult].liftTo[F]
       )
-
-    @targetName("getPromptString")
-    def getPrompt[A: Encoder](name: String, arguments: A): F[GetPromptResult] =
-      getPrompt(PromptName(name), arguments)
-
-    def getPromptIfSupported[A: Encoder](
-        name: PromptName,
-        arguments: A
-    ): F[Option[GetPromptResult]] =
-      if supportsPrompts then getPrompt(name, arguments).map(Some(_))
-      else Concurrent[F].pure(None)
 
     def complete(params: CompleteParams): F[Completion] =
       request(
@@ -545,11 +473,8 @@ object McpConnection:
     ): F[Task] =
       request(
         McpMethod.ToolsCall,
-        Json.obj(
-          "name"      -> Json.fromString(name),
-          "arguments" -> Encoder[A].apply(arguments),
-          "task"      -> TaskMetadata(ttl.map(_.toMillis)).asJson
-        ),
+        toolCallParams(name, arguments)
+          .deepMerge(Json.obj("task" -> TaskMetadata(ttl.map(_.toMillis)).asJson)),
         _.as[CreateTaskResult].liftTo[F].map(_.task)
       )
 

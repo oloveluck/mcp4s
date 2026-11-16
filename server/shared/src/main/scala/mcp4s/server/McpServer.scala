@@ -83,7 +83,7 @@ final class McpServer[F[_]: Concurrent] private (
   def stdio: McpServer.StdioBinding[F] = McpServer.StdioBinding(toServer)
 
   /** Bind to the Streamable HTTP transport. */
-  def http(config: HttpConfig[F] = HttpConfig[F]()): McpServer.HttpBinding[F] =
+  def http(config: HttpConfig = HttpConfig.default): McpServer.HttpBinding[F] =
     McpServer.HttpBinding(toServer, config)
 
   /** Bind to the WebSocket transport. */
@@ -110,7 +110,7 @@ object McpServer:
     ): F[Unit] =
       StdioTransport.run[F](server)
 
-  final class HttpBinding[F[_]] private[server] (server: Server[F], config: HttpConfig[F]):
+  final class HttpBinding[F[_]] private[server] (server: Server[F], config: HttpConfig):
     /** The bound HTTP server as a managed resource. */
     def resource(using
         Async[F],

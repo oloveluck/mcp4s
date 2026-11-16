@@ -29,10 +29,13 @@
 - `Dispatcher` is now explicitly the per-session protocol state machine: it exposes `protocolVersion`, `clientCapabilities`, `logLevel`, `subscriptions` and `close`, and takes a `Dispatcher.Config` (re-initialization policy for stateless HTTP, task settings). `Dispatcher.withContext`'s factory is effectful (`(RequestId, Option[RequestId]) => F[ToolContext[F]]`) and `Dispatcher` requires `Temporal` rather than `Concurrent`.
 - `McpChannel` gains `negotiated(protocolVersion)`, called by the connection runner after the handshake.
 - `McpConnection.progressHandlers` is no longer part of the public trait (the runner owns the registry); `McpConnection.apply` takes the `InitializeResult`.
+- **Simpler connection API.** `McpConnection` takes plain `String` names and URIs: the `ToolName`, `ResourceUri`, `PromptName` and `Cursor` opaque types and the overloads that used them are gone, as are `callToolIfSupported` / `readResourceIfSupported` / `getPromptIfSupported` (branch on `conn.supportsTools` and friends instead).
+- `HttpConfig` no longer carries a phantom type parameter: write `HttpConfig(port = …)` instead of `HttpConfig[IO](port = …)`.
+- **Documentation rewritten** around the architecture: concept pages (architecture, schema, transports, server-to-client traffic), task guides (server, client, security, testing) and a short reference, instead of per-feature API listings.
 - **`shutdown` is gone.** `McpConnection.shutdown`, `McpMethod.Shutdown` and the dispatcher's `shutdown` handler implemented a method that is not part of MCP (it came from LSP). Releasing the connection `Resource` is how a client ends a session: the HTTP transport `DELETE`s it, the others close their connection.
 - `HttpSession` no longer exposes `outQueue` / `activeProgressTokens` / `queueSize`; it owns per-request streams and the standalone stream (`hasStandaloneStream`).
 - **Removed redundant API surfaces** (pre-1.0 cleanup): `McpResult`, `PromptResult` and the `String#asResource` / `asToolResult` extensions (use `ToolResult.text`, `ResourceContent.text` and the `mcp4s.server.dsl` builders `ok`/`messages`/`user`/`assistant`); `McpLifecycle`, `Server#asResource` and `ServerLifecycle` (a `Resource[F, Tools[F]]` lifts with `.map(Server.fromTools(info, _))`; `McpLifecycleTool` stays); and `ResourceSubscriptionManager`, superseded by the per-session subscription delivery built into every transport.
-- `JsonSchema.additionalProperties` / `JsonSchemaProperty.additionalProperties` are `Option[Json]" instead of `Option[JsonSchemaProperty]` (JSON Schema allows a boolean there too); derived `Map[String, V]` schemas render the same JSON as before.
+- `JsonSchema.additionalProperties` / `JsonSchemaProperty.additionalProperties` are `Option[Json]` instead of `Option[JsonSchemaProperty]` (JSON Schema allows a boolean there too); derived `Map[String, V]` schemas render the same JSON as before.
 
 ### Build
 

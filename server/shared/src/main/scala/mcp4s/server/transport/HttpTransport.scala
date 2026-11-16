@@ -52,7 +52,7 @@ import scala.concurrent.duration.*
   * @param keepAliveInterval
   *   how often an SSE comment is written to idle streams so intermediaries keep them open
   */
-final case class HttpConfig[F[_]](
+final case class HttpConfig(
     host: Host = host"0.0.0.0",
     port: Port = port"3000",
     path: String = "mcp",
@@ -64,7 +64,7 @@ final case class HttpConfig[F[_]](
 )
 
 object HttpConfig:
-  def default[F[_]]: HttpConfig[F] = HttpConfig[F]()
+  val default: HttpConfig = HttpConfig()
 
 /** Streamable HTTP transport for MCP servers (spec 2025-11-25).
   *
@@ -114,7 +114,7 @@ object HttpTransport:
     else hostHeader.split(":").head.toLowerCase
 
   /** DNS rebinding protection: on a localhost binding the `Host` header must name localhost. */
-  private def isValidHostHeader[F[_]](req: Request[F], config: HttpConfig[F]): Boolean =
+  private def isValidHostHeader[F[_]](req: Request[F], config: HttpConfig): Boolean =
     !isLocalhostBinding(config.host) ||
       req.headers.get(CIString("Host")).map(_.head.value).forall { h =>
         LocalhostPatterns.contains(hostnameOf(h))
@@ -124,7 +124,7 @@ object HttpTransport:
     * always pass; on a localhost binding, localhost origins pass too; elsewhere, without an
     * allowlist, any Origin passes (the deployment is expected to front this with its own policy).
     */
-  private def isValidOrigin[F[_]](req: Request[F], config: HttpConfig[F]): Boolean =
+  private def isValidOrigin[F[_]](req: Request[F], config: HttpConfig): Boolean =
     req.headers.get(CIString("Origin")).map(_.head.value).forall { origin =>
       config.allowedOrigins.contains(origin) || {
         val originHost = Uri
@@ -155,7 +155,7 @@ object HttpTransport:
     */
   def routes[F[_]: Async](
       server: Server[F],
-      config: HttpConfig[F] = HttpConfig.default[F]
+      config: HttpConfig = HttpConfig.default
   )(using Tracer[F]): CatsResource[F, HttpRoutes[F]] =
     val sessions: CatsResource[F, Sessions[F]] =
       if config.enableSessions then
@@ -181,7 +181,7 @@ object HttpTransport:
     */
   def serve[F[_]: Async: Network](
       server: Server[F],
-      config: HttpConfig[F] = HttpConfig.default[F]
+      config: HttpConfig = HttpConfig.default
   )(using Tracer[F]): CatsResource[F, Http4sServer] =
     for
       mcpRoutes  <- routes(server, config)
@@ -218,7 +218,7 @@ object HttpTransport:
         def get(id: SessionId): F[Option[HttpSession[F]]] = Async[F].pure(Some(single))
         def remove(id: SessionId): F[Unit]                = Async[F].unit
 
-  private class Routes[F[_]](sessions: Sessions[F], config: HttpConfig[F], tracer: Tracer[F])(using
+  private class Routes[F[_]](sessions: Sessions[F], config: HttpConfig, tracer: Tracer[F])(using
       F: Async[F]
   ):
     private val dsl = new Http4sDsl[F] {}

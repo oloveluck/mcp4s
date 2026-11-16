@@ -152,7 +152,7 @@ object Server:
       * `server.http(config).routes` for embedding.
       */
     def http(
-        config: mcp4s.server.transport.HttpConfig[F] = mcp4s.server.transport.HttpConfig[F]()
+        config: mcp4s.server.transport.HttpConfig = mcp4s.server.transport.HttpConfig.default
     ): McpServer.HttpBinding[F] = McpServer.HttpBinding(server, config)
 
     /** Bind this server to the WebSocket transport: `server.webSocket().resource`. */
